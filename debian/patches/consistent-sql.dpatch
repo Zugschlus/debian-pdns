@@ -1,0 +1,60 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## consistent-sql.dpatch by  <matthijs@monster.cacholong.nl>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: No description.
+
+@DPATCH@
+diff -urNad trunk/modules/gpgsqlbackend/gpgsqlbackend.cc /tmp/dpep.QKRaey/trunk/modules/gpgsqlbackend/gpgsqlbackend.cc
+--- trunk/modules/gpgsqlbackend/gpgsqlbackend.cc	2005-02-11 22:14:08.900498664 +0100
++++ /tmp/dpep.QKRaey/trunk/modules/gpgsqlbackend/gpgsqlbackend.cc	2005-02-23 19:13:57.566649072 +0100
+@@ -23,6 +23,7 @@
+   try {
+     setDB(new SPgSQL(getArg("dbname"),
+ 		  getArg("host"),
++		  getArg("port"),
+ 		  getArg("socket"),
+ 		  getArg("user"),
+ 		  getArg("password")));
+@@ -47,6 +48,7 @@
+     declare(suffix,"dbname","Pdns backend database name to connect to","powerdns");
+     declare(suffix,"user","Pdns backend user to connect as","powerdns");
+     declare(suffix,"host","Pdns backend host to connect to","");
++    declare(suffix,"port","Database backend port to connect to","");
+     declare(suffix,"socket","Pdns backend socket to connect to","");
+     declare(suffix,"password","Pdns backend password to connect with","");
+ 
+diff -urNad trunk/modules/gpgsqlbackend/spgsql.cc /tmp/dpep.QKRaey/trunk/modules/gpgsqlbackend/spgsql.cc
+--- trunk/modules/gpgsqlbackend/spgsql.cc	2005-02-11 22:14:08.906497752 +0100
++++ /tmp/dpep.QKRaey/trunk/modules/gpgsqlbackend/spgsql.cc	2005-02-23 19:13:57.567648920 +0100
+@@ -12,7 +12,7 @@
+ 
+ bool SPgSQL::s_dolog;
+ 
+-SPgSQL::SPgSQL(const string &database, const string &host, const string &msocket, const string &user, 
++SPgSQL::SPgSQL(const string &database, const string &host, const string &port, const string &msocket, const string &user, 
+ 	       const string &password)
+ {
+   d_db=0;
+@@ -26,6 +26,9 @@
+   if(!host.empty())
+     connectstr+=" host="+host;
+ 
++  if(!port.empty())
++    connectstr+=" port="+port;
++
+   if(!password.empty())
+     connectstr+=" password="+password;
+ 
+diff -urNad trunk/modules/gpgsqlbackend/spgsql.hh /tmp/dpep.QKRaey/trunk/modules/gpgsqlbackend/spgsql.hh
+--- trunk/modules/gpgsqlbackend/spgsql.hh	2005-02-11 22:14:08.899498816 +0100
++++ /tmp/dpep.QKRaey/trunk/modules/gpgsqlbackend/spgsql.hh	2005-02-23 19:17:23.794297704 +0100
+@@ -10,7 +10,7 @@
+ class SPgSQL : public SSql
+ {
+ public:
+-  SPgSQL(const string &database, const string &host="", 
++  SPgSQL(const string &database, const string &host="", const string &port="",
+ 	 const string &msocket="",const string &user="", 
+ 	 const string &password="");
+ 

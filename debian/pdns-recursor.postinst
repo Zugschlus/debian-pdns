@@ -1,0 +1,30 @@
+#!/bin/sh
+#
+#
+
+set -e
+
+# Remove old stuff
+if [ -f /etc/init.d/pdns_recursor ]; then
+  if [ -x /usr/sbin/invoke-rc.d ]; then
+    invoke-rc.d pdns_recursor stop || exit 0
+  else
+    /etc/init.d/pdns_recursor stop || exit 0
+  fi
+  update-rc.d -f pdns_recursor remove >/dev/null 2>&1
+  rm -f /etc/init.d/pdns_recursor
+fi
+
+if [ -x "/etc/init.d/pdns-recursor" ]; then
+  update-rc.d pdns-recursor defaults 19 85 >/dev/null
+  if [ -x /usr/sbin/invoke-rc.d ]; then
+    invoke-rc.d pdns-recursor start || exit 0
+  else
+    /etc/init.d/pdns-recursor start || exit 0
+  fi
+fi
+
+#DEBHELPER#
+
+exit 0
+

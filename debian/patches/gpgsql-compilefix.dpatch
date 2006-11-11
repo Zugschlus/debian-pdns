@@ -1,0 +1,31 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## gpgsql-compilefix.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: Compile fix in generic postgresql backend
+
+@DPATCH@
+diff -urNad pdns-2.9.16/modules/gpgsqlbackend/Makefile.am /tmp/dpep.FXg60i/pdns-2.9.16/modules/gpgsqlbackend/Makefile.am
+--- pdns-2.9.16/modules/gpgsqlbackend/Makefile.am	2003-05-27 17:41:16.000000000 +0000
++++ /tmp/dpep.FXg60i/pdns-2.9.16/modules/gpgsqlbackend/Makefile.am	2005-01-08 12:17:23.000000000 +0000
+@@ -6,7 +6,7 @@
+ libgpgsqlbackend_la_SOURCES=gpgsqlbackend.cc gpgsqlbackend.hh \
+ 		spgsql.hh spgsql.cc
+ 
+-libgpgsqlbackend_la_LDFLAGS=@PGSQL_lib@ -Wl,-Bstatic -lpq++ -lpq \
++libgpgsqlbackend_la_LDFLAGS=@PGSQL_lib@ -Wl,-Bstatic -lpq \
+ 	-Wl,-Bdynamic 
+ 
+ libgpgsqlbackend_la_LIBADD=-lssl -lcrypt -lcrypto
+diff -urNad pdns-2.9.16/modules/gpgsqlbackend/Makefile.in /tmp/dpep.FXg60i/pdns-2.9.16/modules/gpgsqlbackend/Makefile.in
+--- pdns-2.9.16/modules/gpgsqlbackend/Makefile.in	2004-02-28 20:39:54.000000000 +0000
++++ /tmp/dpep.FXg60i/pdns-2.9.16/modules/gpgsqlbackend/Makefile.in	2005-01-08 12:17:55.000000000 +0000
+@@ -112,7 +112,7 @@
+ 		spgsql.hh spgsql.cc
+ 
+ 
+-libgpgsqlbackend_la_LDFLAGS = @PGSQL_lib@ -Wl,-Bstatic -lpq++ -lpq \
++libgpgsqlbackend_la_LDFLAGS = @PGSQL_lib@ -Wl,-Bstatic -lpq \
+ 	-Wl,-Bdynamic 
+ 
+ 

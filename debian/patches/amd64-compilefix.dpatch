@@ -1,0 +1,20 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## amd64-compilefix.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: AMD64 compile fix (See #287913) (Confirmed by upstream)
+
+@DPATCH@
+diff -urNad pdns-2.9.16/pdns/tcpreceiver.cc /tmp/dpep.qHQdaU/pdns-2.9.16/pdns/tcpreceiver.cc
+--- pdns-2.9.16/pdns/tcpreceiver.cc	2003-11-08 12:25:29.000000000 +0000
++++ /tmp/dpep.qHQdaU/pdns-2.9.16/pdns/tcpreceiver.cc	2005-01-08 12:27:44.000000000 +0000
+@@ -131,7 +131,8 @@
+ 
+ void *TCPNameserver::doConnection(void *data)
+ {
+-  int fd=(int)data; // gotta love C (generates a harmless warning on opteron)
++  // Fix gcc-4.0 error (on AMD64)
++  int fd=(int)(long)data; // gotta love C (generates a harmless warning on opteron)
+   pthread_detach(pthread_self());
+ 
+   try {

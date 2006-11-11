@@ -1,20 +1,230 @@
-pdns (2.9.17-1) unstable; urgency=medium
+pdns (2.9.17-13sarge3) stable-security; urgency=high
 
-  * fill in the blanks
+  * NMU by the Security Team:
+  * Fix stack overflow in DNS recursor.
 
- -- Wichert Akkerman <wichert@wiggy.net>  Sat, 13 Sep 2004 23:23:33 +0100
+ -- Moritz Muehlenhoff <jmm@debian.org>  Sat, 11 Nov 2006 11:15:43 +0000
 
-pdns (2.9.16-1) unstable; urgency=medium
+pdns (2.9.17-13sarge2) stable; urgency=low
 
-  * fill in the blanks
+  * Removed code that mess up the pdns.conf. (Closes: #321974, #326260)
+  * Move clean up code to build-stamp. (Closes: #322352)
 
- -- Wichert Akkerman <wichert@wiggy.net>  Sat, 17 Jan 2004 23:23:33 +0100
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Fri,  2 Sep 2005 22:14:33 +0200
+
+pdns (2.9.17-13sarge1) stable-security; urgency=high
+
+  * The ldapbackend did not properly escape all queries, allowing it to fail
+    and not answer questions. [dosfix-ldapbackend.dpatch, CAN-2005-2301]
+  * Questions from clients denied recursion could blank out answers to clients
+    who are allowed recursion services,
+    temporarily. [blankout-domain-fix.dpatch, CAN-2005-2302]
+    (Closes: #318798)
+  * Added mechanism to remove bogus conffiles file for the meta package
+    pdns [pdns.conffiles] (Joey)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Tue, 19 Jul 2005 13:28:58 +0200
+
+pdns (2.9.17-13) unstable; urgency=high
+
+  * Fixed serious policy violation. (Closes: #310782, #310742)
+  * Updated dutch debconf translation.
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Thu, 26 May 2005 23:10:54 +0200
+
+pdns (2.9.17-12) unstable; urgency=low
+
+  * Removed resolvconf from pdns initscript.
+  * Updated french debconf translation. (Closes: #305869)
+  * Updated pdns-recursor so it doesn't fail on restart.
+  * Patch to fix exit status. (Closes: #305527)
+  * Fixes a typo in pdns-backend-mysql.postrm which causes a failure when
+    removing the package. (Closes: #308410)
+  * Added a Pre-Depends on adduser (Closes: #308409)
+  * Fixed a failure when installing pdns-server on a fresh system.
+  * Fixed a failure when removing pdns-server when perl-modules isn't
+    installed.
+  * Added dutch translation.
+  * Added german translation.
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Tue, 10 May 2005 16:15:59 +0200
+
+pdns (2.9.17-11) unstable; urgency=low
+
+  * Fixed the empty /usr/share/pdns/doc directory. (Closes: #304939)
+  * Removed superfluous upstream documentation from the doc directory.
+  * Rewritten pdns-recursor initscript. (Closes: #304937, #303602, #303602)
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Thu, 21 Apr 2005 22:38:47 +0200
+
+pdns (2.9.17-10) unstable; urgency=low
+
+  * Maintainer changed to Debian PowerDNS Maintainers.
+  * Christoph Haas <haas@debian.org>:
+    + changelog.html is no longer compressed to keep hypertext links in the
+      pdns-doc package working
+    + fixed a typo in the debconf templates (netmasks -> subnets)
+  * Matthijs Mohlmann <matthijs@cacholong.nl>:
+    + Fixed the ldap backend patch (Closes: #303910)
+    + Fixed the patch for adding a directory with config files (Closes: #303669)
+      - Now you can add multiple files.
+      - Can add files with dots.
+    + Added dnsdomain2.schema to pdns-backend-ldap. (Closes: #303685)
+    + Updates resolv.conf when needed. (Closes: #303602)
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Thu, 14 Apr 2005 21:42:16 +0200
+
+pdns (2.9.17-9) unstable; urgency=low
+
+  * Moved html docs to pdns-doc instead of pdns (Closes: #303227)
+  * Added french translation (Closes: #302681)
+  * Improved description for pdns-backend-geo (Closes: #302128)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Tue,  5 Apr 2005 21:32:14 +0200
+
+pdns (2.9.17-8) unstable; urgency=low
+
+  * Minor naming stupidity in example files resolved.
+  * Thanks to Christoph Haas for checking and uploading.
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Fri,  1 Apr 2005 22:02:56 +0200
+
+pdns (2.9.17-7) unstable; urgency=low
+
+  * Removed more questions on several backends.
+  * Use one pdns.local file instead of using more files.
+  * Updated postinst and postrm to reflect these changes.
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Fri,  1 Apr 2005 17:05:29 +0200
+
+pdns (2.9.17-6) unstable; urgency=low
+
+  * Raised Standards-Version to 3.6.1.1
+  * Fixed a FTBFS on 64bit platforms (Closes: #301642)
+    Thanks to Kurt Roeckx <kurt@roeckx.be> for testing the patch.
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Thu, 31 Mar 2005 10:00:37 +0200
+
+pdns (2.9.17-5) unstable; urgency=low
+
+  * Removed stupid questions
+  * Updated templates
+  * Added README.Debian to pdns-server
+  * Fixed a typo (Closes: #300053)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Mon, 28 Mar 2005 10:47:40 +0200
+
+pdns (2.9.17-4) unstable; urgency=low
+
+  * Make gmysql and gpgsql backend more consistent by adding port parameter to
+    gpgsql backend.
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 27 Feb 2005 23:10:36 +0100
+
+pdns (2.9.17-3) unstable; urgency=low
+
+  * Removed manpage xdb-fill
+  * Removed package pdns-backend-xdb (obsolete)
+  * Cleaned up debian/ directory
+  * Written an initscript for pdns-recursor (Closes: #296628)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Mon, 14 Feb 2005 20:17:24 +0100
+
+pdns (2.9.17-2) unstable; urgency=low
+
+  * Written manpage for xdb-fill
+  * Rewritten debian/rules for better understanding
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Mon, 14 Feb 2005 11:23:11 +0100
+
+pdns (2.9.17-1) unstable; urgency=low
+
+  * Update Standards-Version to 3.6.1
+  * Change to debhelper programs
+  * Added geobackend (Closes: #243958)
+  * Added recursor.conf (Closes: #252286)
+  * Start the recursor before slapd (Closes: #281330)
+  * Fix a typo in init script (Closes: #267672)
+  * The pdns recursor is now in a seperate package
+  * Added zone2ldap patch to be LDAPv3 compliant
+  * Added query logging
+  * support for AXFR in non-hierarchical trees
+  * reenabled AXFR for normal zones in strict mode
+  * fix for wildcard lookups in tree mode
+  * fix for thrown exception if multiple associatedDomain are available
+  * changed wrong default method (simple or tree)
+  * fix in PowerLDAP if dn is necessary
+  * Took the tarball from the powerdns website and added seperate patches
+  * Added postinstall scripts to configure packages
+  * Added postremove scripts
+  * Make it lintian clean
+  * Manpages written for binaries
+  * Added patch letting work pdns as slave and superslave with sqlite backend
+    (Closes: #280359)
+  * Added schema as text file in pdns-backend-{mysql,pgsql} (Closes: #248315)
+  * starttls is added by upstream (Closes: #193474)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Thu, 3 Feb 2005 15:49:40 +0000
+
+pdns (2.9.16-6) unstable; urgency=high
+
+  * Backport DoS fix from 2.9.17 release, CVSTrac ticket #21
+    http://ds9a.nl/cgi-bin/cvstrac/pdns/tktview?tn=21,4
+    (CAN-2005-0428 DoS in PowerDNS)
+  * FTBFS: F_OK undeclared fixed (Closes: #286675)
+  * FTBFS on amd64/gcc-4.0 fixed (Closes: #287913)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Thu, 20 Jan 2005 14:13:58 +0100
+
+pdns (2.9.16-5) unstable; urgency=low
+
+  * New maintainer upload (Closes: #282200)
+  * pdns installs uncompressed manpages (Closes: #264221)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 21 Nov 2004 14:24:35 +0100
+
+pdns (2.9.16-4) unstable; urgency=high
+
+  * Apply patches from current CVS:
+    - checkin 267: make another FD non-blocking. Should really fix
+      Debian bug 241321 & ticket 13 (pdns_recursor hangs).
+
+ -- Wichert Akkerman <wichert@wiggy.net>  Sun, 07 Nov 2004 13:49:06 +0100
+
+pdns (2.9.16-3) unstable; urgency=high
+
+  * Apply patches from current CVS:
+    - properly dup2 fd 0, 1 and 2. Closes: Bug#241321
+    - make recursor sockets non-blocking, should fix hanging pdns_recursor
+  * Include pdns_recursor init script
+
+ -- Wichert Akkerman <wichert@wiggy.net>  Mon, 01 Nov 2004 12:03:40 +0100
+
+pdns (2.9.16-2) unstable; urgency=medium
+
+  * Remove stray libpq++ linkage for gpgsqlbackend. Closes: Bug#236941
+
+ -- Wichert Akkerman <wichert@wiggy.net>  Fri, 14 May 2004 14:04:34 +0200
+
+pdns (2.9.16-1) unstable; urgency=low
+
+  * New upstream version
+
+ -- Wichert Akkerman <wichert@wiggy.net>  Sun, 07 Mar 2004 22:22:03 +0100
+
+pdns (2.9.15-2) unstable; urgency=medium
+
+  * Update missing file with current version from libtool
+  * Remove hardcoded libpq++ link in postrges backend 
+  * Remove libpq++ mentions in sgml documentation
+
+ -- Wichert Akkerman <wichert@wiggy.net>  Sun, 18 Jan 2004 14:06:29 +0100
 
 pdns (2.9.15-1) unstable; urgency=medium
 
-  * fill in the blanks
+  * New upstream version
 
- -- Wichert Akkerman <wichert@wiggy.net>  Sat, 17 Jan 2004 23:23:33 +0100
+ -- Wichert Akkerman <wichert@wiggy.net>  Sun, 18 Jan 2004 11:28:39 +0100
 
 pdns (2.9.14-1) unstable; urgency=medium
 

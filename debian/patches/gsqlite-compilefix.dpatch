@@ -1,0 +1,21 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## gsqlite-compilefix.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: Compile fix for #286675
+
+@DPATCH@
+diff -urNad pdns-2.9.16/modules/gsqlitebackend/ssqlite.cc /tmp/dpep.jla7o7/pdns-2.9.16/modules/gsqlitebackend/ssqlite.cc
+--- pdns-2.9.16/modules/gsqlitebackend/ssqlite.cc	2003-12-17 18:18:10.000000000 +0000
++++ /tmp/dpep.jla7o7/pdns-2.9.16/modules/gsqlitebackend/ssqlite.cc	2005-01-08 12:20:09.000000000 +0000
+@@ -13,7 +13,9 @@
+ # include <io.h>
+ # define access _access
+ # define F_OK 0
+-#endif // WIN32
++#else // WIN32
++# include <unistd.h>
++#endif // Unix
+ 
+ // Constructor.
+ SSQLite::SSQLite( const std::string & database )

@@ -1,0 +1,3 @@
+usr/bin/pdns_control
+usr/bin/zone2sql
+usr/sbin/pdns_server

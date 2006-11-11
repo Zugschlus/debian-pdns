@@ -1,0 +1,15 @@
+# Apply following patches
+gpgsql-compilefix.dpatch
+amd64-compilefix.dpatch
+gsqlite-compilefix.dpatch
+gsqlite-slave.dpatch
+zone2ldap.dpatch
+typoinitscript.dpatch
+addfeatures-ldapbackend.dpatch
+addconfigdir.dpatch
+consistent-sql.dpatch
+64bit-compile-fix.dpatch
+fix-exit-status.dpatch
+dosfix-ldapbackend.dpatch
+blankout-domain-fix.dpatch
+recursor-buffer-overflow.dpatch

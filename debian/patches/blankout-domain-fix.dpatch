@@ -1,0 +1,46 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## blankout-domain-fix.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: Questions from clients denied recursion could blank out answers to
+##     clients who are allowed recursion services, temporarily.
+
+@DPATCH@
+diff -urNad --exclude=CVS --exclude=.svn ./pdns/packethandler.cc /tmp/dpep-work.h7Jtfd/trunk/pdns/packethandler.cc
+--- ./pdns/packethandler.cc	2005-07-10 21:57:46.000000000 +0200
++++ /tmp/dpep-work.h7Jtfd/trunk/pdns/packethandler.cc	2005-07-19 13:24:41.669901976 +0200
+@@ -558,6 +558,8 @@
+     bool found=false;
+     
+     string target=p->qdomain;
++
++    bool noCache=false;
+     
+     if (doDNSCheckRequest(p, r, target))
+       goto sendit;
+@@ -667,9 +669,12 @@
+     else
+       weAuth=false;
+ 
+-    if(p->d.rd && d_doRecursion && !weAuth && DP->sendPacket(p)) {
+-      delete r;
+-      return 0;
++    if(p->d.rd && d_doRecursion && !weAuth) {
++        if(DP->sendPacket(p)) {
++          delete r;
++          return 0;
++        } else
++          noCache=true;
+     }
+ 
+     string::size_type pos;
+@@ -788,7 +793,8 @@
+     
+ 
+     r->wrapup(); // needed for inserting in cache
+-    PC.insert(p,r); // in the packet cache
++    if (!noCache)
++      PC.insert(p,r); // in the packet cache
+   }
+   catch(DBException &e) {
+     L<<Logger::Error<<"Database module reported condition which prevented lookup - sending out servfail"<<endl;

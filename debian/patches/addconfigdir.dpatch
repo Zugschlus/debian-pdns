@@ -1,0 +1,98 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## addconfigdir.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: Add include option to include files from directories
+
+@DPATCH@
+diff -urNad trunk/pdns/arguments.cc /tmp/dpep.6tmt0w/trunk/pdns/arguments.cc
+--- trunk/pdns/arguments.cc	2005-04-05 21:41:53.725076528 +0200
++++ /tmp/dpep.6tmt0w/trunk/pdns/arguments.cc	2005-04-09 17:04:28.211497848 +0200
+@@ -220,9 +220,12 @@
+     if(pos && pos!=string::npos) 
+       val=val.substr(pos);
+ 
+-    if(parmIsset(var))
++    if(parmIsset(var)) {
+       params[var]=val;
+-    else
++      if (!strcmp(var.c_str(), "include")) { // include directory
++        preParseDir(val.c_str(), arg);
++      }
++    } else
+       if(!lax)
+ 	throw ArgException("Trying to set unexisting parameter '"+var+"'");
+   }
+@@ -249,6 +252,34 @@
+   }
+ }
+ 
++bool ArgvMap::preParseDir(const char *dir, const string &arg)
++{
++  DIR *dir_p;
++  char *fulldir;
++  struct dirent *dir_entry_p;
++  int n, m;
++
++  if (dir_p = opendir(dir)) {
++    while((dir_entry_p = readdir(dir_p)))
++    {
++      if (strcmp(dir_entry_p->d_name, ".") == 0 ||
++          strcmp(dir_entry_p->d_name, "..") == 0)
++        continue;
++
++      n = strlen(dir_entry_p->d_name);
++      m = strlen(dir);
++      fulldir = (char *)malloc(n+m+2);
++      strcpy(fulldir, (char *)dir);
++      strcat(fulldir, "/");
++      strcat(fulldir, dir_entry_p->d_name);
++      file((const char *)fulldir, false);
++    }
++    closedir(dir_p);
++  }
++
++  return true;
++}
++
+ bool ArgvMap::preParseFile(const char *fname, const string &arg)
+ {
+   ifstream f(fname);
+diff -urNad trunk/pdns/arguments.hh /tmp/dpep.6tmt0w/trunk/pdns/arguments.hh
+--- trunk/pdns/arguments.hh	2005-04-05 21:41:53.638089752 +0200
++++ /tmp/dpep.6tmt0w/trunk/pdns/arguments.hh	2005-04-09 17:04:28.212497696 +0200
+@@ -24,6 +24,7 @@
+ #include <vector>
+ #include <fstream>
+ #include <iostream>
++#include <dirent.h>
+ #include "misc.hh"
+ #include "ahuexception.hh"
+ 
+@@ -79,6 +80,7 @@
+   }
+   void ArgvMap::preParse(int &argc, char **argv, const string &arg); //!< use this to preparse a single var
+   bool ArgvMap::preParseFile(const char *fname, const string &arg); //!< use this to preparse a single var in configuration
++  bool ArgvMap::preParseDir(const char *dir, const string &arg); //!< use this to include a directory
+ 
+   bool file(const char *fname, bool lax=false); //!< Parses a file with parameters
+   bool laxFile(const char *fname) 
+diff -urNad trunk/pdns/receiver.cc /tmp/dpep.6tmt0w/trunk/pdns/receiver.cc
+--- trunk/pdns/receiver.cc	2005-04-05 21:41:53.723076832 +0200
++++ /tmp/dpep.6tmt0w/trunk/pdns/receiver.cc	2005-04-09 17:05:16.830106696 +0200
+@@ -472,12 +472,14 @@
+     loadModules();
+     BackendMakers().launch(arg()["launch"]); // vrooooom!
+ 
++    // Ugly.. but i don't know where else to include this directory
++    arg().set("include", "Directory with config files to include")="/etc/powerdns/pdns.d";
++
+     if(arg().mustDo("version")) {
+       cerr<<"Version: "VERSION", compiled on "<<__DATE__", "__TIME__<<endl;
+       exit(99);
+     }
+ 
+-    
+     if(arg().mustDo("help")) {
+       cerr<<"syntax:"<<endl<<endl;
+       cerr<<arg().helpstring(arg()["help"])<<endl;
