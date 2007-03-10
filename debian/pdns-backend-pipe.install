@@ -1,1 +1,3 @@
-usr/lib/powerdns/libpipebackend*
+debian/tmp/usr/lib/powerdns/libpipebackend.so* usr/lib/powerdns/
+debian/tmp/usr/lib/powerdns/libpipebackend.a usr/lib/powerdns/
+debian/lintian-overrides/pdns-backend-pipe usr/share/lintian/overrides/

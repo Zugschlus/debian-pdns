@@ -1,0 +1,24 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## literal-zone-file.dpatch by Christoph Haas <haas@debian.org>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: Patch for potential overflows when parsing zone files (bug #406465)
+
+@DPATCH@
+diff -urNad trunk~/pdns/backends/bind/zoneparser2.cc trunk/pdns/backends/bind/zoneparser2.cc
+--- trunk~/pdns/backends/bind/zoneparser2.cc	2006-03-16 20:59:39.000000000 +0100
++++ trunk/pdns/backends/bind/zoneparser2.cc	2007-03-08 21:54:19.000000000 +0100
+@@ -201,10 +201,12 @@
+   static string tline;
+   static string lastfirstword;
+   string::size_type pos=string::npos;
++  string::size_type contentpos=string::npos;
+ 
+   if(tline.empty()) {
++    contentpos=line.find_first_of("\"");
+     pos=line.find_first_of("(");
+-    if(pos!=string::npos) { // this is a line that continues
++    if((pos!=string::npos) && ((contentpos==string::npos) || (contentpos>pos))) { // this is a line that continues
+       tline=line.substr(0,pos);
+       return false;
+     }

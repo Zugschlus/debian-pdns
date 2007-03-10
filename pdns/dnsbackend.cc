@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -24,7 +24,6 @@
 
 #include <sys/types.h>
 #include "dnspacket.hh"
-
 
 string DNSBackend::getRemote(DNSPacket *p)
 {
@@ -64,7 +63,7 @@ int DNSBackend::getArgAsNum(const string &key)
 
 void BackendFactory::declare(const string &suffix, const string &param, const string &help, const string &value)
 {
-  string fullname=d_name+"-"+suffix+param;
+  string fullname=d_name+suffix+"-"+param;
   arg().set(fullname,help)=value;
 }
 
@@ -148,7 +147,7 @@ void BackendMakerClass::launch(const string &instr)
     stringtok(pparts,part,": ");
     module=pparts[0];
     if(pparts.size()>1)
-      name=pparts[1]+"-";
+      name="-"+pparts[1];
       
     if(d_repository.find(module)==d_repository.end()) {
       // this is *so* userfriendly
@@ -156,7 +155,6 @@ void BackendMakerClass::launch(const string &instr)
       if(d_repository.find(module)==d_repository.end())
 	throw ArgException("Trying to launch unknown backend '"+module+"'");
     }
-    
     d_repository[module]->declareArguments(name);
     d_instances.push_back(make_pair(module,name));
   }
@@ -207,10 +205,10 @@ vector<DNSBackend *>BackendMakerClass::all()
     \param domain Domain we want to get the SOA details of
     \param sd SOAData which is filled with the SOA details
 */
-bool DNSBackend::getSOA(const string &domain, SOAData &sd)
+bool DNSBackend::getSOA(const string &domain, SOAData &sd, DNSPacket *p)
 {
-  this->lookup(QType(QType::SOA),domain,0);
-  
+  this->lookup(QType(QType::SOA),domain,p);
+
   DNSResourceRecord rr;
 
   int hits=0;
@@ -221,7 +219,7 @@ bool DNSBackend::getSOA(const string &domain, SOAData &sd)
     sd.domain_id=rr.domain_id;
     sd.ttl=rr.ttl;
   }
-  
+
   if(!hits)
     return false;
 
@@ -239,8 +237,10 @@ bool DNSBackend::getSOA(const string &domain, SOAData &sd)
     DNSResourceRecord i;
     time_t newest=0;
 
-    if(!(this->list(domain, sd.domain_id))) 
-      throw AhuException("Backend error trying to determine magic serial number of zone '"+domain+"'");
+    if(!(this->list(domain, sd.domain_id))) {
+      DLOG(L<<Logger::Warning<<"Backend error trying to determine magic serial number of zone '"<<domain<<"'"<<endl);
+      return false;
+    }
   
     while(this->get(i)) {
       if(i.last_modified>newest)

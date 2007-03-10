@@ -1,11 +1,11 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2003  PowerDNS.COM BV
+    Copyright (C) 2002 - 2006  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as published by
+    the Free Software Foundation
+
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,7 +16,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
-// $Id: receiver.cc,v 1.13 2005/01/11 19:24:27 ahu Exp $
+
 #include <cstdio>
 #include <signal.h>
 #include <cstring>
@@ -417,7 +417,10 @@ int main(int argc, char **argv)
     
     arg().laxParse(argc,argv); // reparse so the commandline still wins
     if(!arg()["logging-facility"].empty()) {
+      
       int facility=arg().asNum("logging-facility");
+      if(!isdigit(arg()["logging-facility"][0]))
+	facility=-1;
       switch(facility) {
       case 0:
 	theL().setFacility(LOG_LOCAL0);
@@ -444,7 +447,7 @@ int main(int argc, char **argv)
 	theL().setFacility(LOG_LOCAL7);
 	break;
       default:
-	L<<Logger::Error<<"Unknown logging facility level"<<facility<<endl;
+	L<<Logger::Error<<"Unknown logging facility level '"<<arg()["logging-facility"]<<"'"<<endl;
 	break;
       }
     }
@@ -466,16 +469,26 @@ int main(int argc, char **argv)
       // never get here, guardian will reinvoke process
       cerr<<"Um, we did get here!"<<endl;
     }
+
+    if(arg().mustDo("version")) {
+      cerr<<"Version: "VERSION", compiled on "<<__DATE__", "__TIME__;
+#ifdef __GNUC__ 
+      cerr<<" with gcc version "<<__VERSION__;
+#endif
+      cout<<endl;
+      exit(99);
+    }
     
     // we really need to do work - either standalone or as an instance
     
     loadModules();
     BackendMakers().launch(arg()["launch"]); // vrooooom!
 
-    if(arg().mustDo("version")) {
-      cerr<<"Version: "VERSION", compiled on "<<__DATE__", "__TIME__<<endl;
+    if(!arg().getCommands().empty()) {
+      cerr<<"Fatal: non-option on the command line, perhaps a '--setting=123' statement missed the '='?"<<endl;
       exit(99);
     }
+
 
     
     if(arg().mustDo("help")) {
@@ -497,9 +510,14 @@ int main(int argc, char **argv)
 
       exit(99);
     }
+
+    if(!arg().asNum("local-port")) {
+      L<<Logger::Error<<"Unable to launch, binding to no port or port 0 makes no sense"<<endl;
+      exit(99); // this isn't going to fix itself either
+    }
     if(!BackendMakers().numLauncheable()) {
       L<<Logger::Error<<"Unable to launch, no backends configured for querying"<<endl;
-	exit(99); // this isn't going to fix itself either
+      exit(99); // this isn't going to fix itself either
     }    
     if(arg().mustDo("daemon")) {
       L.toConsole(Logger::None);
@@ -554,7 +572,11 @@ int main(int argc, char **argv)
   declareStats();
   DLOG(L<<Logger::Warning<<"Verbose logging in effect"<<endl);
   
-  L<<Logger::Warning<<"PowerDNS "<<VERSION<<" (C) 2001-2005 PowerDNS.COM BV ("<<__DATE__", "__TIME__<<") starting up"<<endl;
+  L<<Logger::Warning<<"PowerDNS "<<VERSION<<" (C) 2001-2006 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
+#ifdef __GNUC__
+  L<<", gcc "__VERSION__;
+#endif // add other compilers here
+  L<<") starting up"<<endl;
 
   L<<Logger::Warning<<"PowerDNS comes with ABSOLUTELY NO WARRANTY. "
     "This is free software, and you are welcome to redistribute it "

@@ -1,0 +1,138 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## auto-soa-calculation-in-ldapbackend.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: No description.
+
+@DPATCH@
+diff -urNad trunk~/modules/ldapbackend/ldapbackend.cc trunk/modules/ldapbackend/ldapbackend.cc
+--- trunk~/modules/ldapbackend/ldapbackend.cc	2007-03-10 00:16:40.432827770 +0100
++++ trunk/modules/ldapbackend/ldapbackend.cc	2007-03-10 00:16:40.938750858 +0100
+@@ -22,6 +22,9 @@
+ 		m_default_ttl = arg().asNum( "default-ttl" );
+ 		m_myname = "[LdapBackend]";
+ 
++		// we need UTC time for timestamps
++		setenv( "TZ", "", 1 ); tzset();
++
+ 		setArgPrefix( "ldap" + suffix );
+ 
+ 		m_getdn = false;
+@@ -192,7 +195,7 @@
+ {
+ 	string filter, attr, qesc;
+ 	char** attributes = ldap_attrany + 1;   // skip associatedDomain
+-	char* attronly[] = { NULL, "dNSTTL", NULL };
++	char* attronly[] = { NULL, "dNSTTL", "modifyTimestamp", NULL };
+ 
+ 
+ 	qesc = toLower( m_pldap->escape( qname ) );
+@@ -220,7 +223,7 @@
+ 	vector<string> parts;
+ 	string filter, attr, qesc;
+ 	char** attributes = ldap_attrany + 1;   // skip associatedDomain
+-	char* attronly[] = { NULL, "dNSTTL", NULL };
++	char* attronly[] = { NULL, "dNSTTL", "modifyTimestamp", NULL };
+ 
+ 
+ 	qesc = toLower( m_pldap->escape( qname ) );
+@@ -263,7 +266,7 @@
+ {
+ 	string filter, attr, qesc, dn;
+ 	char** attributes = ldap_attrany + 1;   // skip associatedDomain
+-	char* attronly[] = { NULL, "dNSTTL", NULL };
++	char* attronly[] = { NULL, "dNSTTL", "modifyTimestamp", NULL };
+ 	vector<string>::reverse_iterator i;
+ 	vector<string> parts;
+ 
+@@ -292,11 +295,11 @@
+ }
+ 
+ 
+-
+ inline bool LdapBackend::prepare()
+ {
+ 	m_adomains.clear();
+ 	m_ttl = m_default_ttl;
++	m_last_modified = 0;
+ 
+ 	if( m_result.count( "dNSTTL" ) && !m_result["dNSTTL"].empty() )
+ 	{
+@@ -311,6 +314,15 @@
+ 		m_result.erase( "dNSTTL" );
+ 	}
+ 
++	if( m_result.count( "modifyTimestamp" ) && !m_result["modifyTimestamp"].empty() )
++	{
++		if( ( m_last_modified = str2tstamp( m_result["modifyTimestamp"][0] ) ) == 0 )
++		{
++			L << Logger::Warning << m_myname << " Invalid modifyTimestamp for " << m_qname << ": " << m_result["modifyTimestamp"][0] << endl;
++		}
++		m_result.erase( "modifyTimestamp" );
++	}
++
+ 	if( !(this->*m_prepare_fcnt)() )
+ 	{
+ 		return false;
+@@ -407,6 +419,7 @@
+ 						rr.qname = *m_adomain;
+ 						rr.priority = 0;
+ 						rr.ttl = m_ttl;
++						rr.last_modified = m_last_modified;
+ 
+ 						if( qt.getCode() == QType::MX || qt.getCode() == QType::SRV )   // Priority, e.g. 10 smtp.example.com
+ 						{
+diff -urNad trunk~/modules/ldapbackend/ldapbackend.hh trunk/modules/ldapbackend/ldapbackend.hh
+--- trunk~/modules/ldapbackend/ldapbackend.hh	2006-03-16 21:18:02.000000000 +0100
++++ trunk/modules/ldapbackend/ldapbackend.hh	2007-03-10 00:16:40.939750706 +0100
+@@ -76,6 +76,7 @@
+ 	"nAPTRRecord",
+ //	"kXRecord",
+ //	"certRecord",
++	"modifyTimestamp",
+ 	NULL
+ };
+ 
+@@ -89,6 +90,7 @@
+ 	uint32_t m_ttl;
+ 	uint32_t m_default_ttl;
+ 	unsigned int m_axfrqlen;
++	time_t m_last_modified;
+ 	string m_myname;
+ 	string m_qname;
+ 	PowerLDAP* m_pldap;
+diff -urNad trunk~/modules/ldapbackend/utils.hh trunk/modules/ldapbackend/utils.hh
+--- trunk~/modules/ldapbackend/utils.hh	2005-11-01 13:10:51.000000000 +0100
++++ trunk/modules/ldapbackend/utils.hh	2007-03-10 00:16:40.939750706 +0100
+@@ -1,5 +1,7 @@
+ #include <string>
+ #include <vector>
++#include <time.h>
++#include <stdlib.h>
+ #include <pdns/misc.hh>
+ 
+ 
+@@ -131,4 +133,23 @@
+ 	return subject;
+ }
+ 
++
++/*
++ *  Convert a LDAP time string to a time_t. Return 0 if unable to convert
++ */
++
++inline time_t str2tstamp( const string& str )
++{
++	char* tmp;
++	struct tm tm;
++
++	tmp =  strptime( str.c_str(), "%Y%m%d%H%M%SZ", &tm );
++	if( tmp != NULL && *tmp == 0 )
++	{
++		return mktime( &tm );
++	}
++
++	return 0;
++}
++
+ #endif

@@ -1,4 +1,4 @@
-// $Id: DB2Exception.hh,v 1.1 2002/11/29 11:44:21 ahu Exp $
+// $Id: DB2Exception.hh 477 2005-09-03 18:15:37Z ahu $
 
 #ifndef DB2EXCEPTION_HH
 #define DB2EXCEPTION_HH

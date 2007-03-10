@@ -1,2 +1,3 @@
-usr/lib/powerdns/libmysqlbackend*
-usr/lib/powerdns/libgmysqlbackend*
+debian/tmp/usr/lib/powerdns/libgmysqlbackend.so* usr/lib/powerdns/
+debian/tmp/usr/lib/powerdns/libgmysqlbackend.a usr/lib/powerdns/
+debian/lintian-overrides/pdns-backend-mysql usr/share/lintian/overrides/

@@ -49,6 +49,15 @@ splitconfig() {
 
 case "$1" in
   configure)
+    if [ -z "`getent group pdns`" ]; then
+      addgroup --quiet --system pdns
+    fi
+    if [ -z "`getent passwd pdns`" ]; then
+      echo -n "Creating user and group pdns..."
+      adduser --quiet --system --home /var/spool/powerdns --shell /bin/false --ingroup pdns --disabled-password --disabled-login --gecos "PowerDNS" pdns
+      echo "done"
+    fi
+
     # Fill the temporary files with config items.
     cat /usr/share/pdns-server/pdns.conf > $PDNSCONFTEMP
     cat /usr/share/pdns-server/pdns.local > $PDNSLOCALTEMP
@@ -89,8 +98,10 @@ case "$1" in
 
     # There could be passwords in these files. PowerDNS first reads the
     # configuration files and then drop root privileges.
-    chmod 0600 $PDNSCONF $PDNSLOCAL
-    chmod 0700 $PDNSDIR
+    if [ -z "$2" ]; then
+      chmod 0600 $PDNSCONF $PDNSLOCAL
+      chmod 0700 $PDNSDIR
+    fi
   ;;
 
   abort-upgrade|abort-remove|abort-deconfigure)
@@ -105,9 +116,9 @@ esac
 if [ -x "/etc/init.d/pdns" ]; then
   update-rc.d pdns defaults 20 85 >/dev/null || exit 0
   if [ -x /usr/sbin/invoke-rc.d ]; then
-    invoke-rc.d pdns start || exit 0
+    invoke-rc.d pdns restart || exit $?
   else
-    /etc/init.d/pdns start || exit 0
+    /etc/init.d/pdns restart || exit $?
   fi
 fi
 

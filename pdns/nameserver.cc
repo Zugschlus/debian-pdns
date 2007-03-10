@@ -1,10 +1,9 @@
 /*
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as 
+    published by the Free Software Foundation.
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,7 +14,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
-// $Id: nameserver.cc,v 1.8 2004/01/16 22:18:12 ahu Exp $ 
+
 #include "utility.hh"
 #include <cstdio>
 #include <cstring>
@@ -37,11 +36,11 @@
 extern StatBag S;
 
 /** \mainpage 
-    ahudns is a very versatile nameserver that can answer questions from different backends. To implement your
+    PowerDNS is a very versatile nameserver that can answer questions from different backends. To implement your
     own backend, see the documentation for the DNSBackend class.
 
     \section copyright Copyright and License
-    AhuDNS is (C) 2002 PowerDNS BV. It is distributed according to the terms of the General Public License version 2.
+    PowerDNS is (C) 2005 PowerDNS.COM BV. It is distributed according to the terms of the General Public License version 2.
 
     \section overview High level overview
 
@@ -67,16 +66,12 @@ extern StatBag S;
     each taking many miliseconds to complete. This is why the qthread() first checks the PacketCache to see if an answer is known to a packet
     asking this question. If so, the entire Distributor is shunted, and the answer is sent back *directly*, within a few microseconds.
 
-    In turn, the athread() offers each outgoing packet to the PacketCache for possible inclusion.
-
     \section misc Miscellaneous
     Configuration details are available via the ArgvMap instance arg. Statistics are created by making calls to the StatBag object called S. 
     These statistics are made available via the UeberBackend on the same socket that is used for dynamic module commands.
 
     \section Main Main 
     The main() of PowerDNS can be found in receiver.cc - start reading there for further insights into the operation of the nameserver
-
-
 */
 
 void UDPNameserver::bindIPv4()
@@ -122,7 +117,7 @@ void UDPNameserver::bindIPv4()
     }
     d_highfd=max(s,d_highfd);
     d_sockets.push_back(s);
-    L<<Logger::Error<<"UDP server bound to "<<inet_ntoa(locala.sin_addr)<<":"<<arg()["local-port"]<<endl;
+    L<<Logger::Error<<"UDP server bound to "<<inet_ntoa(locala.sin_addr)<<":"<<arg().asNum("local-port")<<endl;
     FD_SET(s, &d_rfds);
   }
 }
@@ -173,7 +168,7 @@ void UDPNameserver::bindIPv6()
     }
     d_highfd=max(s,d_highfd);
     d_sockets.push_back(s);
-    L<<Logger::Error<<"UDPv6 server bound to "<<localname<<":"<<arg()["local-port"]<<endl;
+    L<<Logger::Error<<"UDPv6 server bound to ["<<localname<<"]:"<<arg().asNum("local-port")<<endl;
     FD_SET(s, &d_rfds);
   }
 #endif // WIN32
@@ -201,7 +196,7 @@ void UDPNameserver::send(DNSPacket *p)
     p=new DNSPacket(*p);
     p->truncate(512);
     buffer=p->getData();
-    if(sendto(p->getSocket(),buffer,p->len,0,(struct sockaddr *)(p->remote),p->d_socklen)<0)
+    if(sendto(p->getSocket(),buffer,p->len,0,(struct sockaddr *)(p->remote),p->d_socklen)<0) 
       L<<Logger::Error<<"Error sending reply with sendto (socket="<<p->getSocket()<<"): "<<strerror(errno)<<endl;
     delete p;
   }

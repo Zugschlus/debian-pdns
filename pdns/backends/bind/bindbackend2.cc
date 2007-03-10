@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002-2003  PowerDNS.COM BV
+    Copyright (C) 2002-2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -15,7 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
-// $Id: bindbackend2.cc,v 1.6 2003/10/04 14:15:46 ahu Exp $ 
+
 #include <errno.h>
 #include <string>
 #include <map>
@@ -37,7 +37,6 @@ using namespace std;
 #include "bindparser.hh"
 #include "logger.hh"
 #include "arguments.hh"
-#include "huffman.hh"
 #include "qtype.hh"
 #include "misc.hh"
 #include "dynlistener.hh"
@@ -46,11 +45,25 @@ using namespace std;
 
 /** new scheme of things:
     we have zone-id map
-    a zone-id has a vector of DNSResourceRecords */
+    a zone-id has a vector of DNSResourceRecords 
+    on start of query, we find the best zone to answer from
+*/
 
-map<string,int> Bind2Backend::s_name_id_map;
-map<u_int32_t,BB2DomainInfo* > Bind2Backend::s_id_zone_map;
+Bind2Backend::name_id_map_t Bind2Backend::s_name_id_map;
+
+// this map contains BB2DomainInfo structs, each of which contains a *pointer* to domain data
+Bind2Backend::id_zone_map_t Bind2Backend::s_id_zone_map, Bind2Backend::s_staging_zone_map;
+
+/* the model is that everything works from the s_id_zone_map, which is left alone most of the time.
+   
+   Any updates which might fail, build a new zone map in s_staging_zone_map
+   Then we swap atomically, and clear the copy.
+
+   Zone id's are kept constant so s_name_id_map doesn't need to be updated, except on removal or addition.
+*/
+
 int Bind2Backend::s_first=1;
+
 pthread_mutex_t Bind2Backend::s_startup_lock=PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t Bind2Backend::s_zonemap_lock=PTHREAD_MUTEX_INITIALIZER;
 
@@ -61,11 +74,7 @@ BB2DomainInfo::BB2DomainInfo()
   d_loaded=false;
   d_last_check=0;
   d_checknow=false;
-  d_rwlock=new pthread_rwlock_t;
-  d_status="Seen in bind configuration";
-  d_confcount=0;
-  //  cout<<"Generated a new bbdomaininfo: "<<(void*)d_rwlock<<"/"<<getpid()<<endl;
-  pthread_rwlock_init(d_rwlock,0);
+  d_status="Unknown";
 }
 
 void BB2DomainInfo::setCheckInterval(time_t seconds)
@@ -78,7 +87,7 @@ bool BB2DomainInfo::current()
   if(d_checknow)
     return false;
 
-  if(!d_checknow && !d_checkinterval || (time(0)-d_lastcheck<d_checkinterval) || d_filename.empty())
+  if(!d_checkinterval || (time(0) - d_lastcheck < d_checkinterval ) || d_filename.empty())
     return true;
 
   return (getCtime()==d_ctime);
@@ -102,20 +111,19 @@ void BB2DomainInfo::setCtime()
   d_ctime=buf.st_ctime;
 }
 
-void Bind2Backend::setNotified(u_int32_t id, u_int32_t serial)
+void Bind2Backend::setNotified(uint32_t id, uint32_t serial)
 {
-  s_id_zone_map[id]->d_lastnotified=serial;
+  s_id_zone_map[id].d_lastnotified=serial;
 }
 
-void Bind2Backend::setFresh(u_int32_t domain_id)
+void Bind2Backend::setFresh(uint32_t domain_id)
 {
-  s_id_zone_map[domain_id]->d_last_check=time(0);
+  s_id_zone_map[domain_id].d_last_check=time(0);
 }
 
 bool Bind2Backend::startTransaction(const string &qname, int id)
 {
-
-  BB2DomainInfo &bbd=*s_id_zone_map[d_transaction_id=id];
+  BB2DomainInfo &bbd=s_id_zone_map[d_transaction_id=id];
   d_transaction_tmpname=bbd.d_filename+"."+itoa(random());
   d_of=new ofstream(d_transaction_tmpname.c_str());
   if(!*d_of) {
@@ -127,7 +135,6 @@ bool Bind2Backend::startTransaction(const string &qname, int id)
   
   *d_of<<"; Written by PowerDNS, don't edit!"<<endl;
   *d_of<<"; Zone '"+bbd.d_name+"' retrieved from master "<<bbd.d_master<<endl<<"; at "<<nowTime()<<endl;
-  bbd.lock();
 
   return true;
 }
@@ -136,12 +143,12 @@ bool Bind2Backend::commitTransaction()
 {
   delete d_of;
   d_of=0;
-  if(rename(d_transaction_tmpname.c_str(),s_id_zone_map[d_transaction_id]->d_filename.c_str())<0)
-    throw DBException("Unable to commit (rename to: '"+s_id_zone_map[d_transaction_id]->d_filename+"') AXFRed zone: "+stringerror());
+  if(rename(d_transaction_tmpname.c_str(),s_id_zone_map[d_transaction_id].d_filename.c_str())<0)
+    throw DBException("Unable to commit (rename to: '"+s_id_zone_map[d_transaction_id].d_filename+"') AXFRed zone: "+stringerror());
 
 
-  queueReload(s_id_zone_map[d_transaction_id]);
-  s_id_zone_map[d_transaction_id]->unlock();
+  queueReload(&s_id_zone_map[d_transaction_id]);
+
   d_transaction_id=0;
 
   return true;
@@ -150,7 +157,6 @@ bool Bind2Backend::commitTransaction()
 bool Bind2Backend::abortTransaction()
 {
   if(d_transaction_id) {
-    s_id_zone_map[d_transaction_id]->unlock();
     delete d_of;
     d_of=0;
     unlink(d_transaction_tmpname.c_str());
@@ -163,14 +169,14 @@ bool Bind2Backend::abortTransaction()
 bool Bind2Backend::feedRecord(const DNSResourceRecord &r)
 {
   string qname=r.qname;
-  string domain=s_id_zone_map[d_transaction_id]->d_name;
+  string domain=s_id_zone_map[d_transaction_id].d_name;
 
   if(!stripDomainSuffix(&qname,domain)) 
     throw DBException("out-of-zone data '"+qname+"' during AXFR of zone '"+domain+"'");
 
   string content=r.content;
 
-  // SOA needs stripping too! XXX FIXME
+  // SOA needs stripping too! XXX FIXME - also, this should not be here I think
   switch(r.qtype.getCode()) {
   case QType::TXT:
     *d_of<<qname<<"\t"<<r.ttl<<"\t"<<r.qtype.getName()<<"\t\""<<r.content<<"\""<<endl;
@@ -197,40 +203,39 @@ bool Bind2Backend::feedRecord(const DNSResourceRecord &r)
 void Bind2Backend::getUpdatedMasters(vector<DomainInfo> *changedDomains)
 {
   SOAData soadata;
-  for(map<u_int32_t,BB2DomainInfo*>::iterator i=s_id_zone_map.begin();i!=s_id_zone_map.end();++i) {
-    if(!i->second->d_master.empty())
+  for(id_zone_map_t::iterator i=s_id_zone_map.begin();i!=s_id_zone_map.end();++i) {
+    if(!i->second.d_master.empty())
       continue;
     soadata.serial=0;
     try {
-      getSOA(i->second->d_name,soadata); // we might not *have* a SOA yet
+      getSOA(i->second.d_name,soadata); // we might not *have* a SOA yet
     }
     catch(...){}
     DomainInfo di;
     di.id=i->first;
     di.serial=soadata.serial;
-    di.zone=i->second->d_name;
-    di.last_check=i->second->d_last_check;
+    di.zone=i->second.d_name;
+    di.last_check=i->second.d_last_check;
     di.backend=this;
     di.kind=DomainInfo::Master;
-    if(!i->second->d_lastnotified)            // don't do notification storm on startup 
-      i->second->d_lastnotified=soadata.serial;
+    if(!i->second.d_lastnotified)            // don't do notification storm on startup 
+      i->second.d_lastnotified=soadata.serial;
     else
-      if(soadata.serial!=i->second->d_lastnotified)
+      if(soadata.serial!=i->second.d_lastnotified)
 	changedDomains->push_back(di);
-    
   }
 }
 
 void Bind2Backend::getUnfreshSlaveInfos(vector<DomainInfo> *unfreshDomains)
 {
-  for(map<u_int32_t,BB2DomainInfo*>::const_iterator i=s_id_zone_map.begin();i!=s_id_zone_map.end();++i) {
-    if(i->second->d_master.empty())
+  for(id_zone_map_t::const_iterator i=s_id_zone_map.begin();i!=s_id_zone_map.end();++i) {
+    if(i->second.d_master.empty())
       continue;
     DomainInfo sd;
     sd.id=i->first;
-    sd.zone=i->second->d_name;
-    sd.master=i->second->d_master;
-    sd.last_check=i->second->d_last_check;
+    sd.zone=i->second.d_name;
+    sd.master=i->second.d_master;
+    sd.last_check=i->second.d_last_check;
     sd.backend=this;
     sd.kind=DomainInfo::Slave;
     SOAData soadata;
@@ -239,7 +244,7 @@ void Bind2Backend::getUnfreshSlaveInfos(vector<DomainInfo> *unfreshDomains)
     soadata.serial=0;
     soadata.db=(DNSBackend *)-1; // not sure if this is useful, inhibits any caches that might be around
     try {
-      getSOA(i->second->d_name,soadata); // we might not *have* a SOA yet
+      getSOA(i->second.d_name,soadata); // we might not *have* a SOA yet
     }
     catch(...){}
     sd.serial=soadata.serial;
@@ -250,20 +255,20 @@ void Bind2Backend::getUnfreshSlaveInfos(vector<DomainInfo> *unfreshDomains)
 
 bool Bind2Backend::getDomainInfo(const string &domain, DomainInfo &di)
 {
-  for(map<u_int32_t,BB2DomainInfo*>::const_iterator i=s_id_zone_map.begin();i!=s_id_zone_map.end();++i) {
-    if(i->second->d_name==domain) {
+  for(id_zone_map_t::const_iterator i=s_id_zone_map.begin();i!=s_id_zone_map.end();++i) {
+    if(i->second.d_name==domain) {
       di.id=i->first;
       di.zone=domain;
-      di.master=i->second->d_master;
-      di.last_check=i->second->d_last_check;
+      di.master=i->second.d_master;
+      di.last_check=i->second.d_last_check;
       di.backend=this;
-      di.kind=i->second->d_master.empty() ? DomainInfo::Master : DomainInfo::Slave;
+      di.kind=i->second.d_master.empty() ? DomainInfo::Master : DomainInfo::Slave;
       di.serial=0;
       try {
 	SOAData sd;
 	sd.serial=0;
 	
-	getSOA(i->second->d_name,sd); // we might not *have* a SOA yet
+	getSOA(i->second.d_name,sd); // we might not *have* a SOA yet
 	di.serial=sd.serial;
       }
       catch(...){}
@@ -275,6 +280,7 @@ bool Bind2Backend::getDomainInfo(const string &domain, DomainInfo &di)
 }
 
 
+//! lowercase, strip trailing .
 static string canonic(string ret)
 {
   string::iterator i;
@@ -282,7 +288,7 @@ static string canonic(string ret)
   for(i=ret.begin();
       i!=ret.end();
       ++i)
-    ; // *i=*i; //tolower(*i);
+    *i=tolower(*i);
 
 
   if(*(i-1)=='.')
@@ -290,99 +296,112 @@ static string canonic(string ret)
   return ret;
 }
 
-map<unsigned int, BB2DomainInfo*> nbbds;
-/** This function adds a record to a domain with a certain id. */
-void Bind2Backend::insert(int id, const string &qnameu, const string &qtype, const string &content, int ttl=300, int prio=25)
+static Bind2Backend *us;
+
+static void InsertionCallback(unsigned int domain_id, const string &domain, const string &qtype, const string &content, int ttl, int prio)
 {
-  DNSResourceRecord rr;
-  rr.domain_id=id;
-  rr.qname=canonic(qnameu);
-  rr.qtype=qtype;
-  rr.content=content;
-  rr.ttl=ttl;
-  rr.priority=prio;
-  nbbds[id]->d_records->push_back(rr);
+  us->insert(domain_id, domain, qtype, content, ttl, prio);
 }
 
+set<string> contents;
 
-static Bind2Backend *us;
+/** This function adds a record to a domain with a certain id. 
+    Much of the complication is due to the efforts to benefit from std::string reference counting copy on write semantics */
+void Bind2Backend::insert(int id, const string &qnameu, const string &qtype, const string &content, int ttl=300, int prio=25)
+{
+  Bind2DNSRecord bdr;
+
+  BB2DomainInfo& bb2=s_staging_zone_map[id];
+
+  vector<Bind2DNSRecord>& records=*bb2.d_records;
+
+  bdr.qname=toLower(canonic(qnameu));
+  if(bdr.qname==toLower(bb2.d_name))
+    bdr.qname.clear();
+  else if(bdr.qname.length() > bb2.d_name.length())
+    bdr.qname.resize(bdr.qname.length() - (bb2.d_name.length() + 1));
+  else
+    throw AhuException("Trying to insert non-zone data, name='"+bdr.qname+"', zone='"+s_staging_zone_map[id].d_name+"'");
+
+  bdr.qname.swap(bdr.qname);
+
+  if(!records.empty() && bdr.qname==(records.end()-1)->qname)
+    bdr.qname=(records.end()-1)->qname;
+
+  bdr.qtype=QType(qtype.c_str()).getCode();
+  bdr.content=canonic(content); // I think this is wrong, the zoneparser should not come up with . terminated stuff XXX FIXME
+  set<string>::const_iterator i=contents.find(bdr.content);
+  if(i!=contents.end())
+   bdr.content=*i;
+  else {
+    contents.insert(bdr.content);
+  }
+
+  bdr.ttl=ttl;
+  bdr.priority=prio;
+
+  records.push_back(bdr);
+}
 
 void Bind2Backend::reload()
 {
-  for(map<u_int32_t,BB2DomainInfo*>::iterator i=us->s_id_zone_map.begin();i!=us->s_id_zone_map.end();++i) 
-    i->second->d_checknow=true;
+  for(id_zone_map_t::iterator i=us->s_id_zone_map.begin();i!=us->s_id_zone_map.end();++i) 
+    i->second.d_checknow=true;
 }
 
 string Bind2Backend::DLReloadNowHandler(const vector<string>&parts, Utility::pid_t ppid)
 {
   ostringstream ret;
-  bool doReload=false;
-  for(map<u_int32_t,BB2DomainInfo*>::iterator j=us->s_id_zone_map.begin();j!=us->s_id_zone_map.end();++j) {
-    doReload=false;
-    if(parts.size()==1)
-      doReload=true;
-    else 
-      for(vector<string>::const_iterator i=parts.begin()+1;i<parts.end();++i)                 // O(N) badness XXX FIXME
-	if(*i==j->second->d_name) {
-	  doReload=true;
-	  break;
-	}
-    
-    if(doReload) {
-      j->second->lock();
 
-      us->queueReload(j->second);
-      j->second->unlock();
-      ret<<j->second->d_name<< (j->second->d_loaded ? "": "[rejected]") <<"\t"<<j->second->d_status<<"\n";
+  for(vector<string>::const_iterator i=parts.begin()+1;i<parts.end();++i) {
+    if(s_name_id_map.count(*i)) {
+      BB2DomainInfo& bbd=s_id_zone_map[s_name_id_map[*i]];
+      
+      us->queueReload(&bbd);
+      ret<< *i << ": "<< (bbd.d_loaded ? "": "[rejected]") <<"\t"<<bbd.d_status<<"\n";      
     }
-    doReload=false;
-  }
-	
+    else
+      ret<< *i << " no such domain\n";
+  }    
+  if(ret.str().empty())
+    ret<<"no domains reloaded";
   return ret.str();
 }
 
 
 string Bind2Backend::DLDomStatusHandler(const vector<string>&parts, Utility::pid_t ppid)
 {
-  string ret;
-  bool doPrint=false;
-  for(map<u_int32_t,BB2DomainInfo*>::iterator j=us->s_id_zone_map.begin();j!=us->s_id_zone_map.end();++j) {
-    ostringstream line;
-    doPrint=false;
-    if(parts.size()==1)
-      doPrint=true;
-    else 
-      for(vector<string>::const_iterator i=parts.begin()+1;i<parts.end();++i)                 // O(N) badness XXX FIXME
-	if(*i==j->second->d_name) {
-	  doPrint=true;
-	  break;
-	}
-    
-    if(doPrint)
-      line<<j->second->d_name<< (j->second->d_loaded ? "": "[rejected]") <<"\t"<<j->second->d_status<<"\n";
-    doPrint=false;
-    ret+=line.str();
+  ostringstream ret;
+  if(parts.size() > 1) {
+    for(vector<string>::const_iterator i=parts.begin()+1;i<parts.end();++i) {
+      if(s_name_id_map.count(*i)) {
+	BB2DomainInfo& bbd=s_id_zone_map[s_name_id_map[*i]];
+	ret<< *i << ": "<< (bbd.d_loaded ? "": "[rejected]") <<"\t"<<bbd.d_status<<"\n";      
+    }
+      else
+	ret<< *i << " no such domain\n";
+    }    
   }
-	
-  return ret;
+  else
+    for(id_zone_map_t::iterator i=us->s_id_zone_map.begin(); i!=us->s_id_zone_map.end(); ++i) 
+      ret<< i->second.d_name << ": "<< (i->second.d_loaded ? "": "[rejected]") <<"\t"<<i->second.d_status<<"\n";      
+
+  if(ret.str().empty())
+    ret<<"no domains passed";
+
+  return ret.str();
 }
 
 
 string Bind2Backend::DLListRejectsHandler(const vector<string>&parts, Utility::pid_t ppid)
 {
   ostringstream ret;
-  for(map<u_int32_t,BB2DomainInfo*>::iterator j=us->s_id_zone_map.begin();j!=us->s_id_zone_map.end();++j) 
-    if(!j->second->d_loaded)
-      ret<<j->second->d_name<<"\t"<<j->second->d_status<<endl;
+  for(id_zone_map_t::iterator j=us->s_id_zone_map.begin();j!=us->s_id_zone_map.end();++j) 
+    if(!j->second.d_loaded)
+      ret<<j->second.d_name<<"\t"<<j->second.d_status<<endl;
 	
   return ret.str();
 }
-
-static void callback(unsigned int domain_id, const string &domain, const string &qtype, const string &content, int ttl, int prio)
-{
-  us->insert(domain_id,domain,qtype,content,ttl,prio);
-}
-
 
 
 Bind2Backend::Bind2Backend(const string &suffix)
@@ -390,8 +409,8 @@ Bind2Backend::Bind2Backend(const string &suffix)
 #if __GNUC__ >= 3
     ios_base::sync_with_stdio(false);
 #endif
-  d_logprefix="[bind2"+suffix+"backend]";
-  setArgPrefix("bind2"+suffix);
+  d_logprefix="[bind"+suffix+"backend]";
+  setArgPrefix("bind"+suffix);
   Lock l(&s_startup_lock);
 
   d_transaction_id=0;
@@ -401,40 +420,14 @@ Bind2Backend::Bind2Backend(const string &suffix)
    
   s_first=0;
   
-  if(mustDo("example-zones")) {
-    insert(0,"www.example.com","A","1.2.3.4");
-    insert(0,"example.com","SOA","ns1.example.com hostmaster.example.com");
-    insert(0,"example.com","NS","ns1.example.com",86400);
-    insert(0,"example.com","NS","ns2.example.com",86400);
-    insert(0,"example.com","MX","mail.example.com",3600,25);
-    insert(0,"example.com","MX","mail1.example.com",3600,25);
-    insert(0,"mail.example.com","A","4.3.2.1");
-    insert(0,"mail1.example.com","A","5.4.3.2");
-    insert(0,"ns1.example.com","A","4.3.2.1");
-    insert(0,"ns2.example.com","A","5.4.3.2");
-      
-    for(int i=0;i<1000;i++)
-      insert(0,"host-"+itoa(i)+".example.com","A","2.3.4.5");
-
-    s_id_zone_map[0]=new BB2DomainInfo;
-    BB2DomainInfo &bbd=*s_id_zone_map[0];
-    bbd.d_name="example.com";
-    bbd.d_filename="";
-    bbd.d_id=0;
-    s_id_zone_map[0]->d_loaded=true;
-    s_id_zone_map[0]->d_status="parsed into memory at "+nowTime();
-  }
-  
   loadConfig();
-  
 
   extern DynListener *dl;
   us=this;
-  dl->registerFunc("BIND2-RELOAD-NOW", &DLReloadNowHandler);
-  dl->registerFunc("BIND2-DOMAIN-STATUS", &DLDomStatusHandler);
-  dl->registerFunc("BIND2-LIST-REJECTS", &DLListRejectsHandler);
+  dl->registerFunc("BIND-RELOAD-NOW", &DLReloadNowHandler);
+  dl->registerFunc("BIND-DOMAIN-STATUS", &DLDomStatusHandler);
+  dl->registerFunc("BIND-LIST-REJECTS", &DLListRejectsHandler);
 }
-
 
 void Bind2Backend::rediscover(string *status)
 {
@@ -447,7 +440,7 @@ void Bind2Backend::loadConfig(string* status)
   Lock l(&s_zonemap_lock);
   
   static int domain_id=1;
-  nbbds.clear();
+  s_staging_zone_map.clear();
   if(!getArg("config").empty()) {
     BindParser BP;
     try {
@@ -457,15 +450,17 @@ void Bind2Backend::loadConfig(string* status)
       L<<Logger::Error<<"Error parsing bind configuration: "<<ae.reason<<endl;
       throw;
     }
-    
+
     ZoneParser ZP;
       
     vector<BindDomainInfo> domains=BP.getDomains();
     
     us=this;
 
-    ZP.setDirectory(BP.getDirectory());
-    ZP.setCallback(&callback);  
+    d_binddirectory=BP.getDirectory();
+    ZP.setDirectory(d_binddirectory);
+    ZP.setCallback(&InsertionCallback);  
+
     L<<Logger::Warning<<d_logprefix<<" Parsing "<<domains.size()<<" domain(s), will report when done"<<endl;
     
     int rejected=0;
@@ -473,44 +468,56 @@ void Bind2Backend::loadConfig(string* status)
 
     for(vector<BindDomainInfo>::const_iterator i=domains.begin();
 	i!=domains.end();
-	++i)
+	++i) 
       {
-	BB2DomainInfo *bbd=0;
 	if(i->type!="master" && i->type!="slave") {
 	  L<<Logger::Warning<<d_logprefix<<" Warning! Skipping '"<<i->type<<"' zone '"<<i->name<<"'"<<endl;
 	  continue;
 	}
-	map<unsigned int, BB2DomainInfo*>::const_iterator j=s_id_zone_map.begin();
-	for(;j!=s_id_zone_map.end();++j)
-	  if(j->second->d_name==i->name) {
-	    bbd=j->second;
-	    break;
-	  }
-	if(j==s_id_zone_map.end()) { // entirely new
-	  bbd=new BB2DomainInfo;
-	  bbd->d_records=new vector<DNSResourceRecord>;
-	  
+
+	BB2DomainInfo* bbd=0;
+
+	if(!s_name_id_map.count(i->name)) { // is it fully new?
+	  bbd=&s_staging_zone_map[domain_id];
 	  bbd->d_id=domain_id++;
 	  s_name_id_map[i->name]=bbd->d_id;
+
+	  // this isn't necessary, we do this on the actual load
+	  //	  bbd->d_records=shared_ptr<vector<Bind2DNSRecord> > (new vector<Bind2DNSRecord>);
+
 	  bbd->setCheckInterval(getArgAsNum("check-interval"));
 	  bbd->d_lastnotified=0;
 	  bbd->d_loaded=false;
 	}
+	else {  // no, we knew about it already
+	  s_staging_zone_map[s_name_id_map[i->name]]=s_id_zone_map[s_name_id_map[i->name]];
+	  bbd=&s_staging_zone_map[s_name_id_map[i->name]];
+	}
+	
 
+	// overwrite what we knew about the domain
 	bbd->d_name=i->name;
 	bbd->d_filename=i->filename;
 	bbd->d_master=i->master;
 	
-	nbbds[bbd->d_id]=bbd; 
-	if(!bbd->d_loaded) {
+	if(!bbd->d_loaded || !bbd->current()) {
 	  L<<Logger::Info<<d_logprefix<<" parsing '"<<i->name<<"' from file '"<<i->filename<<"'"<<endl;
 	  
 	  try {
-	    ZP.parse(i->filename,i->name,bbd->d_id); // calls callback for us
-	    nbbds[bbd->d_id]->setCtime();
-	    nbbds[bbd->d_id]->d_loaded=true;          // does this perform locking for us?
-	    nbbds[bbd->d_id]->d_status="parsed into memory at "+nowTime();
-	    
+	    // we need to allocate a new vector so we don't kill the original
+	    bbd->d_records=shared_ptr<vector<Bind2DNSRecord> > (new vector<Bind2DNSRecord>); 
+
+	    ZP.parse(i->filename, i->name, bbd->d_id); // calls callback for us
+	    L<<Logger::Info<<d_logprefix<<" sorting '"<<i->name<<"'"<<endl;
+
+	    sort(s_staging_zone_map[bbd->d_id].d_records->begin(), s_staging_zone_map[bbd->d_id].d_records->end());
+
+	    s_staging_zone_map[bbd->d_id].setCtime();
+	    s_staging_zone_map[bbd->d_id].d_loaded=true; 
+	    s_staging_zone_map[bbd->d_id].d_status="parsed into memory at "+nowTime();
+
+	    contents.clear();
+	    //  s_staging_zone_map[bbd->d_id].d_records->swap(*s_staging_zone_map[bbd->d_id].d_records);
 	  }
 	  catch(AhuException &ae) {
 	    ostringstream msg;
@@ -518,7 +525,7 @@ void Bind2Backend::loadConfig(string* status)
 
 	    if(status)
 	      *status+=msg.str();
-	    nbbds[bbd->d_id]->d_status=msg.str();
+	    s_staging_zone_map[bbd->d_id].d_status=msg.str();
 	    L<<Logger::Warning<<d_logprefix<<msg.str()<<endl;
 	    rejected++;
 	  }
@@ -529,84 +536,93 @@ void Bind2Backend::loadConfig(string* status)
 	*/
       }
 
-
+    // figure out which domains were new and which vanished
     int remdomains=0;
     set<string> oldnames, newnames;
-    for(map<unsigned int, BB2DomainInfo*>::const_iterator j=s_id_zone_map.begin();j!=s_id_zone_map.end();++j) {
-      oldnames.insert(j->second->d_name);
+    for(id_zone_map_t::const_iterator j=s_id_zone_map.begin();j!=s_id_zone_map.end();++j) {
+      oldnames.insert(j->second.d_name);
     }
-    for(map<unsigned int, BB2DomainInfo*>::const_iterator j=nbbds.begin();j!=nbbds.end();++j) {
-      newnames.insert(j->second->d_name);
+    for(id_zone_map_t::const_iterator j=s_staging_zone_map.begin();j!=s_staging_zone_map.end();++j) {
+      newnames.insert(j->second.d_name);
     }
 
     vector<string> diff;
     set_difference(oldnames.begin(), oldnames.end(), newnames.begin(), newnames.end(), back_inserter(diff));
     remdomains=diff.size();
-    for(vector<string>::const_iterator k=diff.begin();k!=diff.end();++k) {
-      delete s_id_zone_map[s_name_id_map[*k]]->d_records;
-      delete s_id_zone_map[s_name_id_map[*k]];
+        
+    // remove domains from the *name* map, delete their pointer
+    for(vector<string>::const_iterator k=diff.begin();k!=diff.end(); ++k) {
+      L<<Logger::Error<<"Removing domain: "<<*k<<endl;
       s_name_id_map.erase(*k);
-      L<<Logger::Error<<"Removed: "<<*k<<endl;
     }
 
-    for(map<unsigned int, BB2DomainInfo*>::iterator j=s_id_zone_map.begin();j!=s_id_zone_map.end();++j) { // O(N*M)
+    // now remove from the s_id_zone_map
+    for(id_zone_map_t::iterator j=s_id_zone_map.begin();j!=s_id_zone_map.end();++j) { // O(N*M)
       for(vector<string>::const_iterator k=diff.begin();k!=diff.end();++k)
-	if(j->second->d_name==*k) {
-	  L<<Logger::Error<<"Removing records from zone '"<<j->second->d_name<<"' from memory"<<endl;
-	  j->second->lock();
-	  j->second->d_loaded=false;
-	  nukeZoneRecords(j->second);
-	  j->second->unlock(); 
+	if(j->second.d_name==*k) {
+	  L<<Logger::Error<<"Removing records from zone '"<<j->second.d_name<<"' from memory"<<endl;
+
+	  j->second.d_loaded=false;
+	  nukeZoneRecords(&j->second);
+
 	  break;
 	}
     }
 
+    // count number of entirely new domains
     vector<string> diff2;
     set_difference(newnames.begin(), newnames.end(), oldnames.begin(), oldnames.end(), back_inserter(diff2));
     newdomains=diff2.size();
 
-    s_id_zone_map.swap(nbbds); // commit
+    s_id_zone_map.swap(s_staging_zone_map); // commit
+    s_staging_zone_map.clear();             // and cleanup
+
+    // report
     ostringstream msg;
     msg<<" Done parsing domains, "<<rejected<<" rejected, "<<newdomains<<" new, "<<remdomains<<" removed"; 
     if(status)
       *status=msg.str();
 
     L<<Logger::Error<<d_logprefix<<msg.str()<<endl;
-    //   L<<Logger::Info<<d_logprefix<<" Number of hash buckets: "<<d_qnames.bucket_count()<<", number of entries: "<<d_qnames.size()<< endl;
   }
 }
 
-/** nuke all records from memory, keep bbd intact though. Must be called with bbd lock held already! */
+/** nuke all records from memory, keep bbd intact though. */
 void Bind2Backend::nukeZoneRecords(BB2DomainInfo *bbd)
 {
   bbd->d_loaded=0; // block further access
-  bbd->d_records->clear();
+  bbd->d_records->clear(); // empty the vector of Bind2DNSRecords
 }
-
-/** Must be called with bbd locked already. Will not be unlocked on return, is your own problem.
-    Does not throw errors or anything, may update d_status however */
 
 
 void Bind2Backend::queueReload(BB2DomainInfo *bbd)
 {
-  nbbds.clear();
+  Lock l(&s_zonemap_lock);
+
+  s_staging_zone_map.clear(); 
 
   // we reload *now* for the time being
-  //cout<<"unlock domain"<<endl;
-  bbd->unlock();
-  //cout<<"lock it again"<<endl;
 
-  bbd->lock();
   try {
     nukeZoneRecords(bbd);
     
     ZoneParser ZP;
     us=this;
-    ZP.setCallback(&callback);  
 
-    nbbds[bbd->d_id]=s_id_zone_map[bbd->d_id];
-    ZP.parse(bbd->d_filename,bbd->d_name,bbd->d_id);
-    s_id_zone_map[bbd->d_id]=nbbds[bbd->d_id];
+    ZP.setDirectory(d_binddirectory);
+    ZP.setCallback(&InsertionCallback);  
+
+    s_staging_zone_map[bbd->d_id]=s_id_zone_map[bbd->d_id];
+    s_staging_zone_map[bbd->d_id].d_records=shared_ptr<vector<Bind2DNSRecord> > (new vector<Bind2DNSRecord>);  // nuke it
+
+    ZP.parse(bbd->d_filename, bbd->d_name, bbd->d_id);
+    
+    sort(s_staging_zone_map[bbd->d_id].d_records->begin(), s_staging_zone_map[bbd->d_id].d_records->end());
+    s_staging_zone_map[bbd->d_id].setCtime();
+    
+    contents.clear();
+
+    s_id_zone_map[bbd->d_id]=s_staging_zone_map[bbd->d_id]; // move over
 
     bbd->setCtime();
     // and raise d_loaded again!
@@ -622,75 +638,111 @@ void Bind2Backend::queueReload(BB2DomainInfo *bbd)
   }
 }
 
-void Bind2Backend::lookup(const QType &qtype,const string &qname, DNSPacket *pkt_p, int zoneId )
+bool operator<(const Bind2DNSRecord &a, const string &b)
 {
-  d_handle=new Bind2Backend::handle;
-  d_handle->d_records=new vector<DNSResourceRecord>; // WRONG
-  //  cout<<"Lookup! for "<<qname<<endl;
-  string domain=qname;
+  return a.qname < b;
+}
+
+bool operator<(const string &a, const Bind2DNSRecord &b)
+{
+  return a < b.qname;
+}
+
+
+void Bind2Backend::lookup(const QType &qtype, const string &qname, DNSPacket *pkt_p, int zoneId )
+{
+  d_handle.reset();
+
+  string domain=toLower(qname);
+
+  bool mustlog=arg().mustDo("query-logging");
+  if(mustlog) 
+    L<<Logger::Warning<<"Lookup for '"<<qtype.getName()<<"' of '"<<domain<<"'"<<endl;
+
   while(!s_name_id_map.count(domain) && chopOff(domain));
 
-  if(!s_name_id_map.count(domain)) {
-    //    cout<<"no such domain: '"<<qname<<"'"<<endl;
-    d_handle->d_iter=d_handle->d_records->end();  // WRONG
-    d_handle->d_list=false;
-    d_handle->d_bbd=0;
+  name_id_map_t::const_iterator iditer=s_name_id_map.find(domain);
+
+  if(iditer==s_name_id_map.end()) {
+    if(mustlog)
+      L<<Logger::Warning<<"Found no authoritative zone for "<<qname<<endl;
+    d_handle.d_list=false;
     return;
   }
-  unsigned int id=s_name_id_map[domain];
-
-  //  cout<<"domain: '"<<domain<<"', id="<<id<<endl;
+  //  unsigned int id=*iditer;
+  if(mustlog)
+    L<<Logger::Warning<<"Found data in zone '"<<domain<<"' with id "<<iditer->second<<endl;
+    
+  d_handle.id=iditer->second;
   
-
   DLOG(L<<"Bind2Backend constructing handle for search for "<<qtype.getName()<<" for "<<
        qname<<endl);
+  
+  if(strcasecmp(qname.c_str(),domain.c_str()))
+    d_handle.qname=qname.substr(0,qname.size()-domain.length()-1); // strip domain name
 
-  d_handle->qname=qname;
-  d_handle->parent=this;
-  d_handle->qtype=qtype;
-  string compressed=toLower(qname);
-  d_handle->d_records=s_id_zone_map[id]->d_records;
-  d_handle->d_bbd=0;
-  if(!d_handle->d_records->empty()) {
-    BB2DomainInfo& bbd=*s_id_zone_map[id];
+  d_handle.parent=this;
+  d_handle.qtype=qtype;
+  d_handle.domain=qname.substr(qname.size()-domain.length());
+
+  d_handle.d_records=s_id_zone_map[iditer->second].d_records; // give it a copy
+  if(!d_handle.d_records->empty()) {
+    BB2DomainInfo& bbd=s_id_zone_map[iditer->second];
     if(!bbd.d_loaded) {
-      delete d_handle;
-      throw DBException("Zone temporarily not available (file missing, or master dead)"); // fuck
+      d_handle.reset();
+      throw DBException("Zone temporarily not available (file missing, or master dead)"); // fsck
     }
-
-    if(!bbd.tryRLock()) {
-      L<<Logger::Warning<<"Can't get read lock on zone '"<<bbd.d_name<<"'"<<endl;
-      delete d_handle;
-      throw DBException("Temporarily unavailable due to a zone lock"); // fuck
-    }
-      
-
+    
     if(!bbd.current()) {
       L<<Logger::Warning<<"Zone '"<<bbd.d_name<<"' ("<<bbd.d_filename<<") needs reloading"<<endl;
       queueReload(&bbd);
+      d_handle.d_records=s_id_zone_map[iditer->second].d_records; // give it a *fresh* copy
     }
-    d_handle->d_bbd=&bbd;
   }
   else {
     DLOG(L<<"Query with no results"<<endl);
   }
-  d_handle->d_iter=d_handle->d_records->begin();
-  d_handle->d_list=false;
+
+  pair<vector<Bind2DNSRecord>::const_iterator, vector<Bind2DNSRecord>::const_iterator> range;
+
+  //  cout<<"starting equal range for: '"<<d_handle.qname<<"'"<<endl;
+  
+  string lname=toLower(d_handle.qname);
+  range=equal_range(d_handle.d_records->begin(), d_handle.d_records->end(), lname);
+  
+  if(range.first==range.second) {
+    d_handle.d_list=false;
+    return;
+  }
+  else {
+    d_handle.d_iter=range.first;
+    d_handle.d_end_iter=range.second;
+  }
+
+  d_handle.d_list=false;
 }
 
 Bind2Backend::handle::handle()
 {
-  d_bbd=0;
+  //  d_records=0;
   count=0;
 }
 
 bool Bind2Backend::get(DNSResourceRecord &r)
 {
-  if(!d_handle->get(r)) {
-    delete d_handle;
-    d_handle=0;
+  if(!d_handle.d_records)
+    return false;
+
+  if(!d_handle.get(r)) {
+    d_handle.reset();
+
+    if(arg().mustDo("query-logging"))
+      L<<"End of answers"<<endl;
+
     return false;
   }
+  if(arg().mustDo("query-logging"))
+    L<<"Returning: '"<<r.qtype.getName()<<"' of '"<<r.qname<<"', content: '"<<r.content<<"'"<<endl;
   return true;
 }
 
@@ -707,23 +759,23 @@ bool Bind2Backend::handle::get_normal(DNSResourceRecord &r)
   DLOG(L << "Bind2Backend get() was called for "<<qtype.getName() << " record  for "<<
        qname<<"- "<<d_records->size()<<" available!"<<endl);
   
-  while(d_iter!=d_records->end() && (d_iter->qname!=qname || !(qtype=="ANY" || (d_iter)->qtype==qtype))) {
+  if(d_iter==d_end_iter) {
+    return false;
+  }
+
+  while(d_iter!=d_end_iter && !(qtype.getCode()==QType::ANY || (d_iter)->qtype==qtype.getCode())) {
     DLOG(L<<Logger::Warning<<"Skipped "<<qname<<"/"<<QType(d_iter->qtype).getName()<<": '"<<d_iter->content<<"'"<<endl);
     d_iter++;
   }
-  if(d_iter==d_records->end()) { // we've reached the end
-    if(d_bbd) {
-      d_bbd->unlock();
-      d_bbd=0;
-    }
+  if(d_iter==d_end_iter) {
     return false;
   }
   DLOG(L << "Bind2Backend get() returning a rr with a "<<QType(d_iter->qtype).getCode()<<endl);
 
-  r.qname=qname; // fill this in
-  
+  r.qname=qname.empty() ? domain : (qname+"."+domain);
+  r.domain_id=id;
   r.content=(d_iter)->content;
-  r.domain_id=(d_iter)->domain_id;
+  //  r.domain_id=(d_iter)->domain_id;
   r.qtype=(d_iter)->qtype;
   r.ttl=(d_iter)->ttl;
   r.priority=(d_iter)->priority;
@@ -734,19 +786,20 @@ bool Bind2Backend::handle::get_normal(DNSResourceRecord &r)
 
 bool Bind2Backend::list(const string &target, int id)
 {
-  // cout<<"List of id "<<id<<" requested"<<endl;
   if(!s_id_zone_map.count(id))
     return false;
 
-  d_handle=new Bind2Backend::handle;
+  d_handle.reset(); 
   DLOG(L<<"Bind2Backend constructing handle for list of "<<id<<endl);
 
-  d_handle->d_qname_iter=s_id_zone_map[id]->d_records->begin();
-  d_handle->d_qname_end=s_id_zone_map[id]->d_records->end();   // iter now points to a vector of pointers to vector<BBResourceRecords>
+  d_handle.d_qname_iter=s_id_zone_map[id].d_records->begin();
+  d_handle.d_qname_end=s_id_zone_map[id].d_records->end();   // iter now points to a vector of pointers to vector<BBResourceRecords>
 
-  d_handle->parent=this;
-  d_handle->id=id;
-  d_handle->d_list=true;
+  d_handle.d_records=s_id_zone_map[id].d_records; // give it a copy --- WHY??? XXX FIXME
+
+  d_handle.parent=this;
+  d_handle.id=id;
+  d_handle.d_list=true;
   return true;
 
 }
@@ -754,7 +807,12 @@ bool Bind2Backend::list(const string &target, int id)
 bool Bind2Backend::handle::get_list(DNSResourceRecord &r)
 {
   if(d_qname_iter!=d_qname_end) {
-    r=*d_qname_iter;
+    r.qname=d_qname_iter->qname.empty() ? domain : (d_qname_iter->qname+"."+domain);
+    r.domain_id=id;
+    r.content=(d_qname_iter)->content;
+    r.qtype=(d_qname_iter)->qtype;
+    r.ttl=(d_qname_iter)->ttl;
+    r.priority=(d_qname_iter)->priority;
     d_qname_iter++;
     return true;
   }
@@ -764,9 +822,9 @@ bool Bind2Backend::handle::get_list(DNSResourceRecord &r)
 
 bool Bind2Backend::isMaster(const string &name, const string &ip)
 {
-  for(map<u_int32_t,BB2DomainInfo*>::iterator j=us->s_id_zone_map.begin();j!=us->s_id_zone_map.end();++j) 
-    if(j->second->d_name==name)
-      return j->second->d_master==ip;
+  for(id_zone_map_t::iterator j=us->s_id_zone_map.begin();j!=us->s_id_zone_map.end();++j) 
+    if(j->second.d_name==name)
+      return j->second.d_master==ip;
   return false;
 }
 
@@ -831,25 +889,24 @@ bool Bind2Backend::createSlaveDomain(const string &ip, const string &domain, con
   c_of << "\tmasters { " << ip << "; };" << endl;
   c_of << "};" << endl;
   c_of.close();
+
+  int newid=0;
+  // Find a free zone id nr.  
   
-  BB2DomainInfo *bbd = new BB2DomainInfo;
-
-  bbd->d_records = new vector<DNSResourceRecord>;
-  bbd->d_name = domain;
-  bbd->setCheckInterval(getArgAsNum("check-interval"));
-  bbd->d_master = ip;
-  bbd->d_filename = filename;
-
-  // Find a free zone id nr.    
   if (!s_id_zone_map.empty()) {
-    map<unsigned int, BB2DomainInfo*>::reverse_iterator i = s_id_zone_map.rbegin();
-    bbd->d_id = i->second->d_id + 1;
+    id_zone_map_t::reverse_iterator i = s_id_zone_map.rbegin();
+    newid = i->second.d_id + 1;
   }
-  else
-    bbd->d_id = 0;
+  
+  BB2DomainInfo &bbd = s_id_zone_map[newid];
 
-  s_id_zone_map[bbd->d_id] = bbd;
-  s_name_id_map[domain] = bbd->d_id;
+  bbd.d_records = shared_ptr<vector<Bind2DNSRecord> >(new vector<Bind2DNSRecord>);
+  bbd.d_name = domain;
+  bbd.setCheckInterval(getArgAsNum("check-interval"));
+  bbd.d_master = ip;
+  bbd.d_filename = filename;
+
+  s_name_id_map[domain] = bbd.d_id;
   
   return true;
 }
@@ -857,7 +914,7 @@ bool Bind2Backend::createSlaveDomain(const string &ip, const string &domain, con
 class Bind2Factory : public BackendFactory
 {
    public:
-      Bind2Factory() : BackendFactory("bind2") {}
+      Bind2Factory() : BackendFactory("bind") {}
 
       void declareArguments(const string &suffix="")
       {

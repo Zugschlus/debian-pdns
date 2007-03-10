@@ -1,13 +1,14 @@
 Source: pdns
 Section: net
 Priority: extra
-Standards-Version: 3.6.1.1
+Standards-Version: 3.7.2.0
 Maintainer: Debian PowerDNS Maintainers <powerdns-debian@workaround.org>
 Uploaders: Christoph Haas <haas@debian.org>, Matthijs Mohlmann <matthijs@cacholong.nl>
-Build-Depends: debhelper (>= 4.2.0), po-debconf, dpatch (>= 2.0.0), libtool, flex, bison, docbook-utils, libmysqlclient12-dev, postgresql-dev, tdb-dev, libgdbm-dev, libldap2-dev, libsqlite0-dev, dpkg-dev (> 1.10.17)
+Build-Depends: debhelper (>= 4.2.0), po-debconf, dpatch (>= 2.0.0), libtool, flex, bison, docbook-utils, libmysqlclient15-dev, libpq-dev, libssl-dev, tdb-dev, libgdbm-dev, libldap2-dev, libsqlite0-dev, dpkg-dev (> 1.10.17), libboost-dev, libboost-serialization-dev, autotools-dev
+XS-Vcs-Svn: http://svn.cacholong.nl/cgi-bin/viewcvs.cgi/?root=pdns
 
 Package: pdns
-Architecture: any
+Architecture: all
 Depends: pdns-server, pdns-recursor
 Description: meta package for the pdns nameserver
  PowerDNS is a versatile nameserver which supports a large number
@@ -20,8 +21,7 @@ Description: meta package for the pdns nameserver
 
 Package: pdns-server
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, ucf
-Pre-Depends: adduser
+Depends: ${shlibs:Depends}, ${misc:Depends}, ucf, adduser
 Replaces: pdns
 Recommends: pdns-doc
 Suggests: pdns-backend, pdns-recursor
@@ -33,20 +33,6 @@ Description: extremely powerful and versatile nameserver
  .
  This is the authoritative nameserver that answers questions about
  domains that it knows about.
-
-Package: pdns-recursor
-Architecture: any
-Depends: ${shlibs:Depends}
-Replaces: pdns
-Recommends: pdns-doc
-Description: PowerDNS recursor
- PowerDNS is a versatile nameserver which supports a large number
- of different backends ranging from simple zonefiles to relational
- databases and load balancing/failover algorithms.
- PowerDNS tries to emphasize speed and security.
- .
- This is the recursive nameserver that goes out to the internet and
- resolve queries about other domains.
 
 Package: pdns-doc
 Section: doc
@@ -136,5 +122,5 @@ Description: sqlite backend for PowerDNS
  databases and load balancing/failover algorithms.
  PowerDNS tries to emphasize speed and security.
  .
- This package contains a generic SQLite backend for SQLite.
+ This package contains a generic SQLite backend for PowerDNS.
 

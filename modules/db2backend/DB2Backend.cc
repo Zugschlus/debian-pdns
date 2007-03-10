@@ -1,4 +1,4 @@
-// $Id: DB2Backend.cc,v 1.1 2002/11/29 11:44:21 ahu Exp $
+// $Id: DB2Backend.cc 477 2005-09-03 18:15:37Z ahu $
 
 #include <string>
 #include <unistd.h>

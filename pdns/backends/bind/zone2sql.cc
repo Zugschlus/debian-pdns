@@ -18,7 +18,7 @@
 */
 /* accepts a named.conf as parameter and outputs heaps of sql */
 
-// $Id: zone2sql.cc,v 1.9 2004/01/22 07:52:32 ahu Exp $ 
+// $Id: zone2sql.cc 573 2006-03-06 21:39:01Z ahu $ 
 #ifdef WIN32
 # pragma warning ( disable: 4786 )
 
@@ -168,8 +168,11 @@ int main(int argc, char **argv)
     arg().set("start-id","Value of first domain-id")="0";
     arg().set("zone","Zonefile with $ORIGIN to parse")="";
     arg().set("zone-name","Specify an $ORIGIN in case it is not present")="";
-    arg().set("named-conf","Bind 8 named.conf to parse")="";
+    arg().set("named-conf","Bind 8/9 named.conf to parse")="";
     arg().set("soa-minimum-ttl","Do not change")="0";
+    arg().set("soa-refresh-default","Do not change")="0";
+    arg().set("soa-retry-default","Do not change")="0";
+    arg().set("soa-expire-default","Do not change")="0";
 
     arg().setCmd("help","Provide a helpful message");
 

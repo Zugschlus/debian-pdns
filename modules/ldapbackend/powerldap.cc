@@ -2,13 +2,23 @@
 
 
 
-PowerLDAP::PowerLDAP( const string& host, u_int16_t port, bool tls )
+PowerLDAP::PowerLDAP( const string& hosts, uint16_t port, bool tls )
 {
 	int protocol = LDAP_VERSION3;
 
-	if( ( d_ld = ldap_init( host.c_str(), port ) ) == NULL )
+
+	if( ldap_initialize( &d_ld, hosts.c_str() ) != LDAP_SUCCESS )
 	{
-		throw LDAPException( "Error initializing LDAP connection: " + string( strerror( errno ) ) );
+		if( ( d_ld = ldap_init( hosts.c_str(), port ) ) == NULL )
+		{
+			throw LDAPException( "Error initializing LDAP connection: " + string( strerror( errno ) ) );
+		}
+
+		if( tls && ldap_start_tls_s( d_ld, NULL, NULL ) != LDAP_SUCCESS )
+		{
+			ldap_unbind( d_ld );
+			throw( LDAPException( "Couldn't perform STARTTLS" ) );
+		}
 	}
 
 	if( ldap_set_option( d_ld, LDAP_OPT_PROTOCOL_VERSION, &protocol ) != LDAP_OPT_SUCCESS )
@@ -19,12 +29,6 @@ PowerLDAP::PowerLDAP( const string& host, u_int16_t port, bool tls )
 			ldap_unbind( d_ld );
 			throw LDAPException( "Couldn't set protocol version to LDAPv3 or LDAPv2" );
 		}
-	}
-
-	if( tls && ldap_start_tls_s( d_ld, NULL, NULL ) != LDAP_SUCCESS )
-	{
-		ldap_unbind( d_ld );
-		throw( LDAPException( "Couldn't perform STARTTLS" ) );
 	}
 }
 
@@ -145,7 +149,7 @@ bool PowerLDAP::getSearchEntry( int msgid, sentry_t& entry, bool dn, int timeout
 	if( dn )
 	{
 		attr = ldap_get_dn( d_ld, object );
-		values.push_back( attr );
+		values.push_back( string( attr ) );
 		ldap_memfree( attr );
 		entry["dn"] = values;
 	}

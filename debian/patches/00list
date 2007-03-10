@@ -1,15 +1,10 @@
 # Apply following patches
-gpgsql-compilefix.dpatch
-amd64-compilefix.dpatch
-gsqlite-compilefix.dpatch
-gsqlite-slave.dpatch
-zone2ldap.dpatch
-typoinitscript.dpatch
-addfeatures-ldapbackend.dpatch
-addconfigdir.dpatch
-consistent-sql.dpatch
-64bit-compile-fix.dpatch
-fix-exit-status.dpatch
-dosfix-ldapbackend.dpatch
-blankout-domain-fix.dpatch
-recursor-buffer-overflow.dpatch
+addconfigdir
+update-geobackend
+fix-wildcardlookups-ldapbackend
+fix-memory-corruption
+fix-wrong-ttl-for-soa-during-axfr
+fix-ipv6-handling
+fix-unaligned-access
+auto-soa-calculation-in-ldapbackend
+literal-zone-file.dpatch

@@ -1,1 +1,3 @@
-usr/lib/powerdns/libgsqlitebackend*
+debian/tmp/usr/lib/powerdns/libgsqlitebackend.so* usr/lib/powerdns/
+debian/tmp/usr/lib/powerdns/libgsqlitebackend.a usr/lib/powerdns/
+debian/lintian-overrides/pdns-backend-sqlite usr/share/lintian/overrides/

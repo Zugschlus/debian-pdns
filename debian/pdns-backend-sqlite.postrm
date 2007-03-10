@@ -29,6 +29,7 @@ case "$1" in
   purge)
     # On purge delete database ?
     rm -f /var/lib/powerdns/pdns.sqlite
+    rmdir /var/lib/powerdns 2>/dev/null || true
   ;;
 
   *)

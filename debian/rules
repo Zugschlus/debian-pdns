@@ -22,7 +22,7 @@ else
 	CXXFLAGS += -O2
 endif
 
-backends := ldap mysql pipe gmysql gpgsql gsqlite geo
+backends := ldap pipe gmysql gpgsql gsqlite geo
 
 # Targets
 config.status:
@@ -39,23 +39,14 @@ config.status:
 		--libexecdir='$${prefix}/lib' \
 		--with-dynmodules="$(backends)" \
 		--with-modules="" \
-		--enable-recursor
-
+		--with-pgsql-includes=`pg_config --includedir` \
+		--disable-recursor
 
 build: patch build-stamp
 build-stamp: config.status
 
-	# Clean up stuff in the debian directory
-	rm -f debian/.cvsignore debian/CVS/Entries debian/CVS/Repository \
-	      debian/CVS/Root debian/doc-base debian/pdns-doc.postinst \
-				debian/pdns-doc.prerm debian/pdns.conffiles debian/pdns.postinst \
-				debian/pdns.postrm debian/pdns.prerm debian/shlibs.local
-	rm -rf debian/CVS
-
 	# Add here commands to compile the arch part of the package.
 	-$(MAKE) 
-
-	test ! -f debian/pdns.conffiles || mv debian/pdns.conffiles debian/bogus-pdns.conffiles
 
 	touch build-stamp
 
@@ -79,7 +70,6 @@ ifneq "$(wildcard /usr/share/misc/config.guess)" ""
 endif
 
 	dh_clean 
-	test ! -f debian/bogus-pdns.conffiles || mv debian/bogus-pdns.conffiles debian/pdns.conffiles
 
 install:
 install: build
@@ -92,17 +82,7 @@ install: build
 	$(MAKE) install DESTDIR=$(CURDIR)/debian/tmp
 	$(MAKE) -C pdns/docs html/index.html
 
-	# Install configuration files
-	/usr/bin/install -c -m 600 debian/config/pdns.conf $(CURDIR)/debian/pdns-server/usr/share/pdns-server/
-	/usr/bin/install -c -m 600 debian/config/pdns.local $(CURDIR)/debian/pdns-server/usr/share/pdns-server/
-	/usr/bin/install -c -m 600 debian/config/recursor.conf $(CURDIR)/debian/pdns-recursor/etc/powerdns/
-	/usr/bin/install -c -m 755 debian/pdns-server.init $(CURDIR)/debian/pdns-server/etc/init.d/pdns
-	/usr/bin/install -c -m 644 debian/pdns-server.default $(CURDIR)/debian/pdns-server/usr/share/pdns-server/pdns
-	/usr/bin/install -c -m 755 debian/pdns-recursor.init $(CURDIR)/debian/pdns-recursor/etc/init.d/pdns-recursor
-	/usr/bin/install -c -m 644 debian/pdns-recursor.default $(CURDIR)/debian/pdns-recursor/etc/default/pdns-recursor
-	/usr/bin/install -c -m 644 debian/config/dnsdomain2.schema $(CURDIR)/debian/pdns-backend-ldap/etc/ldap/schema
-
-	dh_install --sourcedir=debian/tmp
+	dh_install
 
 # Build architecture independant packages.
 binary-indep: build install
@@ -131,6 +111,7 @@ binary-arch: build install
 	dh_strip -a
 	dh_compress -a
 	dh_fixperms -a
+	chmod 755 $(CURDIR)/debian/pdns-server/etc/resolvconf/update.d/pdns
 	dh_installdeb -a
 	dh_shlibdeps -a
 	dh_gencontrol -a

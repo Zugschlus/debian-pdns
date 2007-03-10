@@ -22,8 +22,6 @@ case "$1" in
   ;;
 
   purge)
-    deluser --system --remove-home pdns > /dev/null || true
-
     # Remove files registered with ucf.
     for ext in '~' '%' .bak .dpkg-tmp .dpkg-new .dpkg-old .dpkg-dist; do
       rm -f /etc/powerdns/pdns.conf$ext
@@ -33,9 +31,11 @@ case "$1" in
     rm -f /etc/powerdns/pdns.conf
     rm -f /etc/default/pdns
     rm -f /etc/powerdns/pdns.d/pdns.local
-    ucf --purge /etc/powerdns/pdns.conf
-    ucf --purge /etc/default/pdns
-    ucf --purge /etc/powerdns/pdns.d/pdns.local
+    if [ -x /usr/bin/ucf ]; then
+      ucf --purge /etc/powerdns/pdns.conf
+      ucf --purge /etc/default/pdns
+      ucf --purge /etc/powerdns/pdns.d/pdns.local
+    fi
   ;;
 
   *)

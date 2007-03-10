@@ -51,23 +51,23 @@ string nowTime()
   return t;
 }
 
-u_int16_t getShort(const unsigned char *p)
+uint16_t getShort(const unsigned char *p)
 {
   return p[0] * 256 + p[1];
 }
 
 
-u_int16_t getShort(const char *p)
+uint16_t getShort(const char *p)
 {
   return getShort((const unsigned char *)p);
 }
 
-u_int32_t getLong(const unsigned char* p)
+uint32_t getLong(const unsigned char* p)
 {
   return (p[0]<<24) + (p[1]<<16) + (p[2]<<8) + p[3];
 }
 
-u_int32_t getLong(const char* p)
+uint32_t getLong(const char* p)
 {
   return getLong((unsigned char *)p);
 }
@@ -106,26 +106,46 @@ bool chopOff(string &domain)
   return true;
 }
 
+bool ciEqual(const string& a, const string& b)
+{
+  if(a.size()!=b.size())
+    return false;
+
+  string::size_type pos=0, epos=a.size();
+  for(;pos < epos; ++pos)
+    if(dns_tolower(a[pos])!=dns_tolower(b[pos]))
+      return false;
+  return true;
+}
+
 /** does domain end on suffix? Is smart about "wwwds9a.nl" "ds9a.nl" not matching */
 bool endsOn(const string &domain, const string &suffix) 
 {
-  if(toLower(domain)==toLower(suffix) || suffix.empty())
+  if( suffix.empty() || ciEqual(domain, suffix) )
     return true;
   if(domain.size()<=suffix.size())
     return false;
-  return (toLower(domain.substr(domain.size()-suffix.size()-1,suffix.size()+1))=="."+toLower(suffix));
-}
+  
+  string::size_type dpos=domain.size()-suffix.size()-1, spos=0;
+  if(domain[dpos++]!='.')
+    return false;
 
+  for(; dpos < domain.size(); ++dpos, ++spos)
+    if(dns_tolower(domain[dpos]) != dns_tolower(suffix[spos]))
+      return false;
+
+  return true;
+}
 
 int sendData(const char *buffer, int replen, int outsock)
 {
-  u_int16_t nlen=htons(replen);
+  uint16_t nlen=htons(replen);
   Utility::iovec iov[2];
   iov[0].iov_base=(char*)&nlen;
   iov[0].iov_len=2;
   iov[1].iov_base=(char*)buffer;
   iov[1].iov_len=replen;
-  int ret=Utility::writev(outsock,iov,2);
+  int ret=writev(outsock,iov,2);
 
   if(ret<0) {
     return -1;
@@ -135,7 +155,6 @@ int sendData(const char *buffer, int replen, int outsock)
   }
   return 0;
 }
-
 
 void parseService(const string &descr, ServiceTuple &st)
 {
@@ -150,13 +169,13 @@ void parseService(const string &descr, ServiceTuple &st)
 }
 
 
-int waitForData(int fd, int seconds)
+int waitForData(int fd, int seconds, int useconds)
 {
   struct timeval tv;
   int ret;
 
   tv.tv_sec   = seconds;
-  tv.tv_usec  = 0;
+  tv.tv_usec  = useconds;
 
   fd_set readfds;
   FD_ZERO( &readfds );
@@ -281,10 +300,15 @@ void cleanSlashes(string &str)
 }
 
 
-bool IpToU32(const string &str, u_int32_t *ip)
+bool IpToU32(const string &str, uint32_t *ip)
 {
+  if(str.empty()) {
+    *ip=0;
+    return true;
+  }
+  
   struct in_addr inp;
-  if(Utility::inet_aton(str.c_str(), &inp)) {
+  if(inet_aton(str.c_str(), &inp)) {
     *ip=inp.s_addr;
     return true;
   }
@@ -302,7 +326,7 @@ const string sockAddrToString(struct sockaddr_in *remote, Utility::socklen_t soc
   else {
     char tmp[128];
     
-    if(!Utility::inet_ntop(AF_INET6, ( const char * ) &((struct sockaddr_in6 *)remote)->sin6_addr, tmp, sizeof(tmp)))
+    if(!inet_ntop(AF_INET6, ( const char * ) &((struct sockaddr_in6 *)remote)->sin6_addr, tmp, sizeof(tmp)))
       return "IPv6 untranslateable";
 
     return tmp;
@@ -310,4 +334,47 @@ const string sockAddrToString(struct sockaddr_in *remote, Utility::socklen_t soc
 #endif
 
   return "untranslateable";
+}
+
+string makeHexDump(const string& str)
+{
+  char tmp[5];
+  string ret;
+  ret.reserve((int)(str.size()*2.2));
+
+  for(string::size_type n=0;n<str.size();++n) {
+    sprintf(tmp,"%02x ", (unsigned char)str[n]);
+    ret+=tmp;
+  }
+  return ret;
+}
+
+
+
+// shuffle, maintaining some semblance of order
+void shuffle(vector<DNSResourceRecord>& rrs)
+{
+  vector<DNSResourceRecord>::iterator first, second;
+  for(first=rrs.begin();first!=rrs.end();++first) 
+    if(first->d_place==DNSResourceRecord::ANSWER && first->qtype.getCode() != QType::CNAME) // CNAME must come first
+      break;
+  for(second=first;second!=rrs.end();++second)
+    if(second->d_place!=DNSResourceRecord::ANSWER)
+      break;
+  
+  if(second-first>1)
+    random_shuffle(first,second);
+  
+  // now shuffle the additional records
+  for(first=second;first!=rrs.end();++first) 
+    if(first->d_place==DNSResourceRecord::ADDITIONAL && first->qtype.getCode() != QType::CNAME) // CNAME must come first
+      break;
+  for(second=first;second!=rrs.end();++second)
+    if(second->d_place!=DNSResourceRecord::ADDITIONAL)
+      break;
+  
+  if(second-first>1)
+    random_shuffle(first,second);
+
+  // we don't shuffle the rest
 }

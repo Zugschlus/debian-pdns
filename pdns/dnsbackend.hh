@@ -16,7 +16,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
-// $Id: dnsbackend.hh,v 1.6 2003/08/22 13:33:31 ahu Exp $
+// $Id: dnsbackend.hh 477 2005-09-03 18:15:37Z ahu $
 /* (C) 2002 POWERDNS.COM BV  */
    
 #ifndef DNSBACKEND_HH
@@ -45,11 +45,11 @@ using namespace std;
 class DNSBackend;  
 struct DomainInfo
 {
-  u_int32_t id;
+  uint32_t id;
   string zone;
   string master;
-  u_int32_t notified_serial;
-  u_int32_t serial;
+  uint32_t notified_serial;
+  uint32_t serial;
   time_t last_check;
   enum {Master,Slave,Native} kind;
   DNSBackend *backend;
@@ -85,7 +85,7 @@ public:
   virtual ~DNSBackend(){};
 
   //! fills the soadata struct with the SOA details. Returns false if there is no SOA.
-  virtual bool getSOA(const string &name, SOAData &soadata);
+  virtual bool getSOA(const string &name, SOAData &soadata, DNSPacket *p=0);
 
   //! returns true if master ip is master for domain name.
   virtual bool isMaster(const string &name, const string &ip)
@@ -145,12 +145,12 @@ public:
   }
   
   //! Called by PowerDNS to inform a backend that a domain has been checked for freshness
-  virtual void setFresh(u_int32_t domain_id)
+  virtual void setFresh(uint32_t domain_id)
   {
 
   }
   //! Called by PowerDNS to inform a backend that the changes in the domain have been reported to slaves
-  virtual void setNotified(u_int32_t id, u_int32_t serial)
+  virtual void setNotified(uint32_t id, uint32_t serial)
   {
   }
 

@@ -1,29 +1,201 @@
-pdns (2.9.17-13sarge3) stable-security; urgency=high
+pdns (2.9.20-8) unstable; urgency=high
 
-  * NMU by the Security Team:
-  * Fix stack overflow in DNS recursor.
+  [ Christoph Haas ]
+  * Updated czech translation (Closes: #408726)
+  * New galician translation (Closes: #413756)
+  * Added patch for potential buffer overflow, high urgency (Closes: #406465)
 
- -- Moritz Muehlenhoff <jmm@debian.org>  Sat, 11 Nov 2006 11:15:43 +0000
+  [ Matthijs Mohlmann ]
+  * LDAP backend changes
+    - Supports SOA autocalculation
+    - Handles dc=* correctly
 
-pdns (2.9.17-13sarge2) stable; urgency=low
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sat, 10 Mar 2007 01:20:58 +0100
 
-  * Removed code that mess up the pdns.conf. (Closes: #321974, #326260)
-  * Move clean up code to build-stamp. (Closes: #322352)
+pdns (2.9.20-7) unstable; urgency=low
 
- -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Fri,  2 Sep 2005 22:14:33 +0200
+  [ Matthijs Mohlmann ]
+  * Updated configuration parameter allow-axfr-ips. (Closes: #316789)
+  * Fix memory corruption after performing a zone reload (Closes: #394682)
+  * Fix wrong ttl for SOA records during AXFR.
+  * Added patch from upstream to fix ipv6 processing. (Closes: #395885, #396250)
+  * Added patch to fix alignment on ARM. (Closes: #397031)
 
-pdns (2.9.17-13sarge1) stable-security; urgency=high
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Mon, 30 Oct 2006 00:46:22 +0100
 
+pdns (2.9.20-6) unstable; urgency=low
+
+  * Don't try to remove the user on purge.
+  * Typo in package description of pdns-backend-sqlite. (Closes: #384387)
+  * Create LSB init script.
+  * Added check to see if ucf exist. The postrm can't rely on ucf to be
+    available on purge. It is a non-essential package. (Closes: #389979)
+  * Added patch to fix wildcard lookups in the ldap backend. (Closes: #383726)
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Sun,  1 Oct 2006 15:29:45 +0200
+
+pdns (2.9.20-5) unstable; urgency=low
+
+  * Update geobackend. (Closes: #382538)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 13 Aug 2006 23:17:25 +0200
+
+pdns (2.9.20-4) unstable; urgency=low
+
+  * Updated German translation.
+  * Remove patch for the recursor, the pdns-recursor is not shipped with this
+    package anymore
+  * Updated Dutch translation.
+  * Updated Swedish translation.
+  * Updated French translation. (Closes: #367217)
+  * Fix wrong permissions on /var/lib/powerdns in sqlite backend.
+    (Closes: #373627)
+  * Default pdns.conf overhaul, taken configuration parameters from the
+    website http://rtfm.powerdns.com/ (Closes: #369306)
+  * Removed --remove-home from deluser, it requires an extra dependency.
+    (Closes: #340124)
+  * Added a note regarding pgsql and chroot (Closes: #382017)
+    Actual solutions for running pdns in a chroot when trying to connect
+    to a pgsql server via SSL are welcome.
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Wed, 12 Jul 2006 00:29:14 +0200
+
+pdns (2.9.20-3) unstable; urgency=low
+
+  * Disable the recursor, this is in a separate package now.
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Sat,  6 May 2006 10:40:44 +0200
+
+pdns (2.9.20-2) unstable; urgency=low
+
+  * Fix bug which causes pdns not resolving the root nameservers anymore
+    (Closes: #364449)
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Tue, 25 Apr 2006 21:27:26 +0200
+
+pdns (2.9.20-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Thu, 16 Mar 2006 21:09:38 +0100
+
+pdns (2.9.19-4) unstable; urgency=low
+
+  * Fix pdns maintainer scripts to restart in postinst (instead of stopping
+    in prerm and starting in postinst) (Closes: #346426)
+  * Rewrote patch addconfigdir to C++ and to fix some memleaks.
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Wed, 18 Jan 2006 22:59:52 +0100
+
+pdns (2.9.19-3) unstable; urgency=low
+
+  * Added a patch to fix NS delegation (Closes: #345778)
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Tue,  3 Jan 2006 23:18:17 +0100
+
+pdns (2.9.19-2) unstable; urgency=high
+
+  * Added portuguese translation (Closes: #337832)
+  * Added a patch to fix a slight security bug
+  * Added a patch to allow '/' in domain names (Closes: #343737)
+  * Updated patch addconfigdir to be able to move launch= to include files.
+    (Patch is now more generic)
+  * Updated builddependency to libmysqlclient15-dev (Closes: #343789)
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Sun, 18 Dec 2005 11:39:41 +0100
+
+pdns (2.9.19-1) unstable; urgency=low
+
+  * New upstream release (Closes: #327846)
+  * Now really fix the AXFR transfers from bind / djbdns to pdns.
+    (Closes: #330184)
+  * New bind backend (Closes: #318897)
+  * Update translation for Czech (Closes: #335355)
+  * Add translation for Swedish (Closes: #335261)
+  * Added patch to fix a memory hole in the pdns-recursor
+  * Added patch to proper catch an exception in the pdns-recursor
+  * Added patch to fix an exception that could escape
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Tue,  1 Nov 2005 15:22:39 +0100
+
+pdns (2.9.18-4) unstable; urgency=low
+
+  * Fix AXFR transfers from bind to pdns. (Closes: #330184)
+  * Added resolvconf calls to pdns-recursor init script. (Closes: #308677)
+  * Added pdns update script in order to automate the creation of the
+    recursors list. (Closes: #304528)
+  * Leave permissions on upgrades (Closes: #328833)
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Sat,  1 Oct 2005 15:11:33 +0200
+
+pdns (2.9.18-3) unstable; urgency=high
+
+  * High urgency as it fixes RC bugs.
+  * Add patch to support uri's in the ldapbackend.
+  * Add fix for crashes in the pdns-recursor with g++ 4.0.1
+  * Revert postinst scripts for geo, ldap, mysql, pgsql and pipe backend and
+    don't introduce bug #321974
+  * Add patch to fix CNAME wildcards. It returned the CNAME wildcard while an
+    A record exists for the query. Taken from svn.
+  * Fix pdns-server.config with exit status 20, bug in the parsing code of the
+    configuration file /etc/powerdns/pdns.conf (Closes: #311903)
+  * Fix the addconfigdir dpatch to be able to include files instead of only
+    directories (Closes: #327172)
+  * Remove postrm scripts as it can cause trouble when the include is set to
+    nothing. (Closes: #326260)
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Thu, 15 Sep 2005 09:21:28 +0200
+
+pdns (2.9.18-2) unstable; urgency=low
+
+  * Added cs translation. (Closes: #321737)
+  * comma separated instead of semicolon separated in pdns-server.templates
+    (Closes: #318845)
+  * Updated po debconf files.
+  * Removed code that mess up the pdns.conf. (Closes: #321974)
+  * pdns should be an arch independent package. It comes from the split to
+    pdns-server and pdns-recursor.
+  * Tidied up the dh_install parts of the debian/rules script.
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Mon, 15 Aug 2005 12:01:41 +0200
+
+pdns (2.9.18-1) unstable; urgency=high
+
+  * New upstream release (Closes: #318798)
+  * Drop patches: 64bit-compile-fix.dpatch, addfeatures-ldapbackend.dpatch,
+    amd64-compilefix.dpatch, blankout-domain-fix.dpatch,
+    consistent-sql.dpatch, dosfix-ldapbackend.dpatch, fix-exit-status.dpatch,
+    gpgsql-compilefix.dpatch, gsqlite-compilefix.dpatch, gsqlite-slave.dpatch,
+    recursor-slowdown.patch.dpatch, typoinitscript.dpatch, zone2ldap.dpatch
+    They are applied upstream.
   * The ldapbackend did not properly escape all queries, allowing it to fail
-    and not answer questions. [dosfix-ldapbackend.dpatch, CAN-2005-2301]
+    and not answer questions. (CAN-2005-2301)
   * Questions from clients denied recursion could blank out answers to clients
-    who are allowed recursion services,
-    temporarily. [blankout-domain-fix.dpatch, CAN-2005-2302]
-    (Closes: #318798)
-  * Added mechanism to remove bogus conffiles file for the meta package
-    pdns [pdns.conffiles] (Joey)
+    who are allowed recursion services, temporarily. (CAN-2005-2302)
 
- -- Matthijs Mohlmann <matthijs@cacholong.nl>  Tue, 19 Jul 2005 13:28:58 +0200
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Fri, 29 Jul 2005 20:24:33 +0200
+
+pdns (2.9.17-15) unstable; urgency=high
+
+  * New revision because last upload has accidentally been a native package.
+    A higher revision number should fix the wrong upload.
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Sat, 16 Jul 2005 13:04:14 +0200
+
+pdns (2.9.17-14) unstable; urgency=high
+
+  * Changed Build-Depends from postgresql-dev to libpq-dev
+  * Build-Depends was missing the non-essential automake1.6
+  * Added libssl-dev to Build-Depends
+  * configure arguments updated to point to postgresql includes
+  * Patch added for: Denial of Service in the ldapbackend. When you do a query
+    with a '\' or a '*' the ldap instance will crash.
+  * Patch added for: Recursor became slow after 60 seconds.
+  * Added translation vi.po (Closes: #316704)
+  * Fixed typo in german debconf file de.po (Closes: #313930)
+  * Updated Standards-Version to 3.6.2
+
+ -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Fri, 15 Jul 2005 00:16:17 +0200
 
 pdns (2.9.17-13) unstable; urgency=high
 
@@ -45,7 +217,6 @@ pdns (2.9.17-12) unstable; urgency=low
   * Fixed a failure when removing pdns-server when perl-modules isn't
     installed.
   * Added dutch translation.
-  * Added german translation.
 
  -- Debian PowerDNS Maintainers <powerdns-debian@workaround.org>  Tue, 10 May 2005 16:15:59 +0200
 

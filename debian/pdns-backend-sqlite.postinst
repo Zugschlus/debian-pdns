@@ -20,6 +20,8 @@ set -e
 # Configuration file
 PDNSCONF=/etc/powerdns/pdns.conf
 PDNSDIR=`cat $PDNSCONF | grep include | awk -F '=' '{print $2}'`
+PDNSUSER=`cat $PDNSCONF | grep setuid | awk -F '=' '{print $2}'`
+PDNSGROUP=`cat $PDNSCONF | grep setgid | awk -F '=' '{print $2}'`
 DATABASE=/var/lib/powerdns/pdns.sqlite
 PDNSLOCAL=$PDNSDIR/pdns.local
 
@@ -56,6 +58,18 @@ create table supermasters (
   account     VARCHAR(40) DEFAULT NULL
 );"
 
+update_permissions() {
+  data="$1"
+  if [ -d "$dir" ]; then
+    if [ ! -z "$PDNSUSER" ]; then
+      chown -R "$PDNSUSER" "$data"
+    fi
+    if [ ! -z "$PDNSGROUP" ]; then
+      chgrp -R "$PDNSGROUP" "$data"
+    fi
+  fi
+}
+
 case "$1" in
   configure)
     if [ -f $PDNSLOCAL ]; then
@@ -67,6 +81,10 @@ case "$1" in
 
     if [ ! -z "$DATA" ]; then
       DATABASE=$DATA
+    else
+      if [ ! -d "/var/lib/powerdns" ]; then
+        mkdir -m 0755 /var/lib/powerdns
+      fi
     fi
 
     # Create initial database
@@ -75,6 +93,8 @@ case "$1" in
       echo $INITDATA | sqlite $DATABASE
       echo "done"
     fi
+
+    update_permissions "$DATABASE"
   ;;
 
   abort-upgrade|abort-remove|abort-deconfigure)
@@ -88,9 +108,9 @@ esac
 
 if [ -x "/etc/init.d/pdns" ]; then
   if [ -x /usr/sbin/invoke-rc.d ]; then
-    invoke-rc.d pdns restart || exit 0
+    invoke-rc.d pdns restart || exit $?
   else
-    /etc/init.d/pdns restart || exit 0
+    /etc/init.d/pdns restart || exit $?
   fi
 fi
 

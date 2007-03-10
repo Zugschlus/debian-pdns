@@ -7,14 +7,14 @@
 # /usr/share/doc/po-debconf/README-trans
 # or http://www.debian.org/intl/l10n/po-debconf/README-trans
 # Developers do not need to manually edit POT or PO files.
-# 
-# 
+#
+#
 msgid ""
 msgstr ""
 "Project-Id-Version: pdns\n"
-"Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2005-04-14 21:43+0200\n"
-"PO-Revision-Date: 2005-04-18 12:00+0200\n"
+"Report-Msgid-Bugs-To: powerdns-debian@workaround.org\n"
+"POT-Creation-Date: 2006-05-11 21:20+0200\n"
+"PO-Revision-Date: 2006-05-14 14:55+0200\n"
 "Last-Translator: Jean-Luc Coulon (f5ibh) <jean-luc.coulon@wanadoo.fr>\n"
 "Language-Team: French <debian-l10n-french@lists.debian.org>\n"
 "MIME-Version: 1.0\n"
@@ -24,7 +24,7 @@ msgstr ""
 #. Type: string
 #. Description
 #: ../pdns-server.templates:3
-msgid "IP address where PowerDNS should listen"
+msgid "IP address where PowerDNS should listen on:"
 msgstr "Adresse IP où PowerDNS doit être à l'écoute :"
 
 #. Type: string
@@ -36,14 +36,14 @@ msgid ""
 "recommended to bind PowerDNS to a specific IP here."
 msgstr ""
 "Si vous utilisez plusieurs adresses IP, le comportement par défaut est "
-"d'écouter sur chacune d'entre elles, ce qui peut conduire le système "
+"d'écouter sur chacune d'entre-elles, ce qui peut conduire le système "
 "d'exploitation à choisir la mauvaise adresse IP pour les paquets sortants. "
 "Il est donc recommandé d'associer PowerDNS à une adresse IP spécifique."
 
 #. Type: boolean
 #. Description
 #: ../pdns-server.templates:11
-msgid "Do you want to start the PowerDNS server automatically"
+msgid "Do you want to start the PowerDNS server automatically?"
 msgstr "PowerDNS doit-il être démarré automatiquement ?"
 
 #. Type: boolean
@@ -59,17 +59,17 @@ msgstr ""
 #. Type: string
 #. Description
 #: ../pdns-server.templates:18
-msgid "List of subnets that are allowed to recurse"
+msgid "List of subnets that are allowed to recurse:"
 msgstr "Liste des sous-réseaux pouvant être interrogés :"
 
 #. Type: string
 #. Description
 #: ../pdns-server.templates:18
 msgid ""
-"Enter here, semicolon separated, the subnets that are allowed to recurse. "
+"Enter here, comma separated, the subnets that are allowed to recurse. "
 "Allowed values are 127.0.0.1 for an ip address and 192.168.0.0/24 for a "
 "subnet."
 msgstr ""
-"Veuillez indiquer la liste des sous-réseaux, séparés par des points-"
-"virgules, qu'il est autorisé de parcourir. Des valeurs autorisées sont "
-"127.0.0.1 pour une adresse IP et 192.168.0.0/24 pour un sous-réseau entier."
+"Veuillez indiquer la liste des sous-réseaux, séparés par des virgules, qu'il "
+"est autorisé de parcourir. Des valeurs autorisées sont 127.0.0.1 pour une "
+"adresse IP et 192.168.0.0/24 pour un sous-réseau entier."

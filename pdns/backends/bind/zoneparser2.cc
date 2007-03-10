@@ -1,11 +1,10 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as 
+    published by the Free Software Foundation
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -30,6 +29,7 @@
 #include <iostream>
 #include <utility>
 #include <ctype.h>
+#include <zlib.h>
 #include <errno.h>
 #include <stack>
 #include "utility.hh"
@@ -52,11 +52,11 @@ void ZoneParser::parse(const string &fname, const string &origin, unsigned int d
 {	
   d_filename=fname.c_str();
   
-  FILE *zonein;
+  gzFile zonein;
   if(fname!="-")
-    zonein=fopen(fname.c_str(),"r");
+    zonein=gzopen(fname.c_str(),"r");
   else
-    zonein=fdopen(STDIN_FILENO,"r");
+    zonein=gzdopen(STDIN_FILENO,"r");
 
   if(!zonein)
     throw AhuException("Unable to open zonefile '"+fname+"': "+stringerror());
@@ -67,12 +67,12 @@ void ZoneParser::parse(const string &fname, const string &origin, unsigned int d
   string line;
   d_lineno=0;
   vector<Record> rec;
-  stack<FILE *>fds;
+  stack<gzFile> fds;
   fds.push(zonein);
 
 
   while(!fds.empty()) {
-    while(fgets(cline,sizeof(cline)-1,fds.top())) {
+    while(gzgets(fds.top(), cline,sizeof(cline)-1)) {
       line=cline;
       chomp(line," \x1a\r\n");
       cutOff(line,";");
@@ -92,7 +92,7 @@ void ZoneParser::parse(const string &fname, const string &origin, unsigned int d
 	  filename=d_dir+"/"+filename;
 
 
-	FILE *fp=fopen(filename.c_str(),"r");
+	gzFile fp=gzopen(filename.c_str(),"r");
 	if(!fp)
 	  throw AhuException("Unable to open zonefile '"+filename+"' included from '"+fname+"': "+stringerror());
 	fds.push(fp);
@@ -100,15 +100,15 @@ void ZoneParser::parse(const string &fname, const string &origin, unsigned int d
       }
       if(eatLine(line,rec))
 	for(vector<Record>::const_iterator i=rec.begin();i!=rec.end();++i)
-	  d_callback(domain_id,i->name, i->qtype,i->content,i->ttl,i->prio);
+	  d_callback(domain_id, i->name, i->qtype, i->content, i->ttl, i->prio);
     }
 
-    if(ferror(fds.top())) {
-      fclose(fds.top());
-      fds.pop();
-      throw AhuException("Error reading from file '"+fname+"': "+stringerror());
-    }
-    fclose(fds.top());
+    //    if(ferror(fds.top())) {
+    //      fclose(fds.top());
+    //      fds.pop();
+    //      throw AhuException("Error reading from file '"+fname+"': "+stringerror());
+    //    }
+    gzclose(fds.top());
     fds.pop();
   }
 }
@@ -117,7 +117,7 @@ void ZoneParser::parse(const string &fname, const string &origin, vector<Record>
 {	
   d_filename=fname.c_str();
 
-  FILE *zonein=fopen(fname.c_str(),"r");
+  gzFile zonein=gzopen(fname.c_str(),"r");
 
   if(!zonein)
     throw AhuException("Unable to open zonefile '"+fname+"': "+stringerror());
@@ -128,11 +128,11 @@ void ZoneParser::parse(const string &fname, const string &origin, vector<Record>
   string line;
   d_lineno=0;
   vector<Record> rec;
-  stack<FILE *>fds;
+  stack<gzFile>fds;
   fds.push(zonein);
 
   while(!fds.empty()) {
-    while(fgets(cline,sizeof(cline)-1,fds.top())) {
+    while(gzgets(fds.top(),cline, sizeof(cline)-1)) {
       line=cline;
       chomp(line," \x1a\r\n");
       cutOff(line,";");
@@ -148,7 +148,7 @@ void ZoneParser::parse(const string &fname, const string &origin, vector<Record>
 	  throw AhuException("Invalid $INCLUDE statement in zonefile '"+fname+"'");
 
 	string filename=unquotify(parts[1]);
-	FILE *fp=fopen(filename.c_str(),"r");
+	gzFile fp=gzopen(filename.c_str(),"r");
 	if(!fp)
 	  throw AhuException("Unable to open zonefile '"+filename+"' included from '"+fname+"': "+stringerror());
 	fds.push(fp);
@@ -159,12 +159,12 @@ void ZoneParser::parse(const string &fname, const string &origin, vector<Record>
 	  records.push_back(*i);
     }
 
-    if(ferror(fds.top())) {
-      fclose(fds.top());
-      fds.pop();
-      throw AhuException("Error reading from file '"+fname+"': "+stringerror());
-    }
-    fclose(fds.top());
+    //    if(ferror(fds.top())) {
+    //      fclose(fds.top());
+    //      fds.pop();
+    //      throw AhuException("Error reading from file '"+fname+"': "+stringerror());
+    //    }
+    gzclose(fds.top());
     fds.pop();
   }
 }
@@ -181,6 +181,8 @@ void ZoneParser::fillRec(const string &qname, const string &qtype, const string 
   rec.content=content;
   rec.ttl=ttl;
   rec.prio=prio;
+
+  //  cerr<<"filled with type: "<<rec.qtype<<", "<<QType::chartocode(qtype.c_str())<<": "<<content<<endl;
   recs.push_back(rec);
 }
 
@@ -232,7 +234,7 @@ bool ZoneParser::eatLine(const string& line, vector<Record> &rec)
     tline=lastfirstword+"\t"+tline;
 
   vector<string> parts;
-  stringtok(parts,tline," \t\"");  // THIS IS WRONG, THE " SHOULD BE TREATED! XXX FIXME
+  stringtok(parts,tline," \t");  // we used to strip " here
   if(parts[0][0]!='$' && !isspace(parts[0][0]))
     lastfirstword=parts[0];
 
@@ -530,18 +532,18 @@ bool ZoneParser::parseLine(const vector<string>&words, vector<Record>&rec)
       qname+="."+d_origin;
 
 
-//  cerr<<qname<<", "<<qclass<<", "<<qtype<<", "<<ttl<<", rest from field "<<cpos<<endl;
+  //  cerr<<qname<<", "<<qclass<<", "<<qtype<<", "<<ttl<<", rest from field "<<cpos<<endl;
 	  
   int left=words.size()-cpos;
   string content;
 
-   if((qtype=="MX" && left==2) || (qtype=="SRV" && left==4)){
-     int prio=atoi(words[cpos++].c_str());left--;
-     content=words[cpos++];left--;
-     
-     while(left--)
-       content+=" "+words[cpos++];
-     
+  if((qtype=="MX" && left==2) || (qtype=="SRV" && left==4)){
+    int prio=atoi(words[cpos++].c_str());left--;
+    content=words[cpos++];left--;
+    
+    while(left--)
+      content+=" "+words[cpos++];
+    
     if(content=="@")
       content=d_origin;
     else
@@ -566,7 +568,13 @@ bool ZoneParser::parseLine(const vector<string>&words, vector<Record>&rec)
     }
     if(qtype=="SOA")
       soaCanonic(content);
-    
+    if(qtype=="TXT" && content.size() > 2) {  // strip quotes from TXT
+      if(content[0]=='"')
+	content=content.substr(1);
+      if(content[content.size()-1]=='"')
+	content.resize(content.size()-1);
+    }
+      
     fillRec(qname, qtype, content,ttl, 0, rec);
     return true;
   }

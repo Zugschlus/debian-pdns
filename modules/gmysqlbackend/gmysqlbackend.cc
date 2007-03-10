@@ -1,4 +1,4 @@
-// $Id: gmysqlbackend.cc,v 1.10 2004/09/13 19:07:00 ahu Exp $ 
+// $Id: gmysqlbackend.cc 477 2005-09-03 18:15:37Z ahu $ 
 #include <string>
 #include <map>
 

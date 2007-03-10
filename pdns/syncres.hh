@@ -11,7 +11,8 @@
 #include <utility>
 #include "misc.hh"
 #include "lwres.hh"
-
+#include <boost/utility.hpp>
+#include "recursor_cache.hh"
 
 /* external functions, opaque to us */
 
@@ -33,9 +34,8 @@ public:
     d_ttl=60;
     d_last_clean=time(0);
   }
-  bool shouldThrottle(const Thing& t)
+  bool shouldThrottle(time_t now, const Thing& t)
   {
-    time_t now=time(0);
     if(now > d_last_clean + 60 ) {
       d_last_clean=now;
       for(typename cont_t::iterator i=d_cont.begin();i!=d_cont.end();) 
@@ -46,27 +46,30 @@ public:
 	  ++i;
     }
 
-      
-
     typename cont_t::iterator i=d_cont.find(t);
     if(i==d_cont.end())
       return false;
-    if(time(0) > i->second.ttd || i->second.count-- < 0){
+    if(now > i->second.ttd || i->second.count-- < 0) {
       d_cont.erase(i);
-      return true;
     }
+
+    return true; // still listed, still blocked
   }
-  void throttle(const Thing& t, unsigned int ttl=0, unsigned int tries=0) 
+  void throttle(time_t now, const Thing& t, unsigned int ttl=0, unsigned int tries=0) 
   {
     typename cont_t::iterator i=d_cont.find(t);
-    entry e={ time_t(0)+(ttl ? ttl : d_ttl), tries ? tries : d_limit};
+    entry e={ now+(ttl ? ttl : d_ttl), tries ? tries : d_limit};
 
     if(i==d_cont.end()) {
       d_cont[t]=e;
     } 
     else if(i->second.ttd > e.ttd || (i->second.count) < e.count) 
       d_cont[t]=e;
-
+  }
+  
+  unsigned int size()
+  {
+    return d_cont.size();
   }
 private:
   int d_limit;
@@ -82,90 +85,72 @@ private:
 };
 
 
-#if 0
-
-template<class Thing> class Throttle
-{
-public:
-  Throttle()
-  {
-    d_limit=3;
-    d_ttl=60;
-  }
-  bool shouldThrottle(const Thing& t)
-  {
-    time_t now=time(0);
-    while(!d_dq.empty() && d_dq.back().ttd < now) // remove expired entries from the end
-      d_dq.pop_back();
-
-    for(typename cont_t::iterator i=d_dq.begin();i!=d_dq.end();++i) 
-      if(i->T==t && i->count-- < 0)
-	return true; 
-    return false;
-  }
-
-  void throttle(const Thing& t, unsigned int ttl=0, unsigned int tries=0) 
-  {
-    entry e;
-    e.ttd=time(0)+ (ttl ? ttl : d_ttl) ; 
-    e.T=t; 
-    e.count=tries ? tries : d_limit;
-    d_dq.push_front(e);
-
-  }
-private:
-  int d_limit;
-  int d_ttl;
-  struct entry 
-  {
-    time_t ttd;
-    Thing T;
-    int count;
-  };
-  typedef deque<entry> cont_t;
-  cont_t d_dq;
-};
-#endif
-
 /** Class that implements a decaying EWMA.
-    This class keeps an exponentially weigthed moving average which, additionally, decays over time.
+    This class keeps an exponentially weighted moving average which, additionally, decays over time.
     The decaying is only done on get.
 */
 class DecayingEwma
 {
 public:
-  DecayingEwma() : d_last(getTime()) , d_lastget(time(0)),  d_val(0.0) {}
-  void submit(int val) 
+  DecayingEwma() : d_last(getTime()) , d_lastget(d_last),  d_val(0.0) {
+
+  }
+
+  DecayingEwma(const DecayingEwma& orig) : d_last(orig.d_last), d_lastget(orig.d_lastget), d_val(orig.d_val)
   {
-    double diff=d_last-getTime();
-    d_last=getTime();
-    double factor=exp(diff)/2.0; // might be '0.5', or 0.0001
+
+  }
+
+  void submit(int val, struct timeval*tv = 0)
+  {
+    float now;
+    if(tv)
+      now=tv->tv_sec + tv->tv_usec/1000000.0;
+    else
+      now=getTime();
+
+    float diff=d_last-now;
+    d_last=now;
+    float factor=exp(diff)/2.0; // might be '0.5', or 0.0001
     d_val=(1-factor)*val+ factor*d_val; 
   }
-  double get()
+
+  float get(struct timeval*tv = 0)
   {
-    double diff=d_lastget-getTime();
-    d_lastget=getTime();
-    double factor=exp(diff/60.0); // is 1.0 or less
+    float now;
+    if(tv)
+      now=tv->tv_sec + tv->tv_usec/1000000.0;
+    else
+      now=getTime();
+
+    float diff=d_lastget-now;
+    d_lastget=now;
+    float factor=exp(diff/60.0); // is 1.0 or less
     return d_val*=factor;
   }
 
-private:
+  bool stale(time_t limit) 
+  {
+    return limit > d_lastget;
+  }
 
-  double d_last;
-  double d_lastget;
-  double d_val;
+private:
+  DecayingEwma& operator=(const DecayingEwma&);
+  float d_last;
+  float d_lastget;
+  float d_val;
 };
 
 
 class SyncRes
 {
 public:
-  SyncRes() : d_outqueries(0), d_throttledqueries(0), d_timeouts(0), d_cacheonly(false), d_nocache(false){}
+  SyncRes() : d_outqueries(0), d_tcpoutqueries(0), d_throttledqueries(0), d_timeouts(0), d_cacheonly(false), d_nocache(false) { gettimeofday(&d_now, 0); }
   int beginResolve(const string &qname, const QType &qtype, vector<DNSResourceRecord>&ret);
   void setId(int id)
   {
-    d_prefix="["+itoa(id)+"] ";
+    if(s_log)
+      d_prefix="["+itoa(id)+"] ";
   }
   static void setLog(bool log)
   {
@@ -180,13 +165,21 @@ public:
     d_nocache=state;
   }
   static unsigned int s_queries;
+  static unsigned int s_outgoingtimeouts;
   static unsigned int s_throttledqueries;
   static unsigned int s_outqueries;
+  static unsigned int s_tcpoutqueries;
   static unsigned int s_nodelegated;
   unsigned int d_outqueries;
+  unsigned int d_tcpoutqueries;
   unsigned int d_throttledqueries;
   unsigned int d_timeouts;
-  static map<string,NegCacheEntry> s_negcache;    
+  typedef map<string,NegCacheEntry> negcache_t;
+  static negcache_t s_negcache;    
+
+  typedef map<string,DecayingEwma> nsspeeds_t;
+  static nsspeeds_t s_nsSpeeds;
+
   static Throttle<string> s_throttle;
 private:
   struct GetBestNSAnswer;
@@ -202,14 +195,17 @@ private:
 
   inline vector<string> shuffle(set<string> &nameservers, const string &prefix);
   bool moreSpecificThan(const string& a, const string &b);
-  string getA(const string &qname, int depth, set<GetBestNSAnswer>& beenthere);
+  vector<string> getAs(const string &qname, int depth, set<GetBestNSAnswer>& beenthere);
 
+  SyncRes(const SyncRes&);
+  SyncRes& operator=(const SyncRes&);
 private:
   string d_prefix;
   static bool s_log;
   bool d_cacheonly;
   bool d_nocache;
   LWRes d_lwr;
+  struct timeval d_now;
 
   struct GetBestNSAnswer
   {
@@ -226,4 +222,7 @@ private:
   };
 
 };
+class Socket;
+int asendtcp(const string& data, Socket* sock);
+int arecvtcp(string& data, int len, Socket* sock);
 #endif

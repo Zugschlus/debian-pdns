@@ -30,9 +30,9 @@ esac
 
 if [ -x "/etc/init.d/pdns" ]; then
   if [ -x /usr/sbin/invoke-rc.d ] ; then
-    invoke-rc.d pdns stop || exit 0
+    invoke-rc.d pdns stop || exit $?
   else
-    /etc/init.d/pdns stop || exit 0
+    /etc/init.d/pdns stop || exit $?
   fi
 fi
 

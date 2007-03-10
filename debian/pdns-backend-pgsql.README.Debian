@@ -1,11 +1,19 @@
-For the PostgreSQL database setup.
+Instructions on setting up PostgreSQL as a backend for PowerDNS
+---------------------------------------------------------------
 
-In /usr/share/doc/pdns-backend-pgsql/ is the file pgsql.sql. This contains
-a basic setup for PowerDNS.
+Please find a database schema for PostgreSQL in
+/usr/share/doc/pdns-backend-pgsql/pgsql.sql
 
-You can add this with:
-- Create first a database in PostgreSQL (For example: pdns)
-- Add this file: psql -h <host> -U <user> <database> -f pgsql.sql
+Just create a database using 'createdb' and then feed these SQL commands to
+PostgreSQL to get some defaults to start with:
 
-And then add the records to the database.
+   psql -h <host> -U <user> <database> -f pgsql.sql
+
+Then add further records to the database.
+
+*** SSL WARNING ***
+Please note that SSL connections to a PostgreSQL database currently do not
+work when PowerDNS is run chrooted because PowerDNS cannot access the
+libssl library from within the chroot.
+*** SSL WARNING ***
 

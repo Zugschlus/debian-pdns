@@ -1,4 +1,4 @@
-// $Id: pdnsbackend.cc,v 1.6 2003/08/22 13:33:31 ahu Exp $ 
+// $Id: pdnsbackend.cc 477 2005-09-03 18:15:37Z ahu $ 
 
 #include <string>
 #include <map>
