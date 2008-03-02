@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002-2005  PowerDNS.COM BV
+    Copyright (C) 2002-2007  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -13,14 +13,14 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "utility.hh"
 #include <errno.h>
 #include "communicator.hh"
 #include <set>
-
+#include <boost/utility.hpp>
 #include "dnsbackend.hh"
 #include "ueberbackend.hh"
 #include "packethandler.hh"
@@ -53,7 +53,6 @@ void CommunicatorClass::addSuckRequest(const string &domain, const string &maste
   d_any_sem.post();
 }
 
-
 void CommunicatorClass::suck(const string &domain,const string &remote)
 {
   uint32_t domain_id;
@@ -64,7 +63,7 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
   bool first=true;    
   try {
     Resolver resolver;
-    resolver.axfr(remote,domain.c_str());
+    resolver.axfr(remote, domain.c_str());
 
     UeberBackend *B=dynamic_cast<UeberBackend *>(P.getBackend());
 
@@ -246,51 +245,53 @@ void CommunicatorClass::slaveRefresh(PacketHandler *P)
       (sdomains.size()>1 ? "" : "s")<<
       " checking"<<endl;
 
-  for(vector<DomainInfo>::const_iterator i=sdomains.begin();i!=sdomains.end();++i) {
+  for(vector<DomainInfo>::iterator i=sdomains.begin();i!=sdomains.end();++i) {
     Resolver resolver;   
     resolver.makeUDPSocket();  
     d_slaveschanged=true;
-    uint32_t ourserial=i->serial,theirserial=0;
+    uint32_t ourserial=i->serial, theirserial=0;
+    
+    if(d_havepriosuckrequest) {
+      d_havepriosuckrequest=false;
+      break;
+    }
 
-    try {
-      if(d_havepriosuckrequest) {
-	d_havepriosuckrequest=false;
+    random_shuffle(i->masters.begin(), i->masters.end());
+    for(vector<string>::const_iterator iter = i->masters.begin(); iter != i->masters.end(); ++iter) {
+      try {
+	resolver.getSoaSerial(*iter, i->zone, &theirserial);
+	
+	if(theirserial<i->serial) {
+	  L<<Logger::Error<<"Domain "<<i->zone<<" more recent than master, our serial "<<ourserial<<" > their serial "<<theirserial<<endl;
+	  i->backend->setFresh(i->id);
+	}
+	else if(theirserial==i->serial) {
+	  L<<Logger::Warning<<"Domain "<<i->zone<<" is fresh"<<endl;
+	  i->backend->setFresh(i->id);
+	}
+	else {
+	  L<<Logger::Warning<<"Domain "<<i->zone<<" is stale, master serial "<<theirserial<<", our serial "<<i->serial<<endl;
+	  addSuckRequest(i->zone, *iter);
+	}
 	break;
       }
-
-      resolver.sendSoaSerialRequest(i->master,i->zone);
-      string master, zone;
-      int res=resolver.getSoaSerialAnswer(master,zone,&theirserial);
-
-      if(res<=0) {
-	L<<Logger::Error<<"Unable to determine SOA serial for "<<i->zone<<" at "<<i->master<<endl;
-	continue;
+      catch(ResolverException &re) {
+	L<<Logger::Error<<"Error trying to retrieve/refresh '"+i->zone+"': "+re.reason<<endl;
+	if(next(iter) != i->masters.end()) 
+	  L<<Logger::Error<<"Trying next master '"<<*next(iter)<<"' for '"+i->zone+"'"<<endl;
       }
-      
-      if(theirserial<i->serial) {
-	L<<Logger::Error<<"Domain "<<i->zone<<" more recent than master, our serial "<<ourserial<<" > their serial "<<theirserial<<endl;
-	i->backend->setFresh(i->id);
+      catch(AhuException &re) {
+	L<<Logger::Error<<"Error trying to retrieve/refresh '"+i->zone+"': "+re.reason<<endl;
+	if(next(iter) != i->masters.end()) 
+	  L<<Logger::Error<<"Trying next master '"<<*next(iter)<<"' for '"+i->zone+"'"<<endl;
       }
-      else if(theirserial==i->serial) {
-	L<<Logger::Warning<<"Domain "<<i->zone<<" is fresh"<<endl;
-	i->backend->setFresh(i->id);
-      }
-      else {
-	L<<Logger::Warning<<"Domain "<<i->zone<<" is stale, master serial "<<theirserial<<", our serial "<<i->serial<<endl;
-	addSuckRequest(i->zone,i->master);
-      }
-    }
-    catch(ResolverException &re) {
-      L<<Logger::Error<<"Error trying to retrieve/refresh '"+i->zone+"': "+re.reason<<endl;
     }
   }
 }  
 
-
-
 int CommunicatorClass::doNotifications()
 {
-  struct sockaddr_in from;
+  ComboAddress from;
   Utility::socklen_t fromlen=sizeof(from);
   char buffer[1500];
   int size;
@@ -300,7 +301,7 @@ int CommunicatorClass::doNotifications()
   while((size=recvfrom(d_nsock,buffer,sizeof(buffer),0,(struct sockaddr *)&from,&fromlen))>0) {
     DNSPacket p;
 
-    p.setRemote((struct sockaddr *)&from, fromlen);
+    p.setRemote(&from);
 
     if(p.parse(buffer,size)<0) {
       L<<Logger::Warning<<"Unable to parse SOA notification answer from "<<p.getRemote()<<endl;

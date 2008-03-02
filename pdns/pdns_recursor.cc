@@ -13,26 +13,29 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
+
+#ifndef WIN32
+# include <netdb.h>
+# include <unistd.h>
+#else 
+ #include "ntservice.hh"
+ #include "recursorservice.hh"
+#endif // WIN32
 
 #include "utility.hh" 
 #include <iostream>
 #include <errno.h>
 #include <map>
 #include <set>
-#ifndef WIN32
-#include <netdb.h>
-#endif // WIN32
 #include "recursor_cache.hh"
 #include <stdio.h>
 #include <signal.h>
 #include <stdlib.h>
-#include <unistd.h>
+
 #include "mtasker.hh"
 #include <utility>
-#include "dnspacket.hh"
-#include "statbag.hh"
 #include "arguments.hh"
 #include "syncres.hh"
 #include <fcntl.h>
@@ -42,13 +45,27 @@
 #include <boost/tuple/tuple_comparison.hpp>
 #include <boost/shared_array.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/function.hpp>
+#include <boost/algorithm/string.hpp>
 #include "dnsparser.hh"
 #include "dnswriter.hh"
 #include "dnsrecords.hh"
 #include "zoneparser-tng.hh"
+#include "rec_channel.hh"
+#include "logger.hh"
+#include "iputils.hh"
+#include "mplexer.hh"
+#include "config.h"
+
+#ifndef RECURSOR
+#include "statbag.hh"
+StatBag S;
+#endif
+
+FDMultiplexer* g_fdm;
+unsigned int g_maxTCPPerClient;
+bool g_logCommonErrors;
 using namespace boost;
-
-
 
 #ifdef __FreeBSD__           // see cvstrac ticket #26
 #include <pthread.h>
@@ -56,17 +73,22 @@ using namespace boost;
 #endif
 
 MemRecursorCache RC;
-
+RecursorStats g_stats;
+bool g_quiet;
+NetmaskGroup* g_allowFrom;
+NetmaskGroup* g_dontQuery;
 string s_programname="pdns_recursor";
+typedef vector<int> g_tcpListenSockets_t;
+g_tcpListenSockets_t g_tcpListenSockets;
+int g_tcpTimeout;
 
 struct DNSComboWriter {
-  DNSComboWriter(const char* data, uint16_t len) : d_mdp(data, len), d_tcp(false), d_socket(-1)
+  DNSComboWriter(const char* data, uint16_t len, const struct timeval& now) : d_mdp(data, len), d_now(now), d_tcp(false), d_socket(-1)
   {}
   MOADNSParser d_mdp;
-  void setRemote(struct sockaddr* sa, socklen_t len)
+  void setRemote(ComboAddress* sa)
   {
-    memcpy((void *)d_remote, (void *)sa, len);
-    d_socklen=len;
+    d_remote=*sa;
   }
 
   void setSocket(int sock)
@@ -76,12 +98,11 @@ struct DNSComboWriter {
 
   string getRemote() const
   {
-    return sockAddrToString((struct sockaddr_in *)d_remote, d_socklen);
+    return d_remote.toString();
   }
 
-
-  char d_remote[sizeof(sockaddr_in6)];
-  socklen_t d_socklen;
+  struct timeval d_now;
+  ComboAddress d_remote;
   bool d_tcp;
   int d_socket;
 };
@@ -104,117 +125,285 @@ extern "C" {
 #endif // __FreeBSD__
 #endif // WIN32
 
-StatBag S;
 ArgvMap &arg()
 {
   static ArgvMap theArg;
   return theArg;
 }
-static int d_clientsock;
-static vector<int> d_udpserversocks;
 
+struct timeval g_now;
 typedef vector<int> tcpserversocks_t;
-static tcpserversocks_t s_tcpserversocks;
 
-struct PacketID
-{
-  PacketID() : sock(0), inNeeded(0), outPos(0)
-  {}
+MT_t* MT; // the big MTasker
 
-  uint16_t id;  // wait for a specific id/remote paie
-  struct sockaddr_in remote;  // this is the remote
+void handleTCPClientWritable(int fd, boost::any& var);
 
-  Socket* sock;  // or wait for an event on a TCP fd
-  int inNeeded; // if this is set, we'll read until inNeeded bytes are read
-  string inMSG; // they'll go here
-
-  string outMSG; // the outgoing message that needs to be sent
-  int outPos;    // how far we are along in the outMSG
-
-  bool operator<(const PacketID& b) const
-  {
-    int ourSock= sock ? sock->getHandle() : 0;
-    int bSock = b.sock ? b.sock->getHandle() : 0;
-    return 
-      tie(id, remote.sin_addr.s_addr, remote.sin_port, ourSock) <
-      tie(b.id, b.remote.sin_addr.s_addr, b.remote.sin_port, bSock);
-  }
-};
-
-static map<int,PacketID> d_tcpclientreadsocks, d_tcpclientwritesocks;
-
-MTasker<PacketID,string>* MT;
-
+// -1 is error, 0 is timeout, 1 is success
 int asendtcp(const string& data, Socket* sock) 
 {
   PacketID pident;
   pident.sock=sock;
   pident.outMSG=data;
-  string packet;
 
-  //  cerr<<"asendtcp called for "<<data.size()<<" bytes"<<endl;
-  d_tcpclientwritesocks[sock->getHandle()]=pident;
+  g_fdm->addWriteFD(sock->getHandle(), handleTCPClientWritable, pident);
+  string packet;
 
   int ret=MT->waitEvent(pident,&packet,1);
   if(!ret || ret==-1) { // timeout
-    d_tcpclientwritesocks.erase(sock->getHandle());
+    g_fdm->removeWriteFD(sock->getHandle());
+  }
+  else if(packet.size() !=data.size()) { // main loop tells us what it sent out, or empty in case of an error
+    return -1;
   }
   return ret;
 }
+
+void handleTCPClientReadable(int fd, boost::any& var);
 
 // -1 is error, 0 is timeout, 1 is success
 int arecvtcp(string& data, int len, Socket* sock) 
 {
-  data="";
+  data.clear();
   PacketID pident;
   pident.sock=sock;
   pident.inNeeded=len;
-
-  // cerr<<"arecvtcp called for "<<len<<" bytes"<<endl;
-  // cerr<<d_tcpclientwritesocks.size()<<" write sockets"<<endl;
-  d_tcpclientreadsocks[sock->getHandle()]=pident;
+  g_fdm->addReadFD(sock->getHandle(), handleTCPClientReadable, pident);
 
   int ret=MT->waitEvent(pident,&data,1);
   if(!ret || ret==-1) { // timeout
-    d_tcpclientreadsocks.erase(sock->getHandle());
+    g_fdm->removeReadFD(sock->getHandle());
   }
+  else if(data.empty()) {// error, EOF or other
+    return -1;
+  }
+
   return ret;
 }
+
+// returns -1 for errors which might go away, throws for ones that won't
+int makeClientSocket(int family)
+{
+  int ret=(int)socket(family, SOCK_DGRAM, 0);
+  if(ret < 0 && errno==EMFILE) // this is not a catastrophic error
+    return ret;
+
+  if(ret<0) 
+    throw AhuException("Making a socket for resolver: "+stringerror());
+
+  static optional<ComboAddress> sin4;
+  if(!sin4) {
+    sin4=ComboAddress(::arg()["query-local-address"]);
+  }
+  static optional<ComboAddress> sin6;
+  if(!sin6) {
+    if(!::arg()["query-local-address6"].empty())
+    sin6=ComboAddress(::arg()["query-local-address6"]);
+  }
+
+  int tries=10;
+  while(--tries) {
+    uint16_t port=1025+Utility::random()%64510;
+    if(tries==1)  // fall back to kernel 'random'
+	port=0;
+
+    if(family==AF_INET) {
+      sin4->sin4.sin_port = htons(port); 
+      
+      if (::bind(ret, (struct sockaddr *)&*sin4, sin4->getSocklen()) >= 0) 
+	break;
+    }
+    else {
+      sin6->sin6.sin6_port = htons(port); 
+      
+      if (::bind(ret, (struct sockaddr *)&*sin6, sin6->getSocklen()) >= 0) 
+	break;
+    }
+  }
+  if(!tries)
+    throw AhuException("Resolver binding to local query client socket: "+stringerror());
+
+  Utility::setNonBlocking(ret);
+  return ret;
+}
+
+void handleUDPServerResponse(int fd, boost::any&);
+
+// you can ask this class for a UDP socket to send a query from
+// this socket is not yours, don't even think about deleting it
+// but after you call 'returnSocket' on it, don't assume anything anymore
+class UDPClientSocks
+{
+  unsigned int d_numsocks;
+  unsigned int d_maxsocks;
+
+public:
+  UDPClientSocks() : d_numsocks(0), d_maxsocks(5000)
+  {
+  }
+
+  typedef set<int> socks_t;
+  socks_t d_socks;
+
+  // returning -1 means: temporary OS error (ie, out of files)
+  int getSocket(uint16_t family)
+  {
+    int fd=makeClientSocket(family);
+    if(fd < 0) // temporary error - receive exception otherwise
+      return -1;
+
+    d_socks.insert(fd);
+    d_numsocks++;
+    return fd;
+  }
+
+  void returnSocket(int fd)
+  {
+    socks_t::iterator i=d_socks.find(fd);
+    if(i==d_socks.end()) {
+      throw AhuException("Trying to return a socket (fd="+lexical_cast<string>(fd)+") not in the pool");
+    }
+    returnSocket(i);
+  }
+
+  // return a socket to the pool, or simply erase it
+  void returnSocket(socks_t::iterator& i)
+  {
+    if(i==d_socks.end()) {
+      throw AhuException("Trying to return a socket not in the pool");
+    }
+    try {
+      g_fdm->removeReadFD(*i);
+    }
+    catch(FDMultiplexerException& e) {
+      // we sometimes return a socket that has not yet been assigned to g_fdm
+    }
+    Utility::closesocket(*i);
+    
+    d_socks.erase(i++);
+    --d_numsocks;
+  }
+} g_udpclientsocks;
 
 
 /* these two functions are used by LWRes */
-// -1 is error, > 1 is success
-int asendto(const char *data, int len, int flags, struct sockaddr *toaddr, int addrlen, int id) 
+// -2 is OS error, -1 is error that depends on the remote, > 0 is success
+int asendto(const char *data, int len, int flags, 
+	    const ComboAddress& toaddr, uint16_t id, const string& domain, uint16_t qtype, int* fd) 
 {
-  return sendto(d_clientsock, data, len, flags, toaddr, addrlen);
-}
 
-// -1 is error, 0 is timeout, 1 is success
-int arecvfrom(char *data, int len, int flags, struct sockaddr *toaddr, Utility::socklen_t *addrlen, int *d_len, int id)
-{
   PacketID pident;
-  pident.id=id;
-  memcpy(&pident.remote, toaddr, sizeof(pident.remote));
+  pident.domain = domain;
+  pident.remote = toaddr;
+  pident.type = qtype;
 
-  string packet;
-  int ret=MT->waitEvent(pident, &packet, 1);
-  if(ret > 0) {
-    *d_len=packet.size();
-    memcpy(data,packet.c_str(),min(len,*d_len));
+  // see if there is an existing outstanding request we can chain on to, using partial equivalence function
+  pair<MT_t::waiters_t::iterator, MT_t::waiters_t::iterator> chain=MT->d_waiters.equal_range(pident, PacketIDBirthdayCompare());
+
+  for(; chain.first != chain.second; chain.first++) {
+    if(chain.first->key.fd > -1) { // don't chain onto existing chained waiter!
+      //      cerr<<"Orig: "<<pident.domain<<", "<<pident.remote.toString()<<", id="<<id<<endl;
+      // cerr<<"Had hit: "<< chain.first->key.domain<<", "<<chain.first->key.remote.toString()<<", id="<<chain.first->key.id
+      // <<", count="<<chain.first->key.chain.size()<<", origfd: "<<chain.first->key.fd<<endl;
+      
+      chain.first->key.chain.insert(id); // we can chain
+      *fd=-1;                            // gets used in waitEvent / sendEvent later on
+      return 1;
+    }
   }
 
+  *fd=g_udpclientsocks.getSocket(toaddr.sin4.sin_family);
+  if(*fd < 0)
+    return -2;
+
+  pident.fd=*fd;
+  pident.id=id;
+  
+  int ret=connect(*fd, (struct sockaddr*)(&toaddr), toaddr.getSocklen());
+  if(ret < 0) {
+    g_udpclientsocks.returnSocket(*fd);
+    if(errno==ENETUNREACH) // Seth "My Interfaces Are Like A Yo Yo" Arnold special
+      return -2;
+    return ret;
+  }
+
+  g_fdm->addReadFD(*fd, handleUDPServerResponse, pident);
+  ret=send(*fd, data, len, 0);
+  if(ret < 0)
+    g_udpclientsocks.returnSocket(*fd);
   return ret;
 }
 
+// -1 is error, 0 is timeout, 1 is success
+int arecvfrom(char *data, int len, int flags, const ComboAddress& fromaddr, int *d_len, 
+	      uint16_t id, const string& domain, uint16_t qtype, int fd, unsigned int now)
+{
+  static optional<unsigned int> nearMissLimit;
+  if(!nearMissLimit) 
+    nearMissLimit=::arg().asNum("spoof-nearmiss-max");
 
+  PacketID pident;
+  pident.fd=fd;
+  pident.id=id;
+  pident.domain=domain;
+  pident.type = qtype;
+  pident.remote=fromaddr;
+
+  string packet;
+  int ret=MT->waitEvent(pident, &packet, 1, now);
+
+  if(ret > 0) {
+    if(packet.empty()) // means "error"
+      return -1; 
+
+    *d_len=(int)packet.size();
+    memcpy(data,packet.c_str(),min(len,*d_len));
+    if(*nearMissLimit && pident.nearMisses > *nearMissLimit) {
+      L<<Logger::Error<<"Too many ("<<pident.nearMisses<<" > "<<*nearMissLimit<<") bogus answers for '"<<domain<<"' from "<<fromaddr.toString()<<", assuming spoof attempt."<<endl;
+      g_stats.spoofCount++;
+      return -1;
+    }
+  }
+  else {
+    if(fd >= 0)
+      g_udpclientsocks.returnSocket(fd);
+  }
+  return ret;
+}
+
+void setBuffer(int fd, int optname, uint32_t size)
+{
+  uint32_t psize=0;
+  socklen_t len=sizeof(psize);
+  
+  if(!getsockopt(fd, SOL_SOCKET, optname, (char*)&psize, &len) && psize > size) {
+    L<<Logger::Error<<"Not decreasing socket buffer size from "<<psize<<" to "<<size<<endl;
+    return; 
+  }
+
+  if (setsockopt(fd, SOL_SOCKET, optname, (char*)&size, sizeof(size)) < 0 )
+    L<<Logger::Error<<"Warning: unable to raise socket buffer size to "<<size<<": "<<strerror(errno)<<endl;
+}
+
+
+static void setReceiveBuffer(int fd, uint32_t size)
+{
+  setBuffer(fd, SO_RCVBUF, size);
+}
+
+static void setSendBuffer(int fd, uint32_t size)
+{
+  setBuffer(fd, SO_SNDBUF, size);
+}
+
+string s_pidfname;
 static void writePid(void)
 {
-  string fname=::arg()["socket-dir"]+"/"+s_programname+".pid";
-  ofstream of(fname.c_str());
+  s_pidfname=::arg()["socket-dir"]+"/"+s_programname+".pid";
+  ofstream of(s_pidfname.c_str());
   if(of)
-    of<<getpid()<<endl;
+    of<< Utility::getpid() <<endl;
   else
-    L<<Logger::Error<<"Requested to write pid for "<<getpid()<<" to "<<fname<<" failed: "<<strerror(errno)<<endl;
+    L<<Logger::Error<<"Requested to write pid for "<<Utility::getpid()<<" to "<<s_pidfname<<" failed: "<<strerror(errno)<<endl;
 }
 
 void primeHints(void)
@@ -231,16 +420,15 @@ void primeHints(void)
     nsrr.qtype=QType::NS;
     nsrr.ttl=time(0)+3600000;
     
-
     for(char c='a';c<='m';++c) {
       static char templ[40];
-      strncpy(templ,"a.root-servers.net", sizeof(templ) - 1);
+      strncpy(templ,"a.root-servers.net.", sizeof(templ) - 1);
       *templ=c;
       arr.qname=nsrr.content=templ;
       arr.content=ips[c-'a'];
       set<DNSResourceRecord> aset;
       aset.insert(arr);
-      RC.replace(string(templ), QType(QType::A), aset);
+      RC.replace(time(0), string(templ), QType(QType::A), aset, true); // auth, nuke it all
       
       nsset.insert(nsrr);
     }
@@ -251,39 +439,65 @@ void primeHints(void)
     set<DNSResourceRecord> aset;
 
     while(zpt.get(rr)) {
-      //      cout<<"'"<<rr.qname<<"' "<<rr.qtype.getName()<<" '"<<rr.content<<"'\n";
-
       rr.ttl+=time(0);
       if(rr.qtype.getCode()==QType::A) {
 	set<DNSResourceRecord> aset;
 	aset.insert(rr);
-	RC.replace(rr.qname, QType(QType::A), aset);
+	RC.replace(time(0), rr.qname, QType(QType::A), aset, true); // auth, etc see above
       }
       if(rr.qtype.getCode()==QType::NS) {
+	rr.content=toLower(rr.content);
 	nsset.insert(rr);
       }
     }
   }
-  RC.replace("", QType(QType::NS), nsset); // and stuff in the cache
+  RC.replace(time(0),".", QType(QType::NS), nsset, true); // and stuff in the cache (auth)
 }
 
+map<ComboAddress, uint32_t> g_tcpClientCounts;
+
+struct TCPConnection
+{
+  int fd;
+  enum stateenum {BYTE0, BYTE1, GETQUESTION, DONE} state;
+  int qlen;
+  int bytesread;
+  ComboAddress remote;
+  char data[65535];
+  time_t startTime;
+
+  static void closeAndCleanup(int fd, const ComboAddress& remote) 
+  {
+    Utility::closesocket(fd);
+    if(!g_tcpClientCounts[remote]--) 
+      g_tcpClientCounts.erase(remote);
+    s_currentConnections--;
+  }
+  void closeAndCleanup()
+  {
+    closeAndCleanup(fd, remote);
+  }
+  static unsigned int s_currentConnections; //!< total number of current TCP connections
+};
+
+unsigned int TCPConnection::s_currentConnections; 
+void handleRunningTCPQuestion(int fd, boost::any& var);
 
 void startDoResolve(void *p)
 {
-  try {
-    bool quiet=::arg().mustDo("quiet");
-    DNSComboWriter* dc=(DNSComboWriter *)p;
+  DNSComboWriter* dc=(DNSComboWriter *)p;
 
+  try {
     uint16_t maxudpsize=512;
     MOADNSParser::EDNSOpts edo;
     if(dc->d_mdp.getEDNSOpts(&edo)) {
       maxudpsize=edo.d_packetsize;
     }
-
-    vector<DNSResourceRecord> ret;
     
+    vector<DNSResourceRecord> ret;
     vector<uint8_t> packet;
-    DNSPacketWriter pw(packet, dc->d_mdp.d_qname, dc->d_mdp.d_qtype, dc->d_mdp.d_qclass);
+
+    DNSPacketWriter pw(packet, dc->d_mdp.d_qname, dc->d_mdp.d_qtype, dc->d_mdp.d_qclass); 
 
     pw.getHeader()->aa=0;
     pw.getHeader()->ra=1;
@@ -291,9 +505,8 @@ void startDoResolve(void *p)
     pw.getHeader()->id=dc->d_mdp.d_header.id;
     pw.getHeader()->rd=dc->d_mdp.d_header.rd;
 
-    //    MT->setTitle("udp question for "+P.qdomain+"|"+P.qtype.getName());
-    SyncRes sr;
-    if(!quiet)
+    SyncRes sr(dc->d_now);
+    if(!g_quiet)
       L<<Logger::Error<<"["<<MT->getTid()<<"] " << (dc->d_tcp ? "TCP " : "") << "question for '"<<dc->d_mdp.d_qname<<"|"
        <<DNSRecordContent::NumberToType(dc->d_mdp.d_qtype)<<"' from "<<dc->getRemote()<<endl;
 
@@ -301,63 +514,126 @@ void startDoResolve(void *p)
     if(!dc->d_mdp.d_header.rd)
       sr.setCacheOnly();
 
-    int res=sr.beginResolve(dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), ret);
-    if(res<0)
+    int res=sr.beginResolve(dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), dc->d_mdp.d_qclass, ret);
+
+    if(res<0) {
       pw.getHeader()->rcode=RCode::ServFail;
+      // no commit here, because no record
+      g_stats.servFails++;
+    }
     else {
       pw.getHeader()->rcode=res;
+      switch(res) {
+      case RCode::ServFail:
+	g_stats.servFails++;
+	break;
+      case RCode::NXDomain:
+	g_stats.nxDomains++;
+	break;
+      case RCode::NoError:
+	g_stats.noErrors++;
+	break;
+      }
+      
       if(ret.size()) {
 	shuffle(ret);
-	for(vector<DNSResourceRecord>::const_iterator i=ret.begin();i!=ret.end();++i) {
-	  pw.startRecord(i->qname, i->qtype.getCode(), i->ttl, 1, (DNSPacketWriter::Place)i->d_place);
-	  shared_ptr<DNSRecordContent> drc(DNSRecordContent::mastermake(i->qtype.getCode(), 1, i->content));  
-	  drc->toPacket(pw);
+
+	for(vector<DNSResourceRecord>::const_iterator i=ret.begin(); i!=ret.end(); ++i) {
+	  pw.startRecord(i->qname, i->qtype.getCode(), i->ttl, i->qclass, (DNSPacketWriter::Place)i->d_place); 
+	  
+	  if(i->qtype.getCode() == QType::A) { // blast out A record w/o doing whole dnswriter thing
+	    uint32_t ip=0;
+	    IpToU32(i->content, &ip);
+	    pw.xfr32BitInt(htonl(ip));
+	  } else {
+	    shared_ptr<DNSRecordContent> drc(DNSRecordContent::mastermake(i->qtype.getCode(), i->qclass, i->content)); 
+	    drc->toPacket(pw);
+	  }
 	  if(!dc->d_tcp && pw.size() > maxudpsize) {
 	    pw.rollback();
-	    pw.getHeader()->tc=1;
+	    if(i->d_place==DNSResourceRecord::ANSWER)  // only truncate if we actually omitted parts of the answer
+	      pw.getHeader()->tc=1;
 	    goto sendit; // need to jump over pw.commit
 	  }
 	}
+
 	pw.commit();
       }
     }
   sendit:;
     if(!dc->d_tcp) {
-      sendto(dc->d_socket, &*packet.begin(), packet.size(), 0, (struct sockaddr *)(dc->d_remote), dc->d_socklen);
+      sendto(dc->d_socket, (const char*)&*packet.begin(), packet.size(), 0, (struct sockaddr *)(&dc->d_remote), dc->d_remote.getSocklen());
     }
     else {
       char buf[2];
       buf[0]=packet.size()/256;
       buf[1]=packet.size()%256;
 
-      struct iovec iov[2];
+      Utility::iovec iov[2];
 
       iov[0].iov_base=(void*)buf;              iov[0].iov_len=2;
       iov[1].iov_base=(void*)&*packet.begin(); iov[1].iov_len = packet.size();
 
-      int ret=writev(dc->d_socket, iov, 2);
+      int ret=Utility::writev(dc->d_socket, iov, 2);
+      bool hadError=true;
 
-      if(ret <= 0 ) 
-	L<<Logger::Error<<"Error writing TCP answer to "<<dc->getRemote()<<": "<< (ret ? strerror(errno) : "EOF") <<endl;
+      if(ret == 0) 
+	L<<Logger::Error<<"EOF writing TCP answer to "<<dc->getRemote()<<endl;
+      else if(ret < 0 )  
+	L<<Logger::Error<<"Error writing TCP answer to "<<dc->getRemote()<<": "<< strerror(errno) <<endl;
       else if((unsigned int)ret != 2 + packet.size())
-	L<<Logger::Error<<"Oops, partial answer sent to "<<dc->getRemote()<<" - probably would have trouble receiving our answer anyhow (size="<<packet.size()<<")"<<endl;
+	L<<Logger::Error<<"Oops, partial answer sent to "<<dc->getRemote()<<" for "<<dc->d_mdp.d_qname<<" (size="<< (2 + packet.size()) <<", sent "<<ret<<")"<<endl;
+      else
+	hadError=false;
+      
+      // update tcp connection status, either by closing or moving to 'BYTE0'
 
-      //      if(write(R->getSocket(),buf,2)!=2 || write(R->getSocket(),buffer,R->len)!=R->len)
-      //  XXX FIXME write this writev fallback otherwise
+      if(hadError) {
+	g_fdm->removeReadFD(dc->d_socket);
+	TCPConnection::closeAndCleanup(dc->d_socket, dc->d_remote);
+      }
+      else {
+	TCPConnection tc;
+	tc.fd=dc->d_socket;
+	tc.state=TCPConnection::BYTE0;
+	tc.remote=dc->d_remote;
+	Utility::gettimeofday(&g_now, 0); // needs to be updated
+	tc.startTime=g_now.tv_sec;
+	g_fdm->addReadFD(tc.fd, handleRunningTCPQuestion, tc);
+	g_fdm->setReadTTD(tc.fd, g_now, g_tcpTimeout);
+      }
     }
-
-    //    MT->setTitle("DONE! udp question for "+P.qdomain+"|"+P.qtype.getName());
-    if(!quiet) {
+    
+    if(!g_quiet) {
       L<<Logger::Error<<"["<<MT->getTid()<<"] answer to "<<(dc->d_mdp.d_header.rd?"":"non-rd ")<<"question '"<<dc->d_mdp.d_qname<<"|"<<DNSRecordContent::NumberToType(dc->d_mdp.d_qtype);
       L<<"': "<<ntohs(pw.getHeader()->ancount)<<" answers, "<<ntohs(pw.getHeader()->arcount)<<" additional, took "<<sr.d_outqueries<<" packets, "<<
 	sr.d_throttledqueries<<" throttled, "<<sr.d_timeouts<<" timeouts, "<<sr.d_tcpoutqueries<<" tcp connections, rcode="<<res<<endl;
     }
-    
+
     sr.d_outqueries ? RC.cacheMisses++ : RC.cacheHits++; 
+    float spent=makeFloat(sr.d_now-dc->d_now);
+    if(spent < 0.001)
+      g_stats.answers0_1++;
+    else if(spent < 0.010)
+      g_stats.answers1_10++;
+    else if(spent < 0.1)
+      g_stats.answers10_100++;
+    else if(spent < 1.0)
+      g_stats.answers100_1000++;
+    else
+      g_stats.answersSlow++;
+
+    uint64_t newLat=(uint64_t)(spent*1000000);
+    if(newLat < 1000000)  // outliers of several minutes exist..
+      g_stats.avgLatencyUsec=(uint64_t)((1-0.0001)*g_stats.avgLatencyUsec + 0.0001*newLat);
+
     delete dc;
   }
   catch(AhuException &ae) {
     L<<Logger::Error<<"startDoResolve problem: "<<ae.reason<<endl;
+  }
+  catch(MOADNSException& e) {
+    L<<Logger::Error<<"DNS parser error: "<<dc->d_mdp.d_qname<<", "<<e.what()<<endl;
   }
   catch(exception& e) {
     L<<Logger::Error<<"STL error: "<<e.what()<<endl;
@@ -367,38 +643,280 @@ void startDoResolve(void *p)
   }
 }
 
-void makeClientSocket()
+RecursorControlChannel s_rcc;
+
+void makeControlChannelSocket()
 {
-  d_clientsock=socket(AF_INET, SOCK_DGRAM,0);
-  if(d_clientsock<0) 
-    throw AhuException("Making a socket for resolver: "+stringerror());
-  
-  struct sockaddr_in sin;
-  memset((char *)&sin,0, sizeof(sin));
-  
-  sin.sin_family = AF_INET;
-
-  if(!IpToU32(::arg()["query-local-address"], &sin.sin_addr.s_addr))
-    throw AhuException("Unable to resolve local address '"+ ::arg()["query-local-address"] +"'"); 
-
-  int tries=10;
-  while(--tries) {
-    uint16_t port=10000+Utility::random()%10000;
-    sin.sin_port = htons(port); 
-    
-    if (::bind(d_clientsock, (struct sockaddr *)&sin, sizeof(sin)) >= 0) 
-      break;
-    
+  string sockname=::arg()["socket-dir"]+"/pdns_recursor.controlsocket";
+  if(::arg().mustDo("fork")) {
+    sockname+="."+lexical_cast<string>(Utility::getpid());
+    L<<Logger::Warning<<"Forked control socket name: "<<sockname<<endl;
   }
-  if(!tries)
-    throw AhuException("Resolver binding to local socket: "+stringerror());
-
-  Utility::setNonBlocking(d_clientsock);
-  L<<Logger::Error<<"Sending UDP queries from "<<inet_ntoa(sin.sin_addr)<<":"<< ntohs(sin.sin_port)  <<endl;
+  s_rcc.listen(sockname);
 }
+
+void handleRunningTCPQuestion(int fd, boost::any& var)
+{
+  TCPConnection* conn=any_cast<TCPConnection>(&var);
+
+  if(conn->state==TCPConnection::BYTE0) {
+    int bytes=recv(conn->fd, conn->data, 2, 0);
+    if(bytes==1)
+      conn->state=TCPConnection::BYTE1;
+    if(bytes==2) { 
+      conn->qlen=(((unsigned char)conn->data[0]) << 8)+ (unsigned char)conn->data[1];
+      conn->bytesread=0;
+      conn->state=TCPConnection::GETQUESTION;
+    }
+    if(!bytes || bytes < 0) {
+      TCPConnection tmp(*conn); 
+      g_fdm->removeReadFD(fd);
+      tmp.closeAndCleanup();
+      return;
+    }
+  }
+  else if(conn->state==TCPConnection::BYTE1) {
+    int bytes=recv(conn->fd, conn->data+1, 1, 0);
+    if(bytes==1) {
+      conn->state=TCPConnection::GETQUESTION;
+      conn->qlen=(((unsigned char)conn->data[0]) << 8)+ (unsigned char)conn->data[1];
+      conn->bytesread=0;
+    }
+    if(!bytes || bytes < 0) {
+      if(g_logCommonErrors)
+	L<<Logger::Error<<"TCP client "<< conn->remote.toString() <<" disconnected after first byte"<<endl;
+      TCPConnection tmp(*conn); 
+      g_fdm->removeReadFD(fd);
+      tmp.closeAndCleanup();  // conn loses validity here..
+      return;
+    }
+  }
+  else if(conn->state==TCPConnection::GETQUESTION) {
+    int bytes=recv(conn->fd, conn->data + conn->bytesread, conn->qlen - conn->bytesread, 0);
+    if(!bytes || bytes < 0) {
+      L<<Logger::Error<<"TCP client "<< conn->remote.toString() <<" disconnected while reading question body"<<endl;
+      TCPConnection tmp(*conn);
+      g_fdm->removeReadFD(fd);
+      tmp.closeAndCleanup();  // conn loses validity here..
+
+      return;
+    }
+    conn->bytesread+=bytes;
+    if(conn->bytesread==conn->qlen) {
+      TCPConnection tconn(*conn); 
+      g_fdm->removeReadFD(fd); // should no longer awake ourselves when there is data to read
+
+      DNSComboWriter* dc=0;
+      try {
+	dc=new DNSComboWriter(tconn.data, tconn.qlen, g_now);
+      }
+      catch(MOADNSException &mde) {
+	g_stats.clientParseError++; 
+	if(g_logCommonErrors)
+	  L<<Logger::Error<<"Unable to parse packet from TCP client "<< tconn.remote.toString() <<endl;
+	tconn.closeAndCleanup();
+	return;
+      }
+      
+      dc->setSocket(tconn.fd);
+      dc->d_tcp=true;
+      dc->setRemote(&tconn.remote);
+      if(dc->d_mdp.d_header.qr) {
+	delete dc;
+	L<<Logger::Error<<"Ignoring answer on server socket!"<<endl;
+	tconn.closeAndCleanup();
+	return;
+      }
+      else {
+	++g_stats.qcounter;
+	++g_stats.tcpqcounter;
+	MT->makeThread(startDoResolve, dc); // deletes dc
+	return;
+      }
+    }
+  }
+}
+
+//! Handle new incoming TCP connection
+void handleNewTCPQuestion(int fd, boost::any& )
+{
+  ComboAddress addr;
+  socklen_t addrlen=sizeof(addr);
+  int newsock=(int)accept(fd, (struct sockaddr*)&addr, &addrlen);
+  if(newsock>0) {
+    g_stats.addRemote(addr);
+    if(g_allowFrom && !g_allowFrom->match(&addr)) {
+      if(!g_quiet) 
+	L<<Logger::Error<<"["<<MT->getTid()<<"] dropping TCP query from "<<addr.toString()<<", address not matched by allow-from"<<endl;
+
+      g_stats.unauthorizedTCP++;
+      Utility::closesocket(newsock);
+      return;
+    }
+    
+    if(g_maxTCPPerClient && g_tcpClientCounts.count(addr) && g_tcpClientCounts[addr] >= g_maxTCPPerClient) {
+      g_stats.tcpClientOverflow++;
+      Utility::closesocket(newsock); // don't call TCPConnection::closeAndCleanup here - did not enter it in the counts yet!
+      return;
+    }
+    g_tcpClientCounts[addr]++;
+    Utility::setNonBlocking(newsock);
+    TCPConnection tc;
+    tc.fd=newsock;
+    tc.state=TCPConnection::BYTE0;
+    tc.remote=addr;
+    tc.startTime=g_now.tv_sec;
+    TCPConnection::s_currentConnections++;
+    g_fdm->addReadFD(tc.fd, handleRunningTCPQuestion, tc);
+
+    struct timeval now;
+    Utility::gettimeofday(&now, 0);
+    g_fdm->setReadTTD(tc.fd, now, g_tcpTimeout);
+  }
+}
+ 
+void questionExpand(const char* packet, uint16_t len, char* qname, int maxlen, uint16_t& type)
+{
+  type=0;
+  const unsigned char* end=(const unsigned char*)packet+len;
+  unsigned char* lbegin=(unsigned char*)packet+12;
+  unsigned char* pos=lbegin;
+  unsigned char labellen;
+
+  // 3www4ds9a2nl0
+  char *dst=qname;
+  char* lend=dst + maxlen;
+  
+  if(!*pos)
+    *dst++='.';
+
+  while((labellen=*pos++) && pos < end) { // "scan and copy"
+    if(dst >= lend)
+      throw runtime_error("Label length exceeded destination length");
+    for(;labellen;--labellen)
+      *dst++ = *pos++;
+    *dst++='.';
+  }
+  *dst=0;
+
+  if(pos + labellen + 2 <= end)  // is this correct XXX FIXME?
+    type=(*pos)*256 + *(pos+1);
+
+
+  //  cerr<<"Returning: '"<< string(tmp+1, pos) <<"'\n";
+}
+
+string questionExpand(const char* packet, uint16_t len, uint16_t& type)
+{
+  char tmp[512];
+  questionExpand(packet, len, tmp, sizeof(tmp), type);
+  return tmp;
+}
+
+void handleNewUDPQuestion(int fd, boost::any& var)
+{
+  int len;
+  char data[1500];
+  ComboAddress fromaddr;
+  socklen_t addrlen=sizeof(fromaddr);
+  //  uint64_t tsc1, tsc2;
+
+  if((len=recvfrom(fd, data, sizeof(data), 0, (sockaddr *)&fromaddr, &addrlen)) >= 0) {
+    //    RDTSC(tsc1);      
+    g_stats.addRemote(fromaddr);
+
+    if(g_allowFrom && !g_allowFrom->match(&fromaddr)) {
+      if(!g_quiet) 
+	L<<Logger::Error<<"["<<MT->getTid()<<"] dropping UDP query from "<<fromaddr.toString()<<", address not matched by allow-from"<<endl;
+
+      g_stats.unauthorizedUDP++;
+      return;
+    }
+    try {
+      dnsheader* dh=(dnsheader*)data;
+      
+      if(dh->qr) {
+	if(g_logCommonErrors)
+	  L<<Logger::Error<<"Ignoring answer from "<<fromaddr.toString()<<" on server socket!"<<endl;
+      }
+      else {
+	++g_stats.qcounter;
+#if 0
+	uint16_t type;
+	char qname[256];
+        try {
+	   questionExpand(data, len, qname, sizeof(qname), type);  
+        }
+        catch(exception &e)
+        {
+           throw MOADNSException(e.what());
+        }
+	
+	// must all be same length answers right now!
+	if((type==QType::A || type==QType::AAAA) && dh->arcount==0 && dh->ancount==0 && dh->nscount ==0 && ntohs(dh->qdcount)==1 ) {
+	  char *record[10];
+	  uint16_t rlen[10];
+	  uint32_t ttd[10];
+	  int count;
+	  if((count=RC.getDirect(g_now.tv_sec, qname, QType(type), ttd, record, rlen))) { 
+	    if(len + count*(sizeof(dnsrecordheader) + 2 + rlen[0]) > 512)
+	      goto slow;
+
+	    random_shuffle(record, &record[count]);
+	    dh->qr=1;
+	    dh->ra=1;
+	    dh->ancount=ntohs(count);
+	    for(int n=0; n < count ; ++n) {
+	      memcpy(data+len, "\xc0\x0c", 2); // answer label pointer
+	      len+=2;
+	      struct dnsrecordheader drh;
+	      drh.d_type=htons(type);
+	      drh.d_class=htons(1);
+	      drh.d_ttl=htonl(ttd[n] - g_now.tv_sec);
+	      drh.d_clen=htons(rlen[n]);
+	      memcpy(data+len, &drh, sizeof(drh));
+	      len+=sizeof(drh);
+	      memcpy(data+len, record[n], rlen[n]);
+	      len+=rlen[n];
+	    }
+	    RDTSC(tsc2);      	    
+	    g_stats.shunted++;
+	    sendto(fd, data, len, 0, (struct sockaddr *)(&fromaddr), fromaddr.getSocklen());
+//	    cerr<<"shunted: " << (tsc2-tsc1) / 3000.0 << endl;
+	    return;
+	  }
+	}
+	else {
+	  if(type!=QType::A && type!=QType::AAAA)
+    	    g_stats.noShuntWrongType++;
+          else
+            g_stats.noShuntWrongQuestion++;
+        }
+      slow:
+#endif
+	DNSComboWriter* dc = new DNSComboWriter(data, len, g_now);
+	dc->setSocket(fd);
+	dc->setRemote(&fromaddr);
+
+	dc->d_tcp=false;
+
+	MT->makeThread(startDoResolve, (void*) dc); // deletes dc
+      }
+    }
+    catch(MOADNSException& mde) {
+      g_stats.clientParseError++; 
+      if(g_logCommonErrors)
+	L<<Logger::Error<<"Unable to parse packet from remote UDP client "<<fromaddr.toString() <<": "<<mde.what()<<endl;
+    }
+  }
+}
+
+typedef vector<pair<int, function< void(int, any&) > > > deferredAdd_t;
+deferredAdd_t deferredAdd;
 
 void makeTCPServerSockets()
 {
+  int fd;
   vector<string>locals;
   stringtok(locals,::arg()["local-address"]," ,");
 
@@ -406,32 +924,52 @@ void makeTCPServerSockets()
     throw AhuException("No local address specified");
   
   for(vector<string>::const_iterator i=locals.begin();i!=locals.end();++i) {
-    int fd=socket(AF_INET, SOCK_STREAM,0);
-    if(fd<0) 
-      throw AhuException("Making a server socket for resolver: "+stringerror());
-  
-    struct sockaddr_in sin;
-    memset((char *)&sin,0, sizeof(sin));
+    ServiceTuple st;
+    st.port=::arg().asNum("local-port");
+    parseService(*i, st);
     
-    sin.sin_family = AF_INET;
-    if(!IpToU32(*i, &sin.sin_addr.s_addr))
-      throw AhuException("Unable to resolve local address '"+ *i +"'"); 
+    ComboAddress sin;
+
+    memset((char *)&sin,0, sizeof(sin));
+    sin.sin4.sin_family = AF_INET;
+    if(!IpToU32(st.host, (uint32_t*)&sin.sin4.sin_addr.s_addr)) {
+      sin.sin6.sin6_family = AF_INET6;
+      if(Utility::inet_pton(AF_INET6, st.host.c_str(), &sin.sin6.sin6_addr) <= 0)
+	throw AhuException("Unable to resolve local address for TCP server on '"+ st.host +"'"); 
+    }
+
+    fd=socket(sin.sin6.sin6_family, SOCK_STREAM, 0);
+    if(fd<0) 
+      throw AhuException("Making a TCP server socket for resolver: "+stringerror());
 
     int tmp=1;
     if(setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,(char*)&tmp,sizeof tmp)<0) {
       L<<Logger::Error<<"Setsockopt failed for TCP listening socket"<<endl;
-      exit(1);  
+      exit(1);
     }
     
-    sin.sin_port = htons(::arg().asNum("local-port")); 
-    
-    if (::bind(fd, (struct sockaddr *)&sin, sizeof(sin))<0) 
-      throw AhuException("Binding TCP server socket for "+*i+": "+stringerror());
+#ifdef TCP_DEFER_ACCEPT
+    if(setsockopt(fd, SOL_TCP,TCP_DEFER_ACCEPT,(char*)&tmp,sizeof tmp) >= 0) {
+      if(i==locals.begin())
+	L<<Logger::Error<<"Enabled TCP data-ready filter for (slight) DoS protection"<<endl;
+    }
+#endif
+
+    sin.sin4.sin_port = htons(st.port);
+    int socklen=sin.sin4.sin_family==AF_INET ? sizeof(sin.sin4) : sizeof(sin.sin6);
+    if (::bind(fd, (struct sockaddr *)&sin, socklen )<0) 
+      throw AhuException("Binding TCP server socket for "+ st.host +": "+stringerror());
     
     Utility::setNonBlocking(fd);
+    setSendBuffer(fd, 65000);
     listen(fd, 128);
-    s_tcpserversocks.push_back(fd);
-    L<<Logger::Error<<"Listening for TCP queries on "<<inet_ntoa(sin.sin_addr)<<":"<<::arg().asNum("local-port")<<endl;
+    deferredAdd.push_back(make_pair(fd, handleNewTCPQuestion));
+    g_tcpListenSockets.push_back(fd);
+
+    if(sin.sin4.sin_family == AF_INET) 
+      L<<Logger::Error<<"Listening for TCP queries on "<< sin.toString() <<":"<<st.port<<endl;
+    else
+      L<<Logger::Error<<"Listening for TCP queries on ["<< sin.toString() <<"]:"<<st.port<<endl;
   }
 }
 
@@ -448,25 +986,40 @@ void makeUDPServerSockets()
   }
 
   for(vector<string>::const_iterator i=locals.begin();i!=locals.end();++i) {
-    int fd=socket(AF_INET, SOCK_DGRAM,0);
-    if(fd<0) 
-      throw AhuException("Making a server socket for resolver: "+stringerror());
-  
-    struct sockaddr_in sin;
-    memset((char *)&sin,0, sizeof(sin));
+    ServiceTuple st;
+    st.port=::arg().asNum("local-port");
+    parseService(*i, st);
+
+    ComboAddress sin;
+
+    memset(&sin, 0, sizeof(sin));
+    sin.sin4.sin_family = AF_INET;
+    if(!IpToU32(st.host.c_str() , (uint32_t*)&sin.sin4.sin_addr.s_addr)) {
+      sin.sin6.sin6_family = AF_INET6;
+      if(Utility::inet_pton(AF_INET6, st.host.c_str(), &sin.sin6.sin6_addr) <= 0)
+	throw AhuException("Unable to resolve local address for UDP server on '"+ st.host +"'"); 
+    }
     
-    sin.sin_family = AF_INET;
-    if(!IpToU32(*i, &sin.sin_addr.s_addr))
-      throw AhuException("Unable to resolve local address '"+ *i +"'"); 
-    
-    sin.sin_port = htons(::arg().asNum("local-port")); 
-    
-    if (::bind(fd, (struct sockaddr *)&sin, sizeof(sin))<0) 
-      throw AhuException("Resolver binding to server socket for "+*i+": "+stringerror());
+    int fd=socket(sin.sin4.sin_family, SOCK_DGRAM,0);
+    if(fd < 0) {
+      throw AhuException("Making a UDP server socket for resolver: "+netstringerror());
+    }
+
+    setReceiveBuffer(fd, 200000);
+    sin.sin4.sin_port = htons(st.port);
+
+    int socklen=sin.sin4.sin_family==AF_INET ? sizeof(sin.sin4) : sizeof(sin.sin6);
+    if (::bind(fd, (struct sockaddr *)&sin, socklen)<0) 
+      throw AhuException("Resolver binding to server socket on port "+ lexical_cast<string>(st.port) +" for "+ st.host+": "+stringerror());
     
     Utility::setNonBlocking(fd);
-    d_udpserversocks.push_back(fd);
-    L<<Logger::Error<<"Listening for UDP queries on "<<inet_ntoa(sin.sin_addr)<<":"<<::arg().asNum("local-port")<<endl;
+    //    g_fdm->addReadFD(fd, handleNewUDPQuestion);
+    deferredAdd.push_back(make_pair(fd, handleNewUDPQuestion));
+
+    if(sin.sin4.sin_family == AF_INET) 
+      L<<Logger::Error<<"Listening for UDP queries on "<< sin.toString() <<":"<<st.port<<endl;
+    else
+      L<<Logger::Error<<"Listening for UDP queries on ["<< sin.toString() <<"]:"<<st.port<<endl;
   }
 }
 
@@ -479,163 +1032,817 @@ void daemonize(void)
   
   setsid(); 
 
-  // cleanup open fds, but skip sockets 
-  close(0);
-  close(1);
-  close(2);
+  int i=open("/dev/null",O_RDWR); /* open stdin */
+  if(i < 0) 
+    L<<Logger::Critical<<"Unable to open /dev/null: "<<stringerror()<<endl;
+  else {
+    dup2(i,0); /* stdin */
+    dup2(i,1); /* stderr */
+    dup2(i,2); /* stderr */
+    close(i);
+  }
 }
 #endif
 
-int counter, qcounter;
+uint64_t counter;
 bool statsWanted;
+
 
 void usr1Handler(int)
 {
   statsWanted=true;
 }
 
+
+
 void usr2Handler(int)
 {
   SyncRes::setLog(true);
+  g_quiet=false;
+  ::arg().set("quiet")="no";
+
 }
 
 void doStats(void)
 {
-  if(qcounter) {
-    L<<Logger::Error<<"stats: "<<qcounter<<" questions, "<<RC.size()<<" cache entries, "<<SyncRes::s_negcache.size()<<" negative entries, "
+  if(g_stats.qcounter && (RC.cacheHits + RC.cacheMisses) && SyncRes::s_queries && SyncRes::s_outqueries) {
+    L<<Logger::Warning<<"stats: "<<g_stats.qcounter<<" questions, "<<RC.size()<<" cache entries, "<<SyncRes::s_negcache.size()<<" negative entries, "
      <<(int)((RC.cacheHits*100.0)/(RC.cacheHits+RC.cacheMisses))<<"% cache hits"<<endl;
-    L<<Logger::Error<<"stats: throttle map: "<<SyncRes::s_throttle.size()<<", ns speeds: "
-     <<SyncRes::s_nsSpeeds.size()<<", bytes: "<<RC.bytes()<<endl;
-    L<<Logger::Error<<"stats: outpacket/query ratio "<<(int)(SyncRes::s_outqueries*100.0/SyncRes::s_queries)<<"%";
-    L<<Logger::Error<<", "<<(int)(SyncRes::s_throttledqueries*100.0/(SyncRes::s_outqueries+SyncRes::s_throttledqueries))<<"% throttled, "
+    L<<Logger::Warning<<"stats: throttle map: "<<SyncRes::s_throttle.size()<<", ns speeds: "
+     <<SyncRes::s_nsSpeeds.size()<<endl; // ", bytes: "<<RC.bytes()<<endl;
+    L<<Logger::Warning<<"stats: outpacket/query ratio "<<(int)(SyncRes::s_outqueries*100.0/SyncRes::s_queries)<<"%";
+    L<<Logger::Warning<<", "<<(int)(SyncRes::s_throttledqueries*100.0/(SyncRes::s_outqueries+SyncRes::s_throttledqueries))<<"% throttled, "
      <<SyncRes::s_nodelegated<<" no-delegation drops"<<endl;
-    L<<Logger::Error<<"stats: "<<SyncRes::s_tcpoutqueries<<" outgoing tcp connections, "<<MT->numProcesses()<<" queries running, "<<SyncRes::s_outgoingtimeouts<<" outgoing timeouts"<<endl;
+    L<<Logger::Warning<<"stats: "<<SyncRes::s_tcpoutqueries<<" outgoing tcp connections, "<<MT->numProcesses()<<" queries running, "<<SyncRes::s_outgoingtimeouts<<" outgoing timeouts"<<endl;
   }
   else if(statsWanted) 
-    L<<Logger::Error<<"stats: no stats yet!"<<endl;
+    L<<Logger::Warning<<"stats: no stats yet!"<<endl;
 
   statsWanted=false;
 }
 
 static void houseKeeping(void *)
+try
 {
   static time_t last_stat, last_rootupdate, last_prune;
-  time_t now=time(0);
-  if(now - last_prune > 60) { 
-    RC.doPrune();
-    int pruned=0;
-    for(SyncRes::negcache_t::iterator i = SyncRes::s_negcache.begin(); i != SyncRes::s_negcache.end();) 
-      if(i->second.ttd > now) {
-	SyncRes::s_negcache.erase(i++);
-	pruned++;
-      }
-      else
-	++i;
+  struct timeval now;
+  Utility::gettimeofday(&now, 0);
 
-    time_t limit=now-300;
+  if(now.tv_sec - last_prune > 300) { 
+    DTime dt;
+    dt.setTimeval(now);
+    RC.doPrune();
+    
+    typedef SyncRes::negcache_t::nth_index<1>::type negcache_by_ttd_index_t;
+    negcache_by_ttd_index_t& ttdindex=boost::multi_index::get<1>(SyncRes::s_negcache);
+
+    negcache_by_ttd_index_t::iterator i=ttdindex.lower_bound(now.tv_sec);
+    ttdindex.erase(ttdindex.begin(), i);
+
+    time_t limit=now.tv_sec-300;
     for(SyncRes::nsspeeds_t::iterator i = SyncRes::s_nsSpeeds.begin() ; i!= SyncRes::s_nsSpeeds.end(); )
       if(i->second.stale(limit))
 	SyncRes::s_nsSpeeds.erase(i++);
       else
 	++i;
 
-    //    cerr<<"Pruned "<<pruned<<" records, left "<<SyncRes::s_negcache.size()<<"\n";
+    //   cerr<<"Pruned "<<pruned<<" records, left "<<SyncRes::s_negcache.size()<<"\n";
+//    cout<<"Prune took "<<dt.udiff()<<"usec\n";
     last_prune=time(0);
   }
-  if(now - last_stat>1800) { 
+  if(now.tv_sec - last_stat>1800) { 
     doStats();
     last_stat=time(0);
   }
-  if(now -last_rootupdate>7200) {
-    SyncRes sr;
+  if(now.tv_sec - last_rootupdate > 7200) {
+    SyncRes sr(now);
     vector<DNSResourceRecord> ret;
 
     sr.setNoCache();
-    int res=sr.beginResolve("", QType(QType::NS), ret);
+    int res=sr.beginResolve(".", QType(QType::NS), 1, ret);
     if(!res) {
-      L<<Logger::Error<<"Refreshed . records"<<endl;
-      last_rootupdate=now;
+      L<<Logger::Warning<<"Refreshed . records"<<endl;
+      last_rootupdate=now.tv_sec;
     }
     else
       L<<Logger::Error<<"Failed to update . records, RCODE="<<res<<endl;
   }
 }
-
-struct TCPConnection
+catch(AhuException& ae)
 {
-  int fd;
-  enum {BYTE0, BYTE1, GETQUESTION} state;
-  int qlen;
-  int bytesread;
-  struct sockaddr_in remote;
-  char data[65535];
-  time_t startTime;
-};
+  L<<Logger::Error<<"Fatal error: "<<ae.reason<<endl;
+  throw;
+}
+;
 
-#if 0
 
-#include <execinfo.h>
-
-static void maketrace()
+void handleRCC(int fd, boost::any& var)
 {
-  void *array[20]; //only care about last 17 functions (3 taken with tracing support)
-  size_t size;
-  char **strings;
-  size_t i;
-
-  size = backtrace (array, 20);
-  strings = backtrace_symbols (array, size); //Need -rdynamic gcc (linker) flag for this to work
-
-  for (i = 0; i < size; i++) //skip useless functions
-    cout<<strings[i]<<"\n";
-  cout<<"--"<<endl;
+  string remote;
+  string msg=s_rcc.recv(&remote);
+  RecursorControlParser rcp;
+  RecursorControlParser::func_t* command;
+  string answer=rcp.getAnswer(msg, &command);
+  try {
+    s_rcc.send(answer, &remote);
+    command();
+  }
+  catch(exception& e) {
+    L<<Logger::Error<<"Error dealing with control socket request: "<<e.what()<<endl;
+  }
+  catch(AhuException& ae) {
+    L<<Logger::Error<<"Error dealing with control socket request: "<<ae.reason<<endl;
+  }
 }
 
-extern "C" {
-int gettimeofday (struct timeval *__restrict __tv,
-		  __timezone_ptr_t __tz)
+void handleTCPClientReadable(int fd, boost::any& var)
 {
-  maketrace();
-  return 0;
+  PacketID* pident=any_cast<PacketID>(&var);
+  //  cerr<<"handleTCPClientReadable called for fd "<<fd<<", pident->inNeeded: "<<pident->inNeeded<<", "<<pident->sock->getHandle()<<endl;
+
+  shared_array<char> buffer(new char[pident->inNeeded]);
+
+  int ret=recv(fd, buffer.get(), pident->inNeeded,0);
+  if(ret > 0) {
+    pident->inMSG.append(&buffer[0], &buffer[ret]);
+    pident->inNeeded-=ret;
+    if(!pident->inNeeded) {
+      //      cerr<<"Got entire load of "<<pident->inMSG.size()<<" bytes"<<endl;
+      PacketID pid=*pident;
+      string msg=pident->inMSG;
+      
+      g_fdm->removeReadFD(fd);
+      MT->sendEvent(pid, &msg); 
+    }
+    else {
+      //      cerr<<"Still have "<<pident->inNeeded<<" left to go"<<endl;
+    }
+  }
+  else {
+    PacketID tmp=*pident;
+    g_fdm->removeReadFD(fd); // pident might now be invalid (it isn't, but still)
+    string empty;
+    MT->sendEvent(tmp, &empty); // this conveys error status
+  }
 }
 
+void handleTCPClientWritable(int fd, boost::any& var)
+{
+  PacketID* pid=any_cast<PacketID>(&var);
+  
+  int ret=send(fd, pid->outMSG.c_str() + pid->outPos, pid->outMSG.size() - pid->outPos,0);
+  if(ret > 0) {
+    pid->outPos+=ret;
+    if(pid->outPos==pid->outMSG.size()) {
+      PacketID tmp=*pid;
+      g_fdm->removeWriteFD(fd);
+      MT->sendEvent(tmp, &tmp.outMSG);  // send back what we sent to convey everything is ok
+    }
+  }
+  else {  // error or EOF
+    PacketID tmp(*pid);
+    g_fdm->removeWriteFD(fd);
+    string sent;
+    MT->sendEvent(tmp, &sent);         // we convey error status by sending empty string
+  }
 }
+
+// resend event to everybody chained onto it
+void doResends(MT_t::waiters_t::iterator& iter, PacketID resend, const string& content)
+{
+  if(iter->key.chain.empty())
+    return;
+
+  for(PacketID::chain_t::iterator i=iter->key.chain.begin(); i != iter->key.chain.end() ; ++i) {
+    resend.fd=-1;
+    resend.id=*i;
+    MT->sendEvent(resend, &content);
+    g_stats.chainResends++;
+    //    cerr<<"\tResending "<<content.size()<<" bytes for fd="<<resend.fd<<" and id="<<resend.id<<": "<< res <<endl;
+  }
+}
+
+void handleUDPServerResponse(int fd, boost::any& var)
+{
+  PacketID pid=any_cast<PacketID>(var);
+  int len;
+  char data[1500];
+  ComboAddress fromaddr;
+  socklen_t addrlen=sizeof(fromaddr);
+
+  len=recvfrom(fd, data, sizeof(data), 0, (sockaddr *)&fromaddr, &addrlen);
+
+  if(len < (int)sizeof(dnsheader)) {
+    if(len < 0)
+      ; //      cerr<<"Error on fd "<<fd<<": "<<stringerror()<<"\n";
+    else {
+      g_stats.serverParseError++; 
+      if(g_logCommonErrors)
+	L<<Logger::Error<<"Unable to parse packet from remote UDP server "<< sockAddrToString((struct sockaddr_in*) &fromaddr) <<
+	  ": packet smalller than DNS header"<<endl;
+    }
+
+    g_udpclientsocks.returnSocket(fd);
+    string empty;
+
+    MT_t::waiters_t::iterator iter=MT->d_waiters.find(pid);
+    if(iter != MT->d_waiters.end()) 
+      doResends(iter, pid, empty);
+    
+    MT->sendEvent(pid, &empty); // this denotes error (does lookup again.. at least L1 will be hot)
+    return;
+  }  
+
+  dnsheader dh;
+  memcpy(&dh, data, sizeof(dh));
+  
+  if(!dh.qdcount) // UPC, Nominum?
+    return;
+  
+  if(dh.qr) {
+    PacketID pident;
+    pident.remote=fromaddr;
+    pident.id=dh.id;
+    pident.fd=fd;
+    pident.domain=questionExpand(data, len, pident.type); // don't copy this from above - we need to do the actual read
+    string packet;
+    packet.assign(data, len);
+
+    MT_t::waiters_t::iterator iter=MT->d_waiters.find(pident);
+    if(iter != MT->d_waiters.end()) {
+      doResends(iter, pident, packet);
+    }
+
+    if(!MT->sendEvent(pident, &packet)) {
+//      if(g_logCommonErrors)
+//        L<<Logger::Warning<<"Discarding unexpected packet from "<<fromaddr.toString()<<": "<<pident.type<<endl;
+      g_stats.unexpectedCount++;
+      
+      for(MT_t::waiters_t::iterator mthread=MT->d_waiters.begin(); mthread!=MT->d_waiters.end(); ++mthread) {
+	if(pident.fd==mthread->key.fd && mthread->key.remote==pident.remote &&  mthread->key.type == pident.type &&
+	   !Utility::strcasecmp(pident.domain.c_str(), mthread->key.domain.c_str())) {
+	  mthread->key.nearMisses++;
+	}
+      }
+    }
+    else if(fd >= 0)
+      g_udpclientsocks.returnSocket(fd);
+  }
+  else
+    L<<Logger::Warning<<"Ignoring question on outgoing socket from "<< sockAddrToString((struct sockaddr_in*) &fromaddr)  <<endl;
+}
+
+FDMultiplexer* getMultiplexer()
+{
+  FDMultiplexer* ret;
+  for(FDMultiplexer::FDMultiplexermap_t::const_iterator i = FDMultiplexer::getMultiplexerMap().begin();
+      i != FDMultiplexer::getMultiplexerMap().end(); ++i) {
+    try {
+      ret=i->second();
+      L<<Logger::Error<<"Enabled '"<<ret->getName()<<"' multiplexer"<<endl;
+      return ret;
+    }
+    catch(FDMultiplexerException &fe) {
+      L<<Logger::Error<<"Non-fatal error initializing possible multiplexer ("<<fe.what()<<"), falling back"<<endl;
+    }
+    catch(...) {
+      L<<Logger::Error<<"Non-fatal error initializing possible multiplexer"<<endl;
+    }
+  }
+  L<<Logger::Error<<"No working multiplexer found!"<<endl;
+  exit(1);
+}
+
+static void makeNameToIPZone(const string& hostname, const string& ip)
+{
+  SyncRes::AuthDomain ad;
+  DNSResourceRecord rr;
+  rr.qname=toCanonic("", hostname);
+  rr.d_place=DNSResourceRecord::ANSWER;
+  rr.ttl=86400;
+  rr.qtype=QType::SOA;
+  rr.content="localhost. root 1 604800 86400 2419200 604800";
+  
+  ad.d_records.insert(rr);
+
+  rr.qtype=QType::NS;
+  rr.content="localhost.";
+
+  ad.d_records.insert(rr);
+  
+  rr.qtype=QType::A;
+  rr.content=ip;
+  ad.d_records.insert(rr);
+  
+  if(SyncRes::s_domainmap.count(rr.qname)) {
+    L<<Logger::Warning<<"Hosts file will not overwrite zone '"<<rr.qname<<"' already loaded"<<endl;
+  }
+  else {
+    L<<Logger::Warning<<"Inserting forward zone '"<<rr.qname<<"' based on hosts file"<<endl;
+    SyncRes::s_domainmap[rr.qname]=ad;
+  }
+}
+
+//! parts[0] must be an IP address, the rest must be host names
+static void makeIPToNamesZone(const vector<string>& parts) 
+{
+  string address=parts[0];
+  vector<string> ipparts;
+  stringtok(ipparts, address,".");
+  
+  SyncRes::AuthDomain ad;
+  DNSResourceRecord rr;
+  for(int n=ipparts.size()-1; n>=0 ; --n) {
+    rr.qname.append(ipparts[n]);
+    rr.qname.append(1,'.');
+  }
+  rr.qname.append("in-addr.arpa.");
+
+  rr.d_place=DNSResourceRecord::ANSWER;
+  rr.ttl=86400;
+  rr.qtype=QType::SOA;
+  rr.content="localhost. root. 1 604800 86400 2419200 604800";
+  
+  ad.d_records.insert(rr);
+
+  rr.qtype=QType::NS;
+  rr.content="localhost.";
+
+  ad.d_records.insert(rr);
+  rr.qtype=QType::PTR;
+
+  if(ipparts.size()==4)  // otherwise this is a partial zone
+    for(unsigned int n=1; n < parts.size(); ++n) {
+      rr.content=toCanonic("", parts[n]);
+      ad.d_records.insert(rr);
+    }
+
+  if(SyncRes::s_domainmap.count(rr.qname)) {
+    L<<Logger::Warning<<"Will not overwrite zone '"<<rr.qname<<"' already loaded"<<endl;
+  }
+  else {
+    if(ipparts.size()==4)
+      L<<Logger::Warning<<"Inserting reverse zone '"<<rr.qname<<"' based on hosts file"<<endl;
+    SyncRes::s_domainmap[rr.qname]=ad;
+  }
+}
+
+
+void parseAuthAndForwards();
+
+string reloadAuthAndForwards()
+{
+  SyncRes::domainmap_t original=SyncRes::s_domainmap;
+  
+  try {
+    L<<Logger::Warning<<"Reloading zones, purging data from cache"<<endl;
+  
+    for(SyncRes::domainmap_t::const_iterator i = SyncRes::s_domainmap.begin(); i != SyncRes::s_domainmap.end(); ++i) {
+      for(SyncRes::AuthDomain::records_t::const_iterator j = i->second.d_records.begin(); j != i->second.d_records.end(); ++j) 
+	RC.doWipeCache(j->qname);
+    }
+
+    string configname=::arg()["config-dir"]+"/recursor.conf";
+    cleanSlashes(configname);
+    
+    if(!::arg().preParseFile(configname.c_str(), "forward-zones")) 
+      L<<Logger::Warning<<"Unable to re-parse configuration file '"<<configname<<"'"<<endl;
+    
+    ::arg().preParseFile(configname.c_str(), "auth-zones");
+    ::arg().preParseFile(configname.c_str(), "export-etc-hosts");
+    ::arg().preParseFile(configname.c_str(), "serve-rfc1918");
+    
+    parseAuthAndForwards();
+    
+    // purge again - new zones need to blank out the cache
+    for(SyncRes::domainmap_t::const_iterator i = SyncRes::s_domainmap.begin(); i != SyncRes::s_domainmap.end(); ++i) {
+      for(SyncRes::AuthDomain::records_t::const_iterator j = i->second.d_records.begin(); j != i->second.d_records.end(); ++j) 
+	RC.doWipeCache(j->qname);
+    }
+
+    // this is pretty blunt
+    SyncRes::s_negcache.clear(); 
+    return "ok\n";
+  }
+  catch(exception& e) {
+    L<<Logger::Error<<"Had error reloading zones, keeping original data: "<<e.what()<<endl;
+  }
+  catch(AhuException& ae) {
+    L<<Logger::Error<<"Encountered error reloading zones, keeping original data: "<<ae.reason<<endl;
+  }
+  catch(...) {
+    L<<Logger::Error<<"Encountered unknown error reloading zones, keeping original data"<<endl;
+  }
+  SyncRes::s_domainmap.swap(original);
+  return "reloading failed, see log\n";
+}
+
+void parseAuthAndForwards()
+{
+  SyncRes::s_domainmap.clear(); // this makes us idempotent
+
+  TXTRecordContent::report();
+
+  typedef vector<string> parts_t;
+  parts_t parts;  
+  for(int n=0; n < 2 ; ++n ) {
+    parts.clear();
+    stringtok(parts, ::arg()[n ? "forward-zones" : "auth-zones"], ",\t\n\r");
+    for(parts_t::const_iterator iter = parts.begin(); iter != parts.end(); ++iter) {
+      SyncRes::AuthDomain ad;
+      pair<string,string> headers=splitField(*iter, '=');
+      trim(headers.first);
+      trim(headers.second);
+      headers.first=toCanonic("", headers.first);
+      if(n==0) {
+	L<<Logger::Error<<"Parsing authoritative data for zone '"<<headers.first<<"' from file '"<<headers.second<<"'"<<endl;
+	ZoneParserTNG zpt(headers.second, headers.first);
+	DNSResourceRecord rr;
+	while(zpt.get(rr)) {
+	  try {
+	    string tmp=DNSRR2String(rr);
+	    rr=String2DNSRR(rr.qname, rr.qtype, tmp, 3600);
+	  }
+	  catch(exception &e) {
+	    throw AhuException("Error parsing record '"+rr.qname+"' of type "+rr.qtype.getName()+" in zone '"+headers.first+"' from file '"+headers.second+"': "+e.what());
+	  }
+	  catch(...) {
+	    throw AhuException("Error parsing record '"+rr.qname+"' of type "+rr.qtype.getName()+" in zone '"+headers.first+"' from file '"+headers.second+"'");
+	  }
+
+	  ad.d_records.insert(rr);
+
+	}
+      }
+      else {
+	L<<Logger::Error<<"Redirecting queries for zone '"<<headers.first<<"' to IP '"<<headers.second<<"'"<<endl;
+	ad.d_server=headers.second;
+      }
+      
+      SyncRes::s_domainmap[headers.first]=ad;
+    }
+  }
+  
+  if(!::arg()["forward-zones-file"].empty()) {
+    L<<Logger::Warning<<"Reading zone forwarding information from '"<<::arg()["forward-zones-file"]<<"'"<<endl;
+    SyncRes::AuthDomain ad;
+    FILE *rfp=fopen(::arg()["forward-zones-file"].c_str(), "r");
+
+    if(!rfp)
+      throw AhuException("Error opening forward-zones-file '"+::arg()["forward-zones-file"]+"': "+stringerror());
+
+    shared_ptr<FILE> fp=shared_ptr<FILE>(rfp, fclose);
+    
+    char line[1024];
+    vector<string> parts;
+    int linenum=0;
+    uint64_t before = SyncRes::s_domainmap.size();
+    while(linenum++, fgets(line, sizeof(line)-1, fp.get())) {
+      parts.clear();
+      stringtok(parts,line,"=, ");
+      if(parts.empty())
+	continue;
+      if(parts.size()<2) 
+	throw AhuException("Error parsing line "+lexical_cast<string>(linenum)+" of " +::arg()["forward-zones-file"]);
+      trim(parts[0]);
+      trim(parts[1]);
+      parts[0]=toCanonic("", parts[0]);
+      ad.d_server=parts[1];
+      //      cerr<<"Inserting '"<<domain<<"' to '"<<ad.d_server<<"'\n";
+      SyncRes::s_domainmap[parts[0]]=ad;
+    }
+    L<<Logger::Warning<<"Done parsing " << SyncRes::s_domainmap.size() - before<<" forwarding instructions"<<endl;
+  }
+
+  if(::arg().mustDo("export-etc-hosts")) {
+    string line;
+    string fname;
+    
+    ifstream ifs("/etc/hosts");
+    if(!ifs) {
+      L<<Logger::Warning<<"Could not open /etc/hosts for reading"<<endl;
+      return;
+    }
+    
+    string::size_type pos;
+    while(getline(ifs,line)) {
+      pos=line.find('#');
+      if(pos!=string::npos)
+	line.resize(pos);
+      trim(line);
+      if(line.empty())
+	continue;
+      parts.clear();
+      stringtok(parts, line, "\t\r\n ");
+      if(parts[0].find(':')!=string::npos)
+	continue;
+      
+      for(unsigned int n=1; n < parts.size(); ++n)
+	makeNameToIPZone(parts[n], parts[0]);
+      makeIPToNamesZone(parts);
+    }
+  }
+  if(::arg().mustDo("serve-rfc1918")) {
+    L<<Logger::Warning<<"Inserting rfc 1918 private space zones"<<endl;
+    parts.clear();
+    parts.push_back("127");
+    makeIPToNamesZone(parts);
+    parts[0]="10";
+    makeIPToNamesZone(parts);
+
+    parts[0]="192.168";
+    makeIPToNamesZone(parts);
+    for(int n=16; n < 32; n++) {
+      parts[0]="172."+lexical_cast<string>(n);
+      makeIPToNamesZone(parts);
+    }
+  }
+}
+
+int serviceMain(int argc, char*argv[])
+{
+  L.setName("pdns_recursor");
+
+  L.setLoglevel((Logger::Urgency)(6)); // info and up
+
+  if(!::arg()["logging-facility"].empty()) {
+    boost::optional<int> val=logFacilityToLOG(::arg().asNum("logging-facility") );
+    if(val)
+      theL().setFacility(*val);
+    else
+      L<<Logger::Error<<"Unknown logging facility "<<::arg().asNum("logging-facility") <<endl;
+  }
+
+  L<<Logger::Warning<<"PowerDNS recursor "<<VERSION<<" (C) 2001-2006 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
+#ifdef __GNUC__
+  L<<", gcc "__VERSION__;
+#endif // add other compilers here
+#ifdef _MSC_VER
+  L<<", MSVC "<<_MSC_VER;
+#endif
+  L<<") starting up"<<endl;
+  
+  L<<Logger::Warning<<"PowerDNS comes with ABSOLUTELY NO WARRANTY. "
+    "This is free software, and you are welcome to redistribute it "
+    "according to the terms of the GPL version 2."<<endl;
+  
+  L<<Logger::Warning<<"Operating in "<<(sizeof(unsigned long)*8) <<" bits mode"<<endl;
+  
+  if(!::arg()["allow-from"].empty()) {
+    g_allowFrom=new NetmaskGroup;
+    vector<string> ips;
+    stringtok(ips, ::arg()["allow-from"], ", ");
+    L<<Logger::Warning<<"Only allowing queries from: ";
+    for(vector<string>::const_iterator i = ips.begin(); i!= ips.end(); ++i) {
+      g_allowFrom->addMask(*i);
+      if(i!=ips.begin())
+	L<<Logger::Warning<<", ";
+      L<<Logger::Warning<<*i;
+    }
+    L<<Logger::Warning<<endl;
+  }
+  else if(::arg()["local-address"]!="127.0.0.1" && ::arg().asNum("local-port")==53)
+    L<<Logger::Error<<"WARNING: Allowing queries from all IP addresses - this can be a security risk!"<<endl;
+  
+  if(!::arg()["dont-query"].empty()) {
+    g_dontQuery=new NetmaskGroup;
+    vector<string> ips;
+    stringtok(ips, ::arg()["dont-query"], ", ");
+    L<<Logger::Warning<<"Will not send queries to: ";
+    for(vector<string>::const_iterator i = ips.begin(); i!= ips.end(); ++i) {
+      g_dontQuery->addMask(*i);
+      if(i!=ips.begin())
+	L<<Logger::Warning<<", ";
+      L<<Logger::Warning<<*i;
+    }
+    L<<Logger::Warning<<endl;
+  }
+
+  g_quiet=::arg().mustDo("quiet");
+  if(::arg().mustDo("trace")) {
+    SyncRes::setLog(true);
+    ::arg().set("quiet")="no";
+    g_quiet=false;
+  }
+
+  RC.d_followRFC2181=::arg().mustDo("auth-can-lower-ttl");
+  
+  if(!::arg()["query-local-address6"].empty()) {
+    SyncRes::s_doIPv6=true;
+    L<<Logger::Error<<"Enabling IPv6 transport for outgoing queries"<<endl;
+  }
+  
+  SyncRes::s_maxnegttl=::arg().asNum("max-negative-ttl");
+  SyncRes::s_serverID=::arg()["server-id"];
+  if(SyncRes::s_serverID.empty()) {
+    char tmp[128];
+    gethostname(tmp, sizeof(tmp)-1);
+    SyncRes::s_serverID=tmp;
+  }
+  
+  parseAuthAndForwards();
+  
+  g_stats.remotes.resize(::arg().asNum("remotes-ringbuffer-entries"));
+  if(!g_stats.remotes.empty())
+    memset(&g_stats.remotes[0], 0, g_stats.remotes.size() * sizeof(RecursorStats::remotes_t::value_type));
+  g_logCommonErrors=::arg().mustDo("log-common-errors");
+  
+  makeUDPServerSockets();
+  makeTCPServerSockets();
+  
+#ifndef WIN32
+  if(::arg().mustDo("fork")) {
+    fork();
+    L<<Logger::Warning<<"This is forked pid "<<getpid()<<endl;
+  }
+#endif
+  
+  MT=new MTasker<PacketID,string>(::arg().asNum("stack-size"));
+  makeControlChannelSocket();        
+  PacketID pident;
+  primeHints();    
+  L<<Logger::Warning<<"Done priming cache with root hints"<<endl;
+#ifndef WIN32
+  if(::arg().mustDo("daemon")) {
+    L<<Logger::Warning<<"Calling daemonize, going to background"<<endl;
+    L.toConsole(Logger::Critical);
+    daemonize();
+  }
+  signal(SIGUSR1,usr1Handler);
+  signal(SIGUSR2,usr2Handler);
+  signal(SIGPIPE,SIG_IGN);
+  writePid();
+#endif
+  g_fdm=getMultiplexer();
+  
+  for(deferredAdd_t::const_iterator i=deferredAdd.begin(); i!=deferredAdd.end(); ++i) 
+    g_fdm->addReadFD(i->first, i->second);
+  
+  int newgid=0;
+  if(!::arg()["setgid"].empty())
+    newgid=Utility::makeGidNumeric(::arg()["setgid"]);
+  int newuid=0;
+  if(!::arg()["setuid"].empty())
+    newuid=Utility::makeUidNumeric(::arg()["setuid"]);
+  
+#ifndef WIN32
+  if (!::arg()["chroot"].empty()) {
+    if (chroot(::arg()["chroot"].c_str())<0 || chdir("/") < 0) {
+      L<<Logger::Error<<"Unable to chroot to '"+::arg()["chroot"]+"': "<<strerror (errno)<<", exiting"<<endl;
+      exit(1);
+    }
+  }
+  
+  Utility::dropPrivs(newuid, newgid);
+  g_fdm->addReadFD(s_rcc.d_fd, handleRCC); // control channel
 #endif 
+  
+  counter=0;
+  unsigned int maxTcpClients=::arg().asNum("max-tcp-clients");
+  g_tcpTimeout=::arg().asNum("client-tcp-timeout");
+  
+  g_maxTCPPerClient=::arg().asNum("max-tcp-per-client");
+  
+  
+  bool listenOnTCP(true);
+  
+  for(;;) {
+    while(MT->schedule(g_now.tv_sec)); // housekeeping, let threads do their thing
+      
+    if(!(counter%500)) {
+      MT->makeThread(houseKeeping,0);
+    }
+
+    if(!(counter%55)) {
+      typedef vector<pair<int, boost::any> > expired_t;
+      expired_t expired=g_fdm->getTimeouts(g_now);
+	
+      for(expired_t::iterator i=expired.begin() ; i != expired.end(); ++i) {
+	TCPConnection conn=any_cast<TCPConnection>(i->second);
+	if(g_logCommonErrors)
+	  L<<Logger::Warning<<"Timeout from remote TCP client "<< conn.remote.toString() <<endl;
+	g_fdm->removeReadFD(i->first);
+	conn.closeAndCleanup();
+      }
+    }
+      
+    counter++;
+
+    if(statsWanted) {
+      doStats();
+    }
+
+    Utility::gettimeofday(&g_now, 0);
+    g_fdm->run(&g_now);
+
+    if(listenOnTCP) {
+      if(TCPConnection::s_currentConnections > maxTcpClients) {  // shutdown
+	for(g_tcpListenSockets_t::iterator i=g_tcpListenSockets.begin(); i != g_tcpListenSockets.end(); ++i)
+	  g_fdm->removeReadFD(*i);
+	listenOnTCP=false;
+      }
+    }
+    else {
+      if(TCPConnection::s_currentConnections <= maxTcpClients) {  // reenable
+	for(g_tcpListenSockets_t::iterator i=g_tcpListenSockets.begin(); i != g_tcpListenSockets.end(); ++i)
+	  g_fdm->addReadFD(*i, handleNewTCPQuestion);
+	listenOnTCP=true;
+      }
+    }
+  }
+}
+#ifdef WIN32
+void doWindowsServiceArguments(RecursorService& recursor)
+{
+  if(::arg().mustDo( "register-service" )) {
+    if ( !recursor.registerService( "The PowerDNS Recursor.", true )) {
+      cerr << "Could not register service." << endl;
+      exit( 99 );
+    }
+    
+    exit( 0 );
+  }
+
+  if ( ::arg().mustDo( "unregister-service" )) {
+    recursor.unregisterService();
+    exit( 0 );
+  }
+}
+#endif
 
 int main(int argc, char **argv) 
 {
+  g_stats.startupTime=time(0);
   reportBasicTypes();
 
   int ret = EXIT_SUCCESS;
 #ifdef WIN32
-    WSADATA wsaData;
-    WSAStartup( MAKEWORD( 2, 0 ), &wsaData );
+  RecursorService service;
+  WSADATA wsaData;
+  if(WSAStartup( MAKEWORD( 2, 2 ), &wsaData )) {
+    cerr<<"Unable to initialize winsock\n";
+    exit(1);
+  }
 #endif // WIN32
 
   try {
     Utility::srandom(time(0));
+    ::arg().set("stack-size","stack size per mthread")="200000";
     ::arg().set("soa-minimum-ttl","Don't change")="0";
     ::arg().set("soa-serial-offset","Don't change")="0";
     ::arg().set("no-shuffle","Don't change")="off";
     ::arg().set("aaaa-additional-processing","turn on to do AAAA additional processing (slow)")="off";
     ::arg().set("local-port","port to listen on")="53";
-    ::arg().set("local-address","IP addresses to listen on, separated by spaces or commas")="0.0.0.0";
+    ::arg().set("local-address","IP addresses to listen on, separated by spaces or commas. Also accepts ports.")="127.0.0.1";
     ::arg().set("trace","if we should output heaps of logging")="off";
     ::arg().set("daemon","Operate as a daemon")="yes";
+    ::arg().set("log-common-errors","If we should log rather common errors")="yes";
     ::arg().set("chroot","switch to chroot jail")="";
     ::arg().set("setgid","If set, change group id to this gid for more security")="";
     ::arg().set("setuid","If set, change user id to this uid for more security")="";
-    ::arg().set("quiet","Suppress logging of questions and answers")="true";
+#ifdef WIN32
+    ::arg().set("quiet","Suppress logging of questions and answers")="off";
+    ::arg().setSwitch( "register-service", "Register the service" )= "no";
+    ::arg().setSwitch( "unregister-service", "Unregister the service" )= "no";
+    ::arg().setSwitch( "ntservice", "Run as service" )= "no";
+    ::arg().setSwitch( "use-ntlog", "Use the NT logging facilities" )= "yes"; 
+    ::arg().setSwitch( "use-logfile", "Use a log file" )= "no"; 
+    ::arg().setSwitch( "logfile", "Filename of the log file" )= "recursor.log"; 
+#else
+    ::arg().set("quiet","Suppress logging of questions and answers")="";
+    ::arg().set("logging-facility","Facility to log messages as. 0 corresponds to local0")="";
+#endif
     ::arg().set("config-dir","Location of configuration directory (recursor.conf)")=SYSCONFDIR;
     ::arg().set("socket-dir","Where the controlsocket will live")=LOCALSTATEDIR;
     ::arg().set("delegation-only","Which domains we only accept delegations from")="";
     ::arg().set("query-local-address","Source IP address for sending queries")="0.0.0.0";
+    ::arg().set("query-local-address6","Source IPv6 address for sending queries")="";
     ::arg().set("client-tcp-timeout","Timeout in seconds when talking to TCP clients")="2";
     ::arg().set("max-tcp-clients","Maximum number of simultaneous TCP clients")="128";
     ::arg().set("hint-file", "If set, load root hints from this file")="";
+    ::arg().set("max-cache-entries", "If set, maximum number of entries in the main cache")="0";
+    ::arg().set("max-negative-ttl", "maximum number of seconds to keep a negative cached entry in memory")="3600";
+    ::arg().set("server-id", "Returned when queried for 'server.id' TXT, defaults to hostname")="";
+    ::arg().set("remotes-ringbuffer-entries", "maximum number of packets to store statistics for")="0";
+    ::arg().set("version-string", "string reported on version.pdns or version.bind")="PowerDNS Recursor "VERSION" $Id: pdns_recursor.cc 1028 2007-04-14 12:53:28Z ahu $";
+    ::arg().set("allow-from", "If set, only allow these comma separated netmasks to recurse")="127.0.0.0/8, 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, ::1/128, fe80::/10";
+    ::arg().set("dont-query", "If set, do not query these netmasks for DNS data")="127.0.0.0/8, 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, ::1/128, fe80::/10";
+    ::arg().set("max-tcp-per-client", "If set, maximum number of TCP sessions per client (IP address)")="0";
+    ::arg().set("fork", "If set, fork the daemon for possible double performance")="no";
+    ::arg().set("spoof-nearmiss-max", "If non-zero, assume spoofing after this many near misses")="20";
+    ::arg().set("single-socket", "If set, only use a single socket for outgoing queries")="off";
+    ::arg().set("auth-zones", "Zones for which we have authoritative data, comma separated domain=file pairs ")="";
+    ::arg().set("forward-zones", "Zones for which we forward queries, comma separated domain=ip pairs")="";
+    ::arg().set("forward-zones-file", "File with domain=ip pairs for forwarding")="";
+    ::arg().set("export-etc-hosts", "If we should serve up contents from /etc/hosts")="off";
+    ::arg().set("serve-rfc1918", "If we should be authoritative for RFC 1918 private IP space")="";
+    ::arg().set("auth-can-lower-ttl", "If we follow RFC 2181 to the letter, an authoritative server can lower the TTL of NS records")="off";
+    ::arg().setSwitch( "ignore-rd-bit", "Assume each packet requires recursion, for compatability" )= "off"; 
 
     ::arg().setCmd("help","Provide a helpful message");
-    L.toConsole(Logger::Warning);
+    ::arg().setCmd("version","Print version string ("VERSION")");
+    ::arg().setCmd("config","Output blank configuration");
+    L.toConsole(Logger::Info);
     ::arg().laxParse(argc,argv); // do a lax parse
 
     string configname=::arg()["config-dir"]+"/recursor.conf";
@@ -653,337 +1860,24 @@ int main(int argc, char **argv)
       cerr<<::arg().helpstring(::arg()["help"])<<endl;
       exit(99);
     }
-
-    L.setName("pdns_recursor");
-
-    L<<Logger::Warning<<"PowerDNS recursor "<<VERSION<<" (C) 2001-2006 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
-#ifdef __GNUC__
-    L<<", gcc "__VERSION__;
-#endif // add other compilers here
-    L<<") starting up"<<endl;
-
-    L<<Logger::Warning<<"Operating in "<<(sizeof(unsigned long)*8) <<" bits mode"<<endl;
-  L<<Logger::Warning<<"PowerDNS comes with ABSOLUTELY NO WARRANTY. "
-    "This is free software, and you are welcome to redistribute it "
-    "according to the terms of the GPL version 2."<<endl;
-
-
-  if(::arg().mustDo("trace")) {
-      SyncRes::setLog(true);
-      ::arg().set("quiet")="no";
-      
-  }
-    makeClientSocket();
-    makeUDPServerSockets();
-    makeTCPServerSockets();
-        
-    MT=new MTasker<PacketID,string>(100000);
-
-    char data[1500];
-    struct sockaddr_in fromaddr;
-    
-    PacketID pident;
-    primeHints();    
-    L<<Logger::Warning<<"Done priming cache with root hints"<<endl;
-#ifndef WIN32
-    if(::arg().mustDo("daemon")) {
-      L.toConsole(Logger::Critical);
-      daemonize();
+    if(::arg().mustDo("version")) {
+      cerr<<"version: "VERSION<<endl;
+      exit(99);
     }
-    signal(SIGUSR1,usr1Handler);
-    signal(SIGUSR2,usr2Handler);
-    signal(SIGPIPE,SIG_IGN);
 
-    writePid();
+    if(::arg().mustDo("config")) {
+      cout<<::arg().configstring()<<endl;
+      exit(0);
+    }
+
+#ifndef WIN32
+    serviceMain(argc, argv);
+#else
+    doWindowsServiceArguments(service);
+	L.toNTLog();
+    RecursorService::instance()->start( argc, argv, ::arg().mustDo( "ntservice" )); 
 #endif
 
-    int newgid=0;
-    if(!::arg()["setgid"].empty())
-      newgid=Utility::makeGidNumeric(::arg()["setgid"]);
-    int newuid=0;
-    if(!::arg()["setuid"].empty())
-      newuid=Utility::makeUidNumeric(::arg()["setuid"]);
-
-
-    if (!::arg()["chroot"].empty()) {
-        if (chroot(::arg()["chroot"].c_str())<0) {
-            L<<Logger::Error<<"Unable to chroot to '"+::arg()["chroot"]+"': "<<strerror (errno)<<", exiting"<<endl;
-	    exit(1);
-	}
-    }
-
-    Utility::dropPrivs(newuid, newgid);
-
-    vector<TCPConnection> tcpconnections;
-    counter=0;
-    time_t now=0;
-    unsigned int maxTcpClients=::arg().asNum("max-tcp-clients");
-    int tcpLimit=::arg().asNum("client-tcp-timeout");
-    for(;;) {
-      while(MT->schedule()); // housekeeping, let threads do their thing
-      
-      if(!((counter++)%100)) 
-	MT->makeThread(houseKeeping,0,"housekeeping");
-      if(statsWanted) {
-	doStats();
-      }
-
-      Utility::socklen_t addrlen=sizeof(fromaddr);
-      int d_len;
-      
-      struct timeval tv;
-      tv.tv_sec=0;
-      tv.tv_usec=500000;
-      
-      fd_set readfds, writefds;
-      FD_ZERO( &readfds );
-      FD_ZERO( &writefds );
-      FD_SET( d_clientsock, &readfds );
-      int fdmax=d_clientsock;
-
-      if(!tcpconnections.empty())
-	now=time(0);
-
-      vector<TCPConnection> sweeped;
-
-      for(vector<TCPConnection>::iterator i=tcpconnections.begin();i!=tcpconnections.end();++i) {
-	if(now < i->startTime + tcpLimit) {
-	  FD_SET(i->fd, &readfds);
-	  fdmax=max(fdmax,i->fd);
-	  sweeped.push_back(*i);
-	}
-	else {
-	  L<<Logger::Error<<"TCP timeout from client "<<inet_ntoa(i->remote.sin_addr)<<endl;
-	  close(i->fd);
-	}
-      }
-      sweeped.swap(tcpconnections);
-
-      for(vector<int>::const_iterator i=d_udpserversocks.begin(); i!=d_udpserversocks.end(); ++i) {
-	FD_SET( *i, &readfds );
-	fdmax=max(fdmax,*i);
-      }
-      if(tcpconnections.size() < maxTcpClients) 
-	for(tcpserversocks_t::const_iterator i=s_tcpserversocks.begin(); i!=s_tcpserversocks.end(); ++i) {
-	  FD_SET(*i, &readfds );
-	  fdmax=max(fdmax,*i);
-	}
-
-      for(map<int,PacketID>::const_iterator i=d_tcpclientreadsocks.begin(); i!=d_tcpclientreadsocks.end(); ++i) {
-	// cerr<<"Adding TCP socket "<<i->first<<" to read select set"<<endl;
-	FD_SET( i->first, &readfds );
-	fdmax=max(fdmax,i->first);
-      }
-
-      for(map<int,PacketID>::const_iterator i=d_tcpclientwritesocks.begin(); i!=d_tcpclientwritesocks.end(); ++i) {
-	// cerr<<"Adding TCP socket "<<i->first<<" to write select set"<<endl;
-	FD_SET( i->first, &writefds );
-	fdmax=max(fdmax,i->first);
-      }
-
-      int selret = select(  fdmax + 1, &readfds, &writefds, NULL, &tv );
-      if(selret<=0) 
-	if (selret == -1 && errno!=EINTR) 
-	  throw AhuException("Select returned: "+stringerror());
-	else
-	  continue;
-
-      if(FD_ISSET(d_clientsock,&readfds)) { // do we have a question response?
-	d_len=recvfrom(d_clientsock, data, sizeof(data), 0, (sockaddr *)&fromaddr, &addrlen);    
-	if(d_len<0) 
-	  continue;
-
-	try {
-	  DNSComboWriter dc(data, d_len);
-	  dc.setRemote((struct sockaddr *)&fromaddr, addrlen);
-
-	  if(dc.d_mdp.d_header.qr) {
-	    pident.remote=fromaddr;
-	    pident.id=dc.d_mdp.d_header.id;
-	    string packet;
-	    packet.assign(data, d_len);
-	    MT->sendEvent(pident, &packet);
-	  }
-	  else 
-	    L<<Logger::Warning<<"Ignoring question on outgoing socket from "<<dc.getRemote()<<endl;
-	}
-	catch(MOADNSException& mde) {
-	  L<<Logger::Error<<"Unparseable packet from remote server "<< sockAddrToString((struct sockaddr_in*) &fromaddr, addrlen) <<": "<<mde.what()<<endl;
-	}
-
-      }
-      
-      for(vector<int>::const_iterator i=d_udpserversocks.begin(); i!=d_udpserversocks.end(); ++i) {
-	if(FD_ISSET(*i,&readfds)) { // do we have a new question on udp?
-	  d_len=recvfrom(*i, data, sizeof(data), 0, (sockaddr *)&fromaddr, &addrlen);    
-	  if(d_len<0) 
-	    continue;
-
-	  try {
-	    DNSComboWriter* dc = new DNSComboWriter(data, d_len);
-
-	    dc->setRemote((struct sockaddr *)&fromaddr, addrlen);
-
-	    if(dc->d_mdp.d_header.qr)
-	      L<<Logger::Error<<"Ignoring answer on server socket!"<<endl;
-	    else {
-	      ++qcounter;
-	      dc->setSocket(*i);
-	      dc->d_tcp=false;
-	      MT->makeThread(startDoResolve, (void*) dc, "udp");
-	    }
-	  }
-	  catch(MOADNSException& mde) {
-	    L<<Logger::Error<<"Unparseable packet from remote server "<< sockAddrToString((struct sockaddr_in*) &fromaddr, addrlen) <<": "<<mde.what()<<endl;
-	  }
-	}
-      }
-
-      for(tcpserversocks_t::const_iterator i=s_tcpserversocks.begin(); i!=s_tcpserversocks.end(); ++i) { 
-	if(FD_ISSET(*i ,&readfds)) { // do we have a new TCP connection
-	  struct sockaddr_in addr;
-	  socklen_t addrlen=sizeof(addr);
-	  int newsock=accept(*i, (struct sockaddr*)&addr, &addrlen);
-	  
-	  if(newsock>0) {
-	    Utility::setNonBlocking(newsock);
-	    TCPConnection tc;
-	    tc.fd=newsock;
-	    tc.state=TCPConnection::BYTE0;
-	    tc.remote=addr;
-	    tc.startTime=time(0);
-	    tcpconnections.push_back(tc);
-	  }
-	}
-      }
-
-      for(map<int,PacketID>::iterator i=d_tcpclientreadsocks.begin(); i!=d_tcpclientreadsocks.end();) { 
-	bool haveErased=false;
-	if(FD_ISSET(i->first, &readfds)) { // can we receive
-	  shared_array<char> buffer(new char[i->second.inNeeded]);
-
-	  int ret=read(i->first, buffer.get(), min(i->second.inNeeded,200));
-	  // cerr<<"Read returned "<<ret<<endl;
-	  if(ret > 0) {
-	    i->second.inMSG.append(&buffer[0], &buffer[ret]);
-	    i->second.inNeeded-=ret;
-	    if(!i->second.inNeeded) {
-	      // cerr<<"Got entire load of "<<i->second.inMSG.size()<<" bytes"<<endl;
-	      PacketID pid=i->second;
-	      string msg=i->second.inMSG;
-	      
-	      d_tcpclientreadsocks.erase((i++));
-	      haveErased=true;
-	      MT->sendEvent(pid, &msg);   // XXX DODGY
-	    }
-	    else {
-	      // cerr<<"Still have "<<i->second.inNeeded<<" left to go"<<endl;
-	    }
-	  }
-	  else {
-	    //	    cerr<<"when reading ret="<<ret<<endl;
-	    // XXX FIXME I think some stuff needs to happen here - like send an EOF event
-	  }
-	}
-	if(!haveErased)
-	  ++i;
-      }
-
-      for(map<int,PacketID>::iterator i=d_tcpclientwritesocks.begin(); i!=d_tcpclientwritesocks.end(); ) { 
-	bool haveErased=false;
-	if(FD_ISSET(i->first, &writefds)) { // can we send over TCP
-	  // cerr<<"Socket "<<i->first<<" available for writing"<<endl;
-	  int ret=write(i->first, i->second.outMSG.c_str(), i->second.outMSG.size() - i->second.outPos);
-	  if(ret > 0) {
-	    i->second.outPos+=ret;
-	    if(i->second.outPos==i->second.outMSG.size()) {
-	      // cerr<<"Sent out entire load of "<<i->second.outMSG.size()<<" bytes"<<endl;
-	      PacketID pid=i->second;
-	      d_tcpclientwritesocks.erase((i++));
-	      MT->sendEvent(pid, 0);
-	      haveErased=true;
-	      // cerr<<"Sent event too"<<endl;
-	    }
-
-	  }
-	  else { 
-	    //	    cerr<<"ret="<<ret<<" when writing"<<endl;
-	    // XXX FIXME I think some stuff needs to happen here - like send an EOF event
-	  }
-	}
-	if(!haveErased)
-	  ++i;
-      }
-
-
-      for(vector<TCPConnection>::iterator i=tcpconnections.begin();i!=tcpconnections.end();++i) {
-	if(FD_ISSET(i->fd, &readfds)) {
-	  if(i->state==TCPConnection::BYTE0) {
-	    int bytes=read(i->fd,i->data,2);
-	    if(bytes==1)
-	      i->state=TCPConnection::BYTE1;
-	    if(bytes==2) { 
-	      i->qlen=(i->data[0]<<8)+i->data[1];
-	      i->bytesread=0;
-	      i->state=TCPConnection::GETQUESTION;
-	    }
-	    if(!bytes || bytes < 0) {
-	      close(i->fd);
-	      tcpconnections.erase(i);
-	      break;
-	    }
-	  }
-	  else if(i->state==TCPConnection::BYTE1) {
-	    int bytes=read(i->fd,i->data+1,1);
-	    if(bytes==1) {
-	      i->state=TCPConnection::GETQUESTION;
-	      i->qlen=(i->data[0]<<8)+i->data[1];
-	      i->bytesread=0;
-	    }
-	    if(!bytes || bytes < 0) {
-	      L<<Logger::Error<<"TCP Remote "<<sockAddrToString(&i->remote,sizeof(i->remote))<<" disconnected after first byte"<<endl;
-	      close(i->fd);
-	      tcpconnections.erase(i);
-	      break;
-	    }
-	    
-	  }
-	  else if(i->state==TCPConnection::GETQUESTION) {
-	    int bytes=read(i->fd,i->data + i->bytesread,i->qlen - i->bytesread);
-	    if(!bytes || bytes < 0) {
-	      L<<Logger::Error<<"TCP Remote "<<sockAddrToString(&i->remote,sizeof(i->remote))<<" disconnected while reading question body"<<endl;
-	      close(i->fd);
-	      tcpconnections.erase(i);
-	      break;
-	    }
-	    i->bytesread+=bytes;
-	    if(i->bytesread==i->qlen) {
-	      i->state=TCPConnection::BYTE0;
-	      DNSComboWriter* dc=0;
-	      try {
-		dc=new DNSComboWriter(i->data, i->qlen);
-	      }
-	      catch(MOADNSException &mde) {
-		L<<Logger::Error<<"Unparseable packet from remote client "<<sockAddrToString(&i->remote,sizeof(i->remote))<<endl;
-		close(i->fd);
-		tcpconnections.erase(i);
-		break;
-	      }
-
-	      dc->setSocket(i->fd);
-	      dc->d_tcp=true;
-	      dc->setRemote((struct sockaddr *)&i->remote,sizeof(i->remote));
-	      if(dc->d_mdp.d_header.qr)
-		L<<Logger::Error<<"Ignoring answer on server socket!"<<endl;
-	      else {
-		++qcounter;
-		MT->makeThread(startDoResolve, dc, "tcp");
-	      }
-	    }
-	  }
-	}
-      }
-    }
   }
   catch(AhuException &ae) {
     L<<Logger::Error<<"Exception: "<<ae.reason<<endl;

@@ -3,9 +3,9 @@
     Copyright (C) 2002  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2
+    as published by the Free Software Foundation
+    
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "utility.hh"
 #include "session.hh"
@@ -135,7 +135,6 @@ void Session::doConnect(uint32_t ip, int port)
   if((err=connect(clisock,(struct sockaddr*)&remote,sizeof(remote)))<0 && WSAGetLastError() != WSAEWOULDBLOCK ) {
 #endif // WIN32
     throw SessionException("connect: "+stringerror());
-
   }
 
   if(!err)
@@ -395,9 +394,7 @@ Server::Server(int p, const string &p_localaddress)
   s=socket(AF_INET,SOCK_STREAM,0);
 
   if(s<0)
-    {
-      throw Exception(string("socket: ")+strerror(errno));
-    }
+    throw Exception(string("socket: ")+strerror(errno));
   
   memset(&local,0,sizeof(local));
   
@@ -427,9 +424,8 @@ Server::Server(int p, const string &p_localaddress)
   if(setsockopt(s,SOL_SOCKET,SO_REUSEADDR,(char*)&tmp,sizeof tmp)<0)
     throw SessionException(string("Setsockopt failed: ")+strerror(errno));
 
-
   if(bind(s, (sockaddr*)&local,sizeof(local))<0)
-      throw SessionException("binding to port "+itoa(port)+string(": ")+strerror(errno));
+      throw SessionException("binding to port "+itoa(port)+string(" on ")+localaddress+": "+strerror(errno));
   
   if(listen(s,128)<0)
       throw SessionException("listen: "+stringerror());

@@ -1,11 +1,11 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2007  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2
+    as published by the Free Software Foundation
+    
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,11 +14,11 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 /* accepts a named.conf as parameter and outputs heaps of sql */
 
-// $Id: zone2sql.cc 573 2006-03-06 21:39:01Z ahu $ 
+// $Id: zone2sql.cc 1018 2007-04-08 12:50:57Z ahu $ 
 #ifdef WIN32
 # pragma warning ( disable: 4786 )
 
@@ -34,12 +34,15 @@ using namespace std;
 
 #include "dns.hh"
 #include "arguments.hh"
-#include "zoneparser.hh"
 #include "bindparser.hh"
 #include "statbag.hh"
 #include "misc.hh"
 #include "dnspacket.hh"
+#include "zoneparser-tng.hh"
+#include "dnsrecords.hh"
+#include <boost/algorithm/string.hpp>
 
+using namespace boost;
 StatBag S;
 
 static const string sqlstr(const string &name)
@@ -75,7 +78,7 @@ static void callback(unsigned int domain_id,const string &domain, const string &
 
   if(qtype=="SOA") {
     //    cerr<<"Juh: "<<dirty_hack_num<<", "<<lastsoa_domain_id<<", "<<lastsoa_qname<<", "<<domain<<endl;
-    if(dirty_hack_num==lastsoa_domain_id && lastsoa_qname!=ZoneParser::canonic(domain)) {
+    if(dirty_hack_num==lastsoa_domain_id && lastsoa_qname!=stripDot(domain)) {
       dirty_hack_num++;
       cerr<<"Second SOA in zone, raised domain_id"<<endl;
       if(mode==POSTGRES || mode==ORACLE) {
@@ -89,7 +92,7 @@ static void callback(unsigned int domain_id,const string &domain, const string &
 	}
 	
 	if(mode==POSTGRES) {
-	  cout<<"insert into domains (name,type) values ("<<toLower(sqlstr(ZoneParser::canonic(domain)))<<",'NATIVE');"<<endl;
+	  cout<<"insert into domains (name,type) values ("<<toLower(sqlstr(stripDot(domain)))<<",'NATIVE');"<<endl;
 	}
 	else if(mode==ORACLE) {
 	  cout<<"insert into domains (id,name,type) values (domains_id_sequence.nextval,"<<toLower(sqlstr(domain))<<",'NATIVE');"<<endl;
@@ -97,41 +100,50 @@ static void callback(unsigned int domain_id,const string &domain, const string &
       }
     }
     SOAData soadata;
-    DNSPacket::fillSOAData(content, soadata);
-    soadata.hostmaster=ZoneParser::canonic(soadata.hostmaster);
-    soadata.nameserver=ZoneParser::canonic(soadata.nameserver);
-    content=DNSPacket::serializeSOAData(soadata);
+    fillSOAData(content, soadata);
+    soadata.hostmaster=stripDot(soadata.hostmaster);
+    soadata.nameserver=stripDot(soadata.nameserver);
+    content=serializeSOAData(soadata);
 
-
-    lastsoa_qname=ZoneParser::canonic(domain);
+    lastsoa_qname=stripDot(domain);
   }
   
+  if(qtype == "MX" || qtype == "SRV") { 
+    prio=atoi(content.c_str());
+    
+    string::size_type pos = content.find_first_not_of("0123456789");
+    if(pos != string::npos)
+      erase_head(content, pos);
+    trim_left(content);
+  }
+
+
   lastsoa_domain_id=dirty_hack_num;
 
   if(mode==MYSQL) {
     cout<<"insert into records (domain_id, name,type,content,ttl,prio) values ("<< dirty_hack_num<<", "<<
-      sqlstr(ZoneParser::canonic(domain))<<", "<<
+      sqlstr(stripDot(domain))<<", "<<
       sqlstr(qtype)<<", "<<
-      sqlstr(ZoneParser::canonic(content))<<", "<<ttl<<", "<<prio<<");\n";
+      sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<<");\n";
   }
   if(mode==POSTGRES) {
     cout<<"insert into records (domain_id, name,type,content,ttl,prio) select id ,"<<
-      sqlstr(toLower(ZoneParser::canonic(domain)))<<", "<<
+      sqlstr(toLower(stripDot(domain)))<<", "<<
       sqlstr(qtype)<<", "<<
-      sqlstr(ZoneParser::canonic(content))<<", "<<ttl<<", "<<prio<< 
+      sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<< 
       " from domains where name="<<toLower(sqlstr(lastsoa_qname))<<";\n";
   }
   else if(mode==ORACLE) {
     cout<<"insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RECORDS_ID_SEQUENCE.nextval,id ,"<<
-      sqlstr(toLower(ZoneParser::canonic(domain)))<<", "<<
+      sqlstr(toLower(stripDot(domain)))<<", "<<
       sqlstr(qtype)<<", "<<
-      sqlstr(ZoneParser::canonic(content))<<", "<<ttl<<", "<<prio<< 
+      sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<< 
       " from Domains where name="<<toLower(sqlstr(lastsoa_qname))<<";\n";
   }
   else if(mode==BARE) {
     cout<< dirty_hack_num<<"\t"<<
-      sqlstr(ZoneParser::canonic(domain))<<"\t"<<
-      sqlstr(qtype)<<"\t"<<sqlstr(ZoneParser::canonic(content))<<"\t"<<prio<<"\t"<<ttl<<"\n";
+      sqlstr(stripDot(domain))<<"\t"<<
+      sqlstr(qtype)<<"\t"<<sqlstr(stripDot(content))<<"\t"<<prio<<"\t"<<ttl<<"\n";
   }
 
 }
@@ -152,6 +164,7 @@ ArgvMap &arg()
 int main(int argc, char **argv)
 {
   try {
+    reportAllTypes();
 #if __GNUC__ >= 3
     ios_base::sync_with_stdio(false);
 #endif
@@ -213,14 +226,11 @@ int main(int argc, char **argv)
       BP.setVerbose(arg().mustDo("verbose"));
       BP.parse(namedfile.empty() ? "./named.conf" : namedfile);
     
-      ZoneParser ZP;
-    
       const vector<BindDomainInfo> &domains=BP.getDomains();
 
       int numdomains=domains.size();
       int tick=numdomains/100;
-      ZP.setDirectory(BP.getDirectory());
-      ZP.setCallback(&callback);  
+      //      ZP.setDirectory(BP.getDirectory());
     
       for(vector<BindDomainInfo>::const_iterator i=domains.begin();
 	  i!=domains.end();
@@ -239,10 +249,17 @@ int main(int argc, char **argv)
 
 	      if(mode==POSTGRES) {
 		if(arg().mustDo("slave")) {
-		  if(i->master.empty())
+		  if(i->masters.empty())
 		    cout<<"insert into domains (name,type) values ("<<sqlstr(i->name)<<",'NATIVE');"<<endl;
-		  else
-		    cout<<"insert into domains (name,type,master) values ("<<sqlstr(i->name)<<",'SLAVE'"<<", '"<<i->master<<"');"<<endl;
+		  else {
+		    string masters;
+		    for(vector<string>::const_iterator iter = i->masters.begin(); iter != i->masters.end(); ++iter) {
+		      if(iter != i->masters.begin())
+			masters.append(1, ' ');
+		      masters+=*iter;
+		    }
+		    cout<<"insert into domains (name,type,master) values ("<<sqlstr(i->name)<<",'SLAVE'"<<", '"<<masters<<"');"<<endl;
+		  }
 		}
 		else
 		  cout<<"insert into domains (name,type) values ("<<sqlstr(i->name)<<",'NATIVE');"<<endl;
@@ -252,7 +269,10 @@ int main(int argc, char **argv)
 	      }
 	      lastsoa_qname=i->name;
 	    }
-	    ZP.parse(i->filename,i->name,0);
+	    ZoneParserTNG zpt(i->filename, i->name, BP.getDirectory());
+	    DNSResourceRecord rr;
+	    while(zpt.get(rr)) 
+	      callback(0, rr.qname, rr.qtype.getName(), rr.content, rr.ttl, rr.priority);
 	  }
 	  catch(AhuException &ae) {
 	    if(!arg().mustDo("on-error-resume-next"))
@@ -268,11 +288,12 @@ int main(int argc, char **argv)
       cerr<<"\r100% done\033\133\113"<<endl;
     }
     else {
+      ZoneParserTNG zpt(zonefile, arg()["zone-name"]);
+      DNSResourceRecord rr;
       dirty_hack_num=-1; // trigger first SOA output
-      ZoneParser ZP;
-      ZP.setDirectory(".");
-      ZP.setCallback(&callback);  
-      ZP.parse(zonefile,arg()["zone-name"],0);
+      while(zpt.get(rr)) 
+	callback(0, rr.qname, rr.qtype.getName(), rr.content, rr.ttl, rr.priority);
+
     }
     cerr<<"Parsed "<<num_records<<" records"<<endl;
     

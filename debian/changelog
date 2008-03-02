@@ -1,9 +1,72 @@
+pdns (2.9.21-6) unstable; urgency=low
+
+  * Use upstream patch for the ldapbackend. (See #462966)
+  * Fix pdns-server hang in postinst (Closes: #468160)
+  * Fix typo in the Description of pdns-backend-mysql to make lintian happy.
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 02 Mar 2008 22:50:11 +0100
+
+pdns (2.9.21-5) unstable; urgency=low
+
+  * Fix ignoring buid errors. (Closes: #462858)
+  * Patch from Steve to fix build with OpenLDAP 2.4. (Closes: #462966)
+    - Changed patch a bit to convert host, port and tls option to a ldapuri.
+  * Update Standards-Version to 3.7.3.
+  * Added gcc 4.3 fixes (Closes: #456073)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 03 Feb 2008 20:57:51 +0100
+
+pdns (2.9.21-4) unstable; urgency=low
+
+  * New portuguese translation included (closes: #444219).
+    Thanks, Américo Monteiro.
+
+ -- Christoph Haas <haas@debian.org>  Wed, 03 Oct 2007 19:38:15 +0200
+
+pdns (2.9.21-3) unstable; urgency=low
+
+  * Added missing dependency on docbook, missing dtd files. (Closes: #441592)
+  * Make package binNMUable.
+  * Fixed lintian error on in the clean target.
+  * Clean target was incomplete, twice in a row build didn't reproduce the
+    same result (Policy 4.9) (Closes: #441592)
+  * Win2k3 SP2 adds out of zone data to zonetransfers, ignore them instead of
+    rejecting the zone. (Closes: #433892)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sat, 15 Sep 2007 09:24:06 +0200
+
+pdns (2.9.21-2) unstable; urgency=low
+
+  * Fix an unconditional replace in the resolvconf script. (Closes: #425441)
+  * Do not include the 127.0.0.1 in the recursor list. (Closes: #425442)
+  * Updated vietnamese translation
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sat, 02 Jun 2007 00:13:47 +0200
+
+pdns (2.9.21-1) unstable; urgency=low
+
+  [ Matthijs Mohlmann ]
+  * New upstream release. (Closes: #420294)
+  * Remove meta pdns package.
+  * Added new sqlite3 backend package.
+  * Months and minutes where mixed up. (Closes: #406462)
+  * Case sensitivity in bind backend caused PowerDNS to not serve a certain
+    zone. (Closes: #406461)
+  * Bind backend forgot about zones on a notify. (Closes: #398213)
+
+  [ Christoph Haas ]
+  * Documented incorporated backend bind. (Closes: #415471)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 15 Apr 2007 23:23:39 +0200
+
 pdns (2.9.20-8) unstable; urgency=high
 
   [ Christoph Haas ]
   * Updated czech translation (Closes: #408726)
   * New galician translation (Closes: #413756)
   * Added patch for potential buffer overflow, high urgency (Closes: #406465)
+  * Added example for the bind backend. Documented that the bind gbackend
+    is contained in the pdns-server package (Closes: #415471)
 
   [ Matthijs Mohlmann ]
   * LDAP backend changes

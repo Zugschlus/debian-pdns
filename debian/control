@@ -1,27 +1,15 @@
 Source: pdns
 Section: net
 Priority: extra
-Standards-Version: 3.7.2.0
+Standards-Version: 3.7.3
 Maintainer: Debian PowerDNS Maintainers <powerdns-debian@workaround.org>
 Uploaders: Christoph Haas <haas@debian.org>, Matthijs Mohlmann <matthijs@cacholong.nl>
-Build-Depends: debhelper (>= 4.2.0), po-debconf, dpatch (>= 2.0.0), libtool, flex, bison, docbook-utils, libmysqlclient15-dev, libpq-dev, libssl-dev, tdb-dev, libgdbm-dev, libldap2-dev, libsqlite0-dev, dpkg-dev (> 1.10.17), libboost-dev, libboost-serialization-dev, autotools-dev
+Build-Depends: debhelper (>= 5.0.0), po-debconf, dpatch (>= 2.0.0), libtool, flex, bison, docbook-utils, docbook, libmysqlclient15-dev, libpq-dev, libssl-dev, tdb-dev, libgdbm-dev, libldap2-dev, libsqlite0-dev, libsqlite3-dev, dpkg-dev (> 1.10.17), libboost-dev, libboost-serialization-dev, autotools-dev, automake1.9, autoconf
 XS-Vcs-Svn: http://svn.cacholong.nl/cgi-bin/viewcvs.cgi/?root=pdns
-
-Package: pdns
-Architecture: all
-Depends: pdns-server, pdns-recursor
-Description: meta package for the pdns nameserver
- PowerDNS is a versatile nameserver which supports a large number
- of different backends ranging from simple zonefiles to relational
- databases and load balancing/failover algorithms.
- PowerDNS tries to emphasize speed and security.
- .
- This package is added for compatibility reasons because it has been split into
- pdns-server and pdns-recursor. It does not need to be installed any more.
 
 Package: pdns-server
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, ucf, adduser
+Depends: ${shlibs:Depends}, ${misc:Depends}, ucf (>= 0.28), adduser
 Replaces: pdns
 Recommends: pdns-doc
 Suggests: pdns-backend, pdns-recursor
@@ -32,7 +20,9 @@ Description: extremely powerful and versatile nameserver
  PowerDNS tries to emphasize speed and security.
  .
  This is the authoritative nameserver that answers questions about
- domains that it knows about.
+ domains that it knows about. It also includes the bind backend that
+ allows PowerDNS to retrieve domain info from zone files as used by
+ the "bind" software.
 
 Package: pdns-doc
 Section: doc
@@ -48,7 +38,7 @@ Description: PowerDNS manual
 
 Package: pdns-backend-pipe
 Architecture: any
-Depends: pdns-server (= ${Source-Version}), ${shlibs:Depends}
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}
 Provides: pdns-backend
 Description: pipe/coprocess backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number
@@ -62,7 +52,7 @@ Description: pipe/coprocess backend for PowerDNS
 
 Package: pdns-backend-ldap
 Architecture: any
-Depends: pdns-server (= ${Source-Version}), ${shlibs:Depends}, ${misc:Depends}
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
 Provides: pdns-backend
 Description: LDAP backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number
@@ -74,7 +64,7 @@ Description: LDAP backend for PowerDNS
 
 Package: pdns-backend-geo
 Architecture: any
-Depends: pdns-server (= ${Source-Version}), ${shlibs:Depends}
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}
 Provides: pdns-backend
 Description: geo backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number
@@ -88,9 +78,9 @@ Description: geo backend for PowerDNS
 
 Package: pdns-backend-mysql
 Architecture: any
-Depends: pdns-server (= ${Source-Version}), ${shlibs:Depends}, ${misc:Depends}
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
 Provides: pdns-backend
-Description: generic mysql backend for PowerDNS
+Description: generic MySQL backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number
  of different backends ranging from simple zonefiles to relational
  databases and load balancing/failover algorithms.
@@ -101,7 +91,7 @@ Description: generic mysql backend for PowerDNS
 
 Package: pdns-backend-pgsql
 Architecture: any
-Depends: pdns-server (= ${Source-Version}), ${shlibs:Depends}, ${misc:Depends}
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
 Provides: pdns-backend
 Description: generic PostgreSQL backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number
@@ -114,7 +104,19 @@ Description: generic PostgreSQL backend for PowerDNS
 
 Package: pdns-backend-sqlite
 Architecture: any
-Depends: pdns-server (= ${Source-Version}), ${shlibs:Depends}, ${misc:Depends}, sqlite
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}, sqlite
+Provides: pdns-backend
+Description: sqlite backend for PowerDNS
+ PowerDNS is a versatile nameserver which supports a large number
+ of different backends ranging from simple zonefiles to relational
+ databases and load balancing/failover algorithms.
+ PowerDNS tries to emphasize speed and security.
+ .
+ This package contains a generic SQLite backend for PowerDNS.
+
+Package: pdns-backend-sqlite3
+Architecture: any
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}, sqlite3
 Provides: pdns-backend
 Description: sqlite backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number

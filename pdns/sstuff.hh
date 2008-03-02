@@ -6,11 +6,13 @@
 #include <iostream>
 #include <errno.h>
 #include <sys/types.h>
+#ifndef WIN32
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/select.h>
+#endif
 #include <fcntl.h>
 #include <stdexcept>
 #include <boost/shared_ptr.hpp>
@@ -22,9 +24,9 @@ using namespace boost;
 class NetworkError : public runtime_error
 {
 public:
-  NetworkError(string why="Network Error") : runtime_error(why.c_str())
+  NetworkError(const string& why="Network Error") : runtime_error(why.c_str())
   {}
-  NetworkError(char *why="Network Error") : runtime_error(why)
+  NetworkError(const char *why="Network Error") : runtime_error(why)
   {}
 };
 
@@ -44,7 +46,7 @@ public:
   IPAddress(const string &remote)
   {
     struct in_addr addr;
-    if(!inet_aton(remote.c_str(), &addr))
+    if(!Utility::inet_aton(remote.c_str(), &addr))
       throw NetworkError("Could not convert '"+remote+"' to an IP address");
     byte=addr.s_addr;
   }
@@ -99,7 +101,7 @@ public:
   Socket(AddressFamily af, SocketType st, ProtocolType pt=0)
   {
     d_family=af;
-    if((d_socket=socket(af,st, pt))<0)
+    if((d_socket=(int)socket(af,st, pt))<0)
       throw NetworkError(strerror(errno));
     d_buflen=4096;
     d_buffer=new char[d_buflen];
@@ -107,7 +109,7 @@ public:
 
   ~Socket()
   {
-    ::close(d_socket);
+    Utility::closesocket(d_socket);
     delete[] d_buffer;
   }
 
@@ -117,7 +119,7 @@ public:
     struct sockaddr_in remote;
     socklen_t remlen=sizeof(remote);
     memset(&remote, 0, sizeof(remote));
-    int s=::accept(d_socket,(sockaddr *)&remote, &remlen);
+    int s=(int)::accept(d_socket,(sockaddr *)&remote, &remlen);
     if(s<0) {
       if(errno==EAGAIN)
 	return 0;
@@ -131,9 +133,7 @@ public:
   //! Set the socket to non-blocking
   void setNonBlocking()
   {
-    int flags=fcntl(d_socket,F_GETFL,0);    
-    if(flags<0 || fcntl(d_socket, F_SETFL,flags|O_NONBLOCK) <0)
-      throw NetworkError("Setting socket to nonblocking: "+string(strerror(errno)));
+    Utility::setNonBlocking(d_socket);
   }
 
   //! Bind the socket to a specified endpoint
@@ -213,7 +213,7 @@ public:
     remote.sin_addr.s_addr=ep.address.byte;
     remote.sin_port=ntohs(ep.port);
 
-    if(sendto(d_socket, dgram.c_str(), dgram.size(), 0, (sockaddr *)&remote, sizeof(remote))<0)
+    if(sendto(d_socket, dgram.c_str(), (int)dgram.size(), 0, (sockaddr *)&remote, sizeof(remote))<0)
       throw NetworkError(strerror(errno));
   }
 
@@ -223,12 +223,12 @@ public:
     if(data.empty())
       return;
 
-    int toWrite=data.length();
+    int toWrite=(int)data.length();
     int res;
     const char *ptr=data.c_str();
 
     do {
-      res=::write(d_socket,ptr,toWrite);
+      res=::send(d_socket, ptr, toWrite, 0);
       if(res<0) 
 	throw NetworkError("Writing to a socket: "+string(strerror(errno)));
       if(!res)
@@ -247,7 +247,7 @@ public:
   unsigned int tryWrite(const char *ptr, int toWrite)
   {
     int res;
-    res=::write(d_socket,ptr,toWrite);
+    res=::send(d_socket,ptr,toWrite,0);
     if(res==0)
       throw NetworkError("EOF on writing to a socket");
 
@@ -265,7 +265,7 @@ public:
   unsigned int write(const char *ptr, int toWrite)
   {
     int res;
-    res=::write(d_socket,ptr,toWrite);
+    res=::send(d_socket,ptr,toWrite,0);
     if(res<0) {
       throw NetworkError("Writing to a socket: "+string(strerror(errno)));
     }
@@ -278,7 +278,7 @@ public:
   {
     char c;
 
-    int res=::read(d_socket,&c,1);
+    int res=::recv(d_socket,&c,1,0);
     if(res)
       return c;
     return -1;
@@ -298,7 +298,7 @@ public:
   //! Reads a block of data from the socket to a string
   void read(string &data)
   {
-    int res=::read(d_socket,d_buffer,d_buflen);
+    int res=::recv(d_socket,d_buffer,d_buflen,0);
     if(res<0) 
       throw NetworkError("Reading from a socket: "+string(strerror(errno)));
     data.assign(d_buffer,res);
@@ -307,7 +307,7 @@ public:
   //! Reads a block of data from the socket to a block of memory
   int read(char *buffer, int bytes)
   {
-    int res=::read(d_socket,buffer,bytes);
+    int res=::recv(d_socket,buffer,bytes,0);
     if(res<0) 
       throw NetworkError("Reading from a socket: "+string(strerror(errno)));
     return res;

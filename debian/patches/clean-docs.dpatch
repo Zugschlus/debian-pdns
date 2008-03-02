@@ -1,0 +1,19 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## clean-docs.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: No description.
+
+@DPATCH@
+diff -urNad trunk~/pdns/docs/Makefile trunk/pdns/docs/Makefile
+--- trunk~/pdns/docs/Makefile	2007-04-15 12:03:47.000000000 +0200
++++ trunk/pdns/docs/Makefile	2007-09-15 09:22:28.653219470 +0200
+@@ -6,7 +6,7 @@
+ 	./expand < $< > $@
+ 	
+ clean:
+-	rm -rf *.xml *.dvi *.pdf *.tex *.toc *.aux *.ps *.bak *.tmp *~ *.log html.tar.gz html pdns
++	rm -rf *.xml *.dvi *.pdf *.tex *.toc *.aux *.ps *.bak *.tmp *~ *.log html.tar.gz html pdns pdns-expanded.sgml
+ 
+ html/index.html: pdns-expanded.sgml
+ 	db2html -V %use-id-as-filename% -o html $<

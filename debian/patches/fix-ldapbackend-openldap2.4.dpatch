@@ -1,0 +1,96 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## fix-ldapbackend-openldap2.4.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: No description.
+
+@DPATCH@
+diff -urNad trunk~/modules/ldapbackend/powerldap.cc trunk/modules/ldapbackend/powerldap.cc
+--- trunk~/modules/ldapbackend/powerldap.cc	2006-03-16 21:18:01.000000000 +0100
++++ trunk/modules/ldapbackend/powerldap.cc	2008-02-03 19:45:01.712658830 +0100
+@@ -5,20 +5,31 @@
+ PowerLDAP::PowerLDAP( const string& hosts, uint16_t port, bool tls )
+ {
+ 	int protocol = LDAP_VERSION3;
++	char *ldapuri = NULL;
+ 
++	if (hosts.find("://", 0) == string::npos) {
++		LDAPURLDesc url;
++        string scheme;
++		memset( &url, 0, sizeof(url));
+ 
+-	if( ldap_initialize( &d_ld, hosts.c_str() ) != LDAP_SUCCESS )
+-	{
+-		if( ( d_ld = ldap_init( hosts.c_str(), port ) ) == NULL )
+-		{
+-			throw LDAPException( "Error initializing LDAP connection: " + string( strerror( errno ) ) );
++		if ( tls ) {
++			scheme = "ldaps";
++		} else {
++			scheme = "ldap";
+ 		}
++		url.lud_scheme = (char *)scheme.c_str();
++		url.lud_host = (char *)hosts.c_str();
++		url.lud_port = port;
++		url.lud_scope = LDAP_SCOPE_DEFAULT;
+ 
+-		if( tls && ldap_start_tls_s( d_ld, NULL, NULL ) != LDAP_SUCCESS )
+-		{
+-			ldap_unbind( d_ld );
+-			throw( LDAPException( "Couldn't perform STARTTLS" ) );
+-		}
++		ldapuri = (char *)ldap_url_desc2str( &url );
++	} else {
++		ldapuri = (char *)hosts.c_str();
++	}
++
++	if( ldap_initialize( &d_ld, ldapuri ) != LDAP_SUCCESS )
++	{
++		throw LDAPException( "Error initializing LDAP connection: " + string( strerror( errno ) ) );
+ 	}
+ 
+ 	if( ldap_set_option( d_ld, LDAP_OPT_PROTOCOL_VERSION, &protocol ) != LDAP_OPT_SUCCESS )
+@@ -26,7 +37,7 @@
+ 		protocol = LDAP_VERSION2;
+ 		if( ldap_set_option( d_ld, LDAP_OPT_PROTOCOL_VERSION, &protocol ) != LDAP_OPT_SUCCESS )
+ 		{
+-			ldap_unbind( d_ld );
++			ldap_unbind_ext( d_ld, NULL, NULL );
+ 			throw LDAPException( "Couldn't set protocol version to LDAPv3 or LDAPv2" );
+ 		}
+ 	}
+@@ -35,7 +46,7 @@
+ 
+ PowerLDAP::~PowerLDAP()
+ {
+-	ldap_unbind( d_ld );
++	ldap_unbind_ext( d_ld, NULL, NULL );
+ }
+ 
+ 
+@@ -60,7 +71,10 @@
+ void PowerLDAP::simpleBind( const string& ldapbinddn, const string& ldapsecret )
+ {
+ 	int err;
+-	if( ( err = ldap_simple_bind_s( d_ld, ldapbinddn.c_str(), ldapsecret.c_str() ) ) != LDAP_SUCCESS )
++	struct berval passwd;
++	passwd.bv_val = (char *)ldapsecret.c_str();
++	passwd.bv_len = strlen(passwd.bv_val);
++	if( ( err = ldap_sasl_bind_s( d_ld, ldapbinddn.c_str(), LDAP_SASL_SIMPLE, &passwd, NULL, NULL, NULL ) ) != LDAP_SUCCESS )
+ 	{
+ 		throw LDAPException( "Failed to bind to LDAP server: " + getError( err ) );
+ 	}
+@@ -69,10 +83,10 @@
+ 
+ int PowerLDAP::search( const string& base, int scope, const string& filter, const char** attr )
+ {
+-	int msgid;
+-	if( ( msgid = ldap_search( d_ld, base.c_str(), scope, filter.c_str(), const_cast<char**> (attr), 0 ) ) == -1 )
++	int msgid, rc;
++	if( ( rc = ldap_search_ext( d_ld, base.c_str(), scope, filter.c_str(), const_cast<char**> (attr), 0, NULL, NULL, NULL, LDAP_NO_LIMIT, &msgid ) ) != LDAP_SUCCESS )
+ 	{
+-		throw LDAPException( "Starting LDAP search: " + getError() );
++		throw LDAPException( "Starting LDAP search: " + getError(rc) );
+ 	}
+ 
+ 	return msgid;

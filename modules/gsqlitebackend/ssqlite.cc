@@ -67,7 +67,7 @@ int SSQLite::doQuery( const std::string & query )
   // Execute the query.
   char *pError = NULL;
   if ( sqlite_compile( m_pDB, query.c_str(), &pOut, &m_pVM, &pError ) != SQLITE_OK )
-    sPerrorException( "Could not create SQLite VM for query" );
+    throw sPerrorException( "Could not create SQLite VM for query" );
   
   if ( !m_pVM ) {
     std::string report( "Unable to compile SQLite statement" );

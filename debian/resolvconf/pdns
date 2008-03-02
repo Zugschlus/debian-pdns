@@ -17,6 +17,23 @@
 set -e
 PATH=/bin:/sbin
 
+DEFAULT=/etc/default/pdns
+[ -f $DEFAULT ] && . $DEFAULT
+
+if [ -z "${RESOLVCONF_UPDATE_FORWARDERS:-}" ]; then
+    echo "Warning: \$RESOLVCONF_UPDATE_FORWARDERS not defined in $DEFAULT." >&2
+    echo "         Pulling the emergency brake..." >&2
+    exit 0
+fi
+
+case $RESOLVCONF_UPDATE_FORWARDERS in
+    y*|Y*|1|on|On|true|True|TRUE) :;;
+    *)
+        echo "Not updating PowerDNS, disabled in $DEFAULT." >&2
+        exit 0
+    ;;
+esac
+
 [ -x /usr/sbin/pdns_server ] || exit 0
 [ -x /lib/resolvconf/list-records ] || exit 1
 
@@ -41,6 +58,8 @@ if [ "$RSLVCNFFILES" ]; then
     G
     # If this line is a duplicate then skip line
     /\(^.*\n\).*\1/d
+    # Disable 127.0.0.1 lines, can cause a dns loop.
+    /=127\./d
     # Copy pattern space, including current line, to hold space
     h
     # Print current line

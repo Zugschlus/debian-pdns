@@ -4,7 +4,6 @@
 
 # Environment
 #export DH_VERBOSE=1
-export DH_COMPAT=4
 
 # These are used for cross-compiling and for saving the configure script
 # from having to guess our platform (since we know it already)
@@ -22,11 +21,15 @@ else
 	CXXFLAGS += -O2
 endif
 
-backends := ldap pipe gmysql gpgsql gsqlite geo
+backends := ldap pipe gmysql gpgsql gsqlite gsqlite3 geo
 
 # Targets
 config.status:
 	dh_testdir
+	
+	# First run the bootstrap.
+	./bootstrap
+	
 	# Add here commands to configure the package.
 	CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" ./configure \
 		--host=$(DEB_HOST_GNU_TYPE) \
@@ -44,10 +47,10 @@ config.status:
 
 build: patch build-stamp
 build-stamp: config.status
-
+	
 	# Add here commands to compile the arch part of the package.
-	-$(MAKE) 
-
+	$(MAKE) 
+	
 	touch build-stamp
 
 clean: clean1 unpatch
@@ -55,20 +58,23 @@ clean1:
 	dh_testdir
 	dh_testroot
 	rm -f build-stamp config.log
-
+	
 	# Add here commands to clean up after the build process.
-	-$(MAKE) -C modules/db2backend/ distclean
-	-$(MAKE) -C modules/pdnsbackend/ distclean
-	-$(MAKE) -C modules/xdbbackend/ distclean
-	-$(MAKE) distclean
-	-$(MAKE) -C pdns/docs clean
+	[ ! -f modules/db2backend/Makefile ] || $(MAKE) -C modules/db2backend/ distclean
+	[ ! -f modules/pdnsbackend/Makefile ] || $(MAKE) -C modules/pdnsbackend/ distclean
+	[ ! -f modules/xdbbackend/Makefile ] || $(MAKE) -C modules/xdbbackend/ distclean
+	[ ! -f modules/mysqlbackend/Makefile ] || $(MAKE) -C modules/mysqlbackend/ distclean
+	[ ! -f modules/goraclebackend/Makefile ] || $(MAKE) -C modules/goraclebackend/ distclean
+	[ ! -f modules/opendbxbackend/Makefile ] || $(MAKE) -C modules/opendbxbackend/ distclean
+	[ ! -f Makefile ] || $(MAKE) distclean
+	[ ! -f pdns/docs/Makefile ] || $(MAKE) -C pdns/docs clean
 ifneq "$(wildcard /usr/share/misc/config.sub)" ""
 	cp -f /usr/share/misc/config.sub config.sub
 endif
 ifneq "$(wildcard /usr/share/misc/config.guess)" ""
 	cp -f /usr/share/misc/config.guess config.guess
 endif
-
+	
 	dh_clean 
 
 install:
@@ -77,11 +83,11 @@ install: build
 	dh_testroot
 	dh_clean -k
 	dh_installdirs
-
+	
 	# Install the stuff
 	$(MAKE) install DESTDIR=$(CURDIR)/debian/tmp
 	$(MAKE) -C pdns/docs html/index.html
-
+	
 	dh_install
 
 # Build architecture independant packages.

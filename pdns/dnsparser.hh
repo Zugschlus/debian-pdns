@@ -13,7 +13,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #ifndef DNSPARSER_HH
@@ -25,13 +25,13 @@
 #include <iostream>
 #include <vector>
 #include <errno.h>
-#include <netinet/in.h>
-#include <arpa/nameser.h>
+// #include <netinet/in.h>
 #include "misc.hh"
 #include <boost/shared_ptr.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/tuple/tuple_comparison.hpp>
+#include "dns.hh"
 #include "dnswriter.hh"
 
 /** DNS records have three representations:
@@ -47,22 +47,15 @@
     And we might be able to reverse 2 -> 3 as well
 */
     
-
-//namespace {
-  typedef HEADER dnsheader;
-//}
-
 using namespace std;
 using namespace boost;
-typedef runtime_error MOADNSException;
 
-struct dnsrecordheader
+class MOADNSException : public runtime_error
 {
-  uint16_t d_type;
-  uint16_t d_class;
-  uint32_t d_ttl;
-  uint16_t d_clen;
-} __attribute__((packed));
+public:
+  MOADNSException(const string& str) : runtime_error(str)
+  {}
+};
 
 
 class MOADNSParser;
@@ -116,12 +109,13 @@ public:
     label=getLabel();
   }
 
-  void xfrText(string &text)
+  void xfrText(string &text, bool multi=false)
   {
-    text=getText();
+    text=getText(multi);
   }
 
   void xfrBlob(string& blob);
+  void xfrHexBlob(string& blob);
 
   static uint16_t get16BitInt(const vector<unsigned char>&content, uint16_t& pos);
   static void getLabelFromContent(const vector<uint8_t>& content, uint16_t& frompos, string& ret, int recurs);
@@ -131,7 +125,7 @@ public:
   void copyRecord(unsigned char* dest, uint16_t len);
 
   string getLabel(unsigned int recurs=0);
-  string getText();
+  string getText(bool multi);
 
   uint16_t d_pos;
 
@@ -179,17 +173,24 @@ public:
   static void regist(uint16_t cl, uint16_t ty, makerfunc_t* f, zmakerfunc_t* z, const char* name)
   {
     if(f)
-      typemap[make_pair(cl,ty)]=f;
+      getTypemap()[make_pair(cl,ty)]=f;
     if(z)
-      zmakermap[make_pair(cl,ty)]=z;
+      getZmakermap()[make_pair(cl,ty)]=z;
 
-    namemap[make_pair(cl,ty)]=name;
+    getNamemap()[make_pair(cl,ty)]=name;
+  }
+
+  static void unregist(uint16_t cl, uint16_t ty) 
+  {
+    pair<uint16_t, uint16_t> key=make_pair(cl, ty);
+    getTypemap().erase(key);
+    getZmakermap().erase(key);
   }
 
   static uint16_t TypeToNumber(const string& name)
   {
-    for(namemap_t::const_iterator i=namemap.begin(); i!=namemap.end();++i)
-      if(!strcasecmp(i->second.c_str(), name.c_str()))
+    for(namemap_t::const_iterator i=getNamemap().begin(); i!=getNamemap().end();++i)
+      if(!Utility::strcasecmp(i->second.c_str(), name.c_str()))
 	return i->first.second;
 
     throw runtime_error("Unknown DNS type '"+name+"'");
@@ -197,10 +198,10 @@ public:
 
   static const string NumberToType(uint16_t num)
   {
-    if(!namemap.count(make_pair(1,num)))
+    if(!getNamemap().count(make_pair(1,num)))
       return "#" + lexical_cast<string>(num);
       //      throw runtime_error("Unknown DNS type with numerical id "+lexical_cast<string>(num));
-    return namemap[make_pair(1,num)];
+    return getNamemap()[make_pair(1,num)];
   }
 
   explicit DNSRecordContent(uint16_t type) : d_qtype(type)
@@ -209,13 +210,12 @@ public:
 
 protected:
   typedef std::map<std::pair<uint16_t, uint16_t>, makerfunc_t* > typemap_t;
-  static typemap_t typemap;
-
   typedef std::map<std::pair<uint16_t, uint16_t>, zmakerfunc_t* > zmakermap_t;
-  static zmakermap_t zmakermap;
-
   typedef std::map<std::pair<uint16_t, uint16_t>, string > namemap_t;
-  static namemap_t namemap;
+
+  static typemap_t& getTypemap();
+  static namemap_t& getNamemap();
+  static zmakermap_t& getZmakermap();
 };
 
 struct DNSRecord
@@ -268,7 +268,7 @@ public:
   //! Parse from a string
   MOADNSParser(const string& buffer) 
   {
-    init(buffer.c_str(), buffer.size());
+    init(buffer.c_str(), (unsigned int)buffer.size());
   }
 
   //! Parse from a pointer and length
@@ -310,6 +310,7 @@ private:
   vector<uint8_t> d_content;
 };
 
-
+string simpleCompress(const string& label);
+void simpleExpandTo(const string& label, unsigned int frompos, string& ret);
 
 #endif

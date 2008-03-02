@@ -3,9 +3,9 @@
     Copyright (C) 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2
+    as published by the Free Software Foundation
+    
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "utility.hh"
 #include "dnsbackend.hh"
@@ -32,14 +32,12 @@ string DNSBackend::getRemote(DNSPacket *p)
 
 bool DNSBackend::getRemote(DNSPacket *p, struct sockaddr *sa, Utility::socklen_t *len)
 {
-  if(p->d_socklen<*len)
+  if(p->remote.getSocklen() < *len)
     return false;
-  *len=p->d_socklen;
+  *len=p->remote.getSocklen();
   memcpy(sa,&p->remote,*len);
   return true;
 }
-
-
 
 void DNSBackend::setArgPrefix(const string &prefix)
 {
@@ -215,7 +213,7 @@ bool DNSBackend::getSOA(const string &domain, SOAData &sd, DNSPacket *p)
 
   while(this->get(rr)) {
     hits++;
-    DNSPacket::fillSOAData(rr.content, sd);
+    fillSOAData(rr.content, sd);
     sd.domain_id=rr.domain_id;
     sd.ttl=rr.ttl;
   }

@@ -1,11 +1,11 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2006  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2
+    as published by the Free Software Foundation
+    
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,14 +14,26 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
+
+#ifndef WIN32
+#include <sys/param.h>
+#include <netdb.h>
+#include <sys/time.h>
+#include <time.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#endif // WIN32
+
 #include "misc.hh"
 #include <vector>
 #include <sstream>
 #include <errno.h>
 #include <cstring>
 #include <iostream>
+#include <algorithm>
+#include <boost/optional.hpp>
 
 #include <iomanip>
 #include <string.h>
@@ -29,18 +41,6 @@
 #include <stdio.h>
 #include "ahuexception.hh"
 #include <sys/types.h>
-
-#ifndef WIN32
-# include <sys/param.h>
-# include <netdb.h>
-# include <sys/time.h>
-# include <time.h>
-# include <netinet/in.h>
-# include <unistd.h>
-#else
-# include <time.h>
-#endif // WIN32
-
 #include "utility.hh"
 
 string nowTime()
@@ -91,8 +91,8 @@ bool stripDomainSuffix(string *qname, const string &domain)
   return true;
 }
 
-/** Chops off the start of a domain, so goes from 'www.ds9a.nl' to 'ds9a.nl' to ''. Return zero on the empty string */
-bool chopOff(string &domain)
+/** Chops off the start of a domain, so goes from 'www.ds9a.nl' to 'ds9a.nl' to 'nl' to ''. Return zero on the empty string */
+bool chopOff(string &domain) 
 {
   if(domain.empty())
     return false;
@@ -101,10 +101,36 @@ bool chopOff(string &domain)
 
   if(fdot==string::npos) 
     domain="";
-  else 
-    domain=domain.substr(fdot+1);
+  else {
+    string::size_type remain = domain.length() - (fdot + 1);
+    char tmp[remain];
+    memcpy(tmp, domain.c_str()+fdot+1, remain);
+    domain.assign(tmp, remain); // don't dare to do this w/o tmp holder :-)
+  }
   return true;
 }
+
+/** Chops off the start of a domain, so goes from 'www.ds9a.nl.' to 'ds9a.nl.' to 'nl.' to '.' Return zero on the empty string */
+bool chopOffDotted(string &domain)
+{
+  if(domain.empty() || (domain.size()==1 && domain[0]=='.'))
+    return false;
+
+  string::size_type fdot=domain.find('.');
+  if(fdot == string::npos)
+    return false;
+
+  if(fdot==domain.size()-1) 
+    domain=".";
+  else  {
+    string::size_type remain = domain.length() - (fdot + 1);
+    char tmp[remain];
+    memcpy(tmp, domain.c_str()+fdot+1, remain);
+    domain.assign(tmp, remain);
+  }
+  return true;
+}
+
 
 bool ciEqual(const string& a, const string& b)
 {
@@ -123,10 +149,33 @@ bool endsOn(const string &domain, const string &suffix)
 {
   if( suffix.empty() || ciEqual(domain, suffix) )
     return true;
+
   if(domain.size()<=suffix.size())
     return false;
   
   string::size_type dpos=domain.size()-suffix.size()-1, spos=0;
+
+  if(domain[dpos++]!='.')
+    return false;
+
+  for(; dpos < domain.size(); ++dpos, ++spos)
+    if(dns_tolower(domain[dpos]) != dns_tolower(suffix[spos]))
+      return false;
+
+  return true;
+}
+
+/** does domain end on suffix? Is smart about "wwwds9a.nl" "ds9a.nl" not matching */
+bool dottedEndsOn(const string &domain, const string &suffix) 
+{
+  if( suffix=="." || ciEqual(domain, suffix) )
+    return true;
+
+  if(domain.size()<=suffix.size())
+    return false;
+  
+  string::size_type dpos=domain.size()-suffix.size()-1, spos=0;
+
   if(domain[dpos++]!='.')
     return false;
 
@@ -145,20 +194,41 @@ int sendData(const char *buffer, int replen, int outsock)
   iov[0].iov_len=2;
   iov[1].iov_base=(char*)buffer;
   iov[1].iov_len=replen;
-  int ret=writev(outsock,iov,2);
+  int ret=Utility::writev(outsock,iov,2);
 
-  if(ret<0) {
+  if(ret <= 0)  // "EOF is error" - we can't deal with EAGAIN errors at this stage yet
     return -1;
-  }
+
   if(ret!=replen+2) {
+    // we can safely assume ret > 2, as 2 is < PIPE_BUF
+    
+    buffer += (ret - 2);
+    replen -= (ret - 2);
+
+    while (replen) {
+      ret = write(outsock, buffer, replen);
+      if(ret < 0) {
+	if(errno==EAGAIN) { // wait, we might've exhausted the window
+	  while(waitForRWData(outsock, false, 1, 0)==0)
+	    ;
+	  continue;
+	}
+	return ret;
+      }
+      if(!ret)
+	return -1; // "EOF == error"
+      replen -= ret;
+      buffer += ret;
+    }
+    if(!replen)
+      return 0;
     return -1;
   }
   return 0;
 }
 
-void parseService(const string &descr, ServiceTuple &st)
+static void parseService4(const string &descr, ServiceTuple &st)
 {
-
   vector<string>parts;
   stringtok(parts,descr,":");
   if(parts.empty())
@@ -168,8 +238,44 @@ void parseService(const string &descr, ServiceTuple &st)
     st.port=atoi(parts[1].c_str());
 }
 
+static void parseService6(const string &descr, ServiceTuple &st)
+{
+  string::size_type pos=descr.find(']');
+  if(pos == string::npos)
+    throw AhuException("Unable to parse '"+descr+"' as an IPv6 service");
 
+  st.host=descr.substr(1, pos-1);
+  if(pos + 2 < descr.length())
+    st.port=atoi(descr.c_str() + pos +2);
+}
+
+
+void parseService(const string &descr, ServiceTuple &st)
+{
+  if(descr.empty())
+    throw AhuException("Unable to parse '"+descr+"' as a service");
+
+  vector<string> parts;
+  stringtok(parts, descr, ":");
+
+  if(descr[0]=='[') {
+    parseService6(descr, st);
+  }
+  else if(descr[0]==':' || parts.size() > 2 || descr.find("::") != string::npos) {
+    st.host=descr;
+  }
+  else {
+    parseService4(descr, st);
+  }
+}
+
+// returns -1 in case if error, 0 if no data is available, 1 if there is. In the first two cases, errno is set
 int waitForData(int fd, int seconds, int useconds)
+{
+  return waitForRWData(fd, true, seconds, useconds);
+}
+
+int waitForRWData(int fd, bool waitForRead, int seconds, int useconds)
 {
   struct timeval tv;
   int ret;
@@ -177,11 +283,15 @@ int waitForData(int fd, int seconds, int useconds)
   tv.tv_sec   = seconds;
   tv.tv_usec  = useconds;
 
-  fd_set readfds;
+  fd_set readfds, writefds;
   FD_ZERO( &readfds );
-  FD_SET( fd, &readfds );
+  FD_ZERO( &writefds );
+  if(waitForRead)
+    FD_SET( fd, &readfds );
+  else
+    FD_SET( fd, &writefds );
 
-  ret = select( fd + 1, &readfds, NULL, NULL, &tv );
+  ret = select( fd + 1, &readfds, &writefds, NULL, &tv );
   if ( ret == -1 )
     errno = ETIMEDOUT;
 
@@ -287,6 +397,26 @@ string stringerror()
   return strerror(errno);
 }
 
+#ifdef WIN32
+string netstringerror()
+{
+  char buf[512];
+  int err=WSAGetLastError();
+  if(FormatMessage (FORMAT_MESSAGE_FROM_SYSTEM, NULL, err,
+		     0, buf, sizeof(buf)-1, NULL)) {
+    return string(buf);
+  }
+  else {
+    return strerror(err);
+  }
+}
+#else
+string netstringerror()
+{
+  return stringerror();
+}
+#endif
+
 void cleanSlashes(string &str)
 {
   string::const_iterator i;
@@ -308,32 +438,40 @@ bool IpToU32(const string &str, uint32_t *ip)
   }
   
   struct in_addr inp;
-  if(inet_aton(str.c_str(), &inp)) {
+  if(Utility::inet_aton(str.c_str(), &inp)) {
     *ip=inp.s_addr;
     return true;
   }
   return false;
 }
 
-const string sockAddrToString(struct sockaddr_in *remote, Utility::socklen_t socklen) 
+string U32ToIP(uint32_t val)
+{
+  char tmp[17];
+  snprintf(tmp, sizeof(tmp)-1, "%u.%u.%u.%u", 
+	   (val >> 24)&0xff,
+	   (val >> 16)&0xff,
+	   (val >>  8)&0xff,
+	   (val      )&0xff);
+  return tmp;
+}
+
+
+const string sockAddrToString(struct sockaddr_in *remote) 
 {    
-  if(socklen==sizeof(struct sockaddr_in)) {
+  if(remote->sin_family == AF_INET) {
     struct sockaddr_in sip;
     memcpy(&sip,(struct sockaddr_in*)remote,sizeof(sip));
     return inet_ntoa(sip.sin_addr);
   }
-#ifdef HAVE_IPV6
   else {
     char tmp[128];
     
-    if(!inet_ntop(AF_INET6, ( const char * ) &((struct sockaddr_in6 *)remote)->sin6_addr, tmp, sizeof(tmp)))
+    if(!Utility::inet_ntop(AF_INET6, ( const char * ) &((struct sockaddr_in6 *)remote)->sin6_addr, tmp, sizeof(tmp)))
       return "IPv6 untranslateable";
 
     return tmp;
   }
-#endif
-
-  return "untranslateable";
 }
 
 string makeHexDump(const string& str)
@@ -377,4 +515,85 @@ void shuffle(vector<DNSResourceRecord>& rrs)
     random_shuffle(first,second);
 
   // we don't shuffle the rest
+}
+
+
+void normalizeTV(struct timeval& tv)
+{
+  if(tv.tv_usec > 1000000) {
+    ++tv.tv_sec;
+    tv.tv_usec-=1000000;
+  }
+  else if(tv.tv_usec < 0) {
+    --tv.tv_sec;
+    tv.tv_usec+=1000000;
+  }
+}
+
+const struct timeval operator+(const struct timeval& lhs, const struct timeval& rhs)
+{
+  struct timeval ret;
+  ret.tv_sec=lhs.tv_sec + rhs.tv_sec;
+  ret.tv_usec=lhs.tv_usec + rhs.tv_usec;
+  normalizeTV(ret);
+  return ret;
+}
+
+const struct timeval operator-(const struct timeval& lhs, const struct timeval& rhs)
+{
+  struct timeval ret;
+  ret.tv_sec=lhs.tv_sec - rhs.tv_sec;
+  ret.tv_usec=lhs.tv_usec - rhs.tv_usec;
+  normalizeTV(ret);
+  return ret;
+}
+
+pair<string, string> splitField(const string& inp, char sepa)
+{
+  pair<string, string> ret;
+  string::size_type cpos=inp.find(sepa);
+  if(cpos==string::npos)
+    ret.first=inp;
+  else {
+    ret.first=inp.substr(0, cpos);
+    ret.second=inp.substr(cpos+1);
+  }
+  return ret;
+}
+
+boost::optional<int> logFacilityToLOG(unsigned int facility)
+{
+  boost::optional<int> ret;
+
+  switch(facility) {
+  case 0:
+    return LOG_LOCAL0;
+  case 1:
+    return(LOG_LOCAL1);
+  case 2:
+    return(LOG_LOCAL2);
+  case 3:
+    return(LOG_LOCAL3);
+  case 4:
+    return(LOG_LOCAL4);
+  case 5:
+    return(LOG_LOCAL5);
+  case 6:
+    return(LOG_LOCAL6);
+  case 7:
+    return(LOG_LOCAL7);
+  default:
+    return ret;
+  }
+}
+
+string stripDot(const string& dom)
+{
+  if(dom.empty())
+    return dom;
+
+  if(dom[dom.size()-1]!='.')
+    return dom;
+
+  return dom.substr(0,dom.size()-1);
 }

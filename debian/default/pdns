@@ -1,5 +1,9 @@
 # Variables for PowerDNS
 #
-#
+# Whether you want to start PowerDNS automatically.
 START=no
 
+# If you have resolvconf installed, you can enable the following to have
+# resolvconf update an recursor line in the pdns config, as determined by
+# resolvconf.
+RESOLVCONF_UPDATE_FORWARDERS=no

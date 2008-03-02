@@ -1,4 +1,4 @@
-AM_CXXFLAGS=-DSYSCONFDIR=\"@sysconfdir@\" -DLIBDIR=\"@libdir@\" -DLOCALSTATEDIR=\"@socketdir@\" -Ibackends/bind 
+AM_CXXFLAGS=-DSYSCONFDIR=\"@sysconfdir@\" -DLIBDIR=\"@libdir@\" -DLOCALSTATEDIR=\"@socketdir@\" -Ibackends/bind @THREADFLAGS@
 AM_CPPFLAGS=-Ibackends/bind @THREADFLAGS@
 
 EXTRA_DIST = docs/Makefile docs/expand \
@@ -12,13 +12,14 @@ sysconf_DATA = pdns.conf-dist
 
 if RECURSOR
 sbin_PROGRAMS = pdns_server pdns_recursor
+bin_PROGRAMS = pdns_control  rec_control
 else
 sbin_PROGRAMS = pdns_server 
+bin_PROGRAMS = pdns_control  
 endif
 
-bin_PROGRAMS = pdns_control  
 
-EXTRA_PROGRAMS=pdns_recursor sdig dnspbench pdns_control qgen dnsscope dnsreplay_mindex dnswasher dnsreplay 
+EXTRA_PROGRAMS=pdns_recursor sdig dnspbench pdns_control dnsscope dnsgram dnsdemog dnsreplay_mindex dnswasher dnsreplay dnsscan dnslog
 
 pdns_server_SOURCES=dnspacket.cc nameserver.cc tcpreceiver.hh \
 qtype.cc logger.cc arguments.cc packethandler.cc tcpreceiver.cc \
@@ -31,12 +32,13 @@ dynlistener.cc dynlistener.hh  dynhandler.cc dynhandler.hh  \
 resolver.hh resolver.cc communicator.cc communicator.hh dnsproxy.cc \
 dnsproxy.hh randombackend.cc unix_utility.cc common_startup.cc \
 utility.hh iputils.hh common_startup.hh unix_semaphore.cc \
-backends/bind/bindbackend2.cc backends/bind/zoneparser2.cc \
+backends/bind/bindbackend2.cc  \
 backends/bind/bindparser.cc backends/bind/bindlexer.c \
-backends/bind/huffman.cc backends/gsql/gsqlbackend.cc \
+backends/gsql/gsqlbackend.cc \
 backends/gsql/gsqlbackend.hh backends/gsql/ssql.hh \
-sillyrecords.cc backends/bind/bindbackend.cc base64.cc \
-base64.hh
+base64.cc sillyrecords.cc \
+base64.hh zoneparser-tng.cc dnsrecords.cc dnswriter.cc \
+rcpgenerator.cc	 dnsparser.cc
 
 #
 pdns_server_LDFLAGS= @moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@
@@ -44,18 +46,11 @@ pdns_server_INCLUDES=
 
 sdig_SOURCES=sdig.cc sstuff.hh dnsparser.cc dnsparser.hh dnsrecords.cc dnswriter.cc dnswriter.hh \
 	misc.cc misc.hh rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh unix_utility.cc \
-	logger.cc statbag.cc qtype.cc
+	logger.cc statbag.cc qtype.cc sillyrecords.cc
 
 dnspbench_SOURCES=dnspbench.cc sstuff.hh dnsparser.cc dnsparser.hh dnsrecords.cc dnswriter.cc dnswriter.hh \
 	misc.cc misc.hh rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh unix_utility.cc logger.cc \
-	statbag.cc
-
-
-qgen_SOURCES=resolver.cc resolver.hh misc.cc unix_utility.cc qtype.cc \
-	logger.cc statbag.cc dnspacket.cc arguments.cc  qgen.cc \
-	 sillyrecords.cc
-
-qgen_LDFLAGS=  @DYNLINKFLAGS@ -lboost_regex
+	statbag.cc qtype.cc
 
 dnswasher_SOURCES=dnswasher.cc misc.cc unix_utility.cc qtype.cc \
 	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.hh 
@@ -70,28 +65,59 @@ dnsreplay_SOURCES=dnsreplay.cc misc.cc  qtype.cc anadns.hh \
 
 dnsreplay_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@
 
-dnsreplay_mindex_SOURCES=dnsreplay-mindex.cc misc.cc  qtype.cc anadns.hh \
+dnsscan_SOURCES=dnsscan.cc misc.cc  qtype.cc anadns.hh \
 	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc dnsparser.hh  \
 	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnswriter.hh \
 	unix_utility.cc utility.hh		
+
+dnslog_SOURCES=dnslog.cc misc.cc  qtype.cc anadns.hh \
+	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc dnsparser.hh  \
+	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnswriter.hh \
+	unix_utility.cc utility.hh		
+
+
+dnsreplay_mindex_SOURCES=dnsreplay-mindex.cc misc.cc  qtype.cc anadns.hh \
+	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc dnsparser.hh  \
+	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnswriter.hh \
+	unix_utility.cc utility.hh sillyrecords.cc	
 
 dnsreplay_mindex_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@
 
 dnsscope_SOURCES=dnsscope.cc misc.cc unix_utility.cc qtype.cc \
 	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc \
 	base64.cc base64.hh dnswriter.cc dnswriter.hh rcpgenerator.cc rcpgenerator.hh \
-	utility.hh dnsparser.hh
+	utility.hh dnsparser.hh sillyrecords.cc
 
 dnsscope_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@
+
+dnsgram_SOURCES=dnsgram.cc misc.cc unix_utility.cc qtype.cc \
+	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc \
+	base64.cc base64.hh dnswriter.cc dnswriter.hh rcpgenerator.cc rcpgenerator.hh \
+	utility.hh dnsparser.hh sillyrecords.cc
+
+
+dnsdemog_SOURCES=dnsdemog.cc misc.cc unix_utility.cc qtype.cc \
+	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc \
+	base64.cc base64.hh dnswriter.cc dnswriter.hh rcpgenerator.cc rcpgenerator.hh \
+	utility.hh dnsparser.hh sillyrecords.cc
+
+
 
 
 # INCLUDES=-I/usr/include/mysql
 
+rec_control_SOURCES=rec_channel.cc rec_channel.hh rec_control.cc arguments.cc arguments.hh
+
 pdns_recursor_SOURCES=syncres.cc resolver.hh misc.cc unix_utility.cc qtype.cc \
-logger.cc statbag.cc dnspacket.cc arguments.cc  lwres.cc pdns_recursor.cc lwres.hh \
-mtasker.hh sillyrecords.cc syncres.hh recursor_cache.cc recursor_cache.hh dnsparser.cc \
+logger.cc statbag.cc arguments.cc  lwres.cc pdns_recursor.cc lwres.hh \
+mtasker.hh syncres.hh recursor_cache.cc recursor_cache.hh dnsparser.cc \
 dnswriter.cc dnswriter.hh dnsrecords.cc dnsrecords.hh rcpgenerator.cc rcpgenerator.hh \
-base64.cc base64.hh zoneparser-tng.cc zoneparser-tng.hh 
+base64.cc base64.hh zoneparser-tng.cc zoneparser-tng.hh rec_channel.cc rec_channel.hh \
+rec_channel_rec.cc selectmplexer.cc epollmplexer.cc sillyrecords.cc
+
+if NEDMALLOC
+pdns_recursor_SOURCES += ext/nedmalloc/malloc.c
+endif
 
 #../modules/gmysqlbackend/smysql.cc 
 

@@ -1,11 +1,10 @@
  /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2006  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as 
+    published by the Free Software Foundation
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,10 +13,8 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-// $Id: dynlistener.cc 518 2005-10-16 15:36:51Z ahu $ 
-/* (C) Copyright 2002 PowerDNS.COM BV */
 #include <cstring>
 #include <string>
 #include <map>
@@ -237,6 +234,10 @@ void DynListener::theListener()
   catch(string &E)
     {
       L<<Logger::Error<<"Fatal error 2 in control listener: "<<E<<endl;
+    }
+  catch(exception& e)
+    {
+      L<<Logger::Error<<"Fatal STL error: "<<e.what()<<endl;
     }
   catch(...)
     {

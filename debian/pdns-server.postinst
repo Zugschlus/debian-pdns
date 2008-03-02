@@ -85,13 +85,13 @@ case "$1" in
       sed -i -e "s/^START=.*$/START=yes/" $PDNSDEFAULTTEMP
     fi
 
+    # Install the new configuration files if the user wants it.
+    ucf --debconf-ok $PDNSCONFTEMP $PDNSCONF
+    ucf --debconf-ok $PDNSDEFAULTTEMP $PDNSDEFAULT
+    ucf --debconf-ok $PDNSLOCALTEMP $PDNSLOCAL
+
     # Stop the debconf stuff
     db_stop || true
-
-    # Install the new configuration files if the user wants it.
-    ucf $PDNSCONFTEMP $PDNSCONF
-    ucf $PDNSDEFAULTTEMP $PDNSDEFAULT
-    ucf $PDNSLOCALTEMP $PDNSLOCAL
 
     # Clean up temporary files.
     rm -f $PDNSCONFTEMP $PDNSDEFAULTTEMP $PDNSLOCALTEMP

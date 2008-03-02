@@ -1,10 +1,6 @@
 # Apply following patches
 addconfigdir
-update-geobackend
-fix-wildcardlookups-ldapbackend
-fix-memory-corruption
-fix-wrong-ttl-for-soa-during-axfr
-fix-ipv6-handling
-fix-unaligned-access
-auto-soa-calculation-in-ldapbackend
-literal-zone-file.dpatch
+clean-docs
+ns-glue-records-out-of-zone
+fix-ldapbackend-openldap.dpatch
+gcc43-fixes

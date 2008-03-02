@@ -2,7 +2,7 @@
  *		Copyright (C) 2004 Mark Bergsma <mark@nedworks.org>
  *		This software is licensed under the terms of the GPL, version 2.
  * 
- *		$Id: geobackend.hh 477 2005-09-03 18:15:37Z ahu $
+ *		$Id: geobackend.hh 876 2006-08-13 18:17:42Z ahu $
  */
 
 
@@ -36,7 +36,7 @@ public:
 	virtual void lookup(const QType &qtype, const string &qdomain, DNSPacket *pkt_p=0, int zoneId=-1);
 	virtual bool list(const string &target, int domain_id);
 	virtual bool get(DNSResourceRecord &r);
-	virtual bool getSOA(const string &name, SOAData &soadata);
+	virtual bool getSOA(const string &name, SOAData &soadata, DNSPacket *p=0);
 	
 	virtual void reload();
 	virtual void rediscover(string *status = 0);

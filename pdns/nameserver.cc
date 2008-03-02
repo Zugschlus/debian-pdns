@@ -12,7 +12,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "utility.hh"
@@ -112,7 +112,7 @@ void UDPNameserver::bindIPv4()
     locala.sin_port=htons(arg().asNum("local-port"));
     
     if(bind(s, (sockaddr*)&locala,sizeof(locala))<0) {
-      L<<Logger::Error<<"binding to UDP socket: "<<strerror(errno)<<endl;
+      L<<Logger::Error<<"binding UDP socket to '"+localname+"': "<<strerror(errno)<<endl;
       throw AhuException("Unable to bind to UDP socket");
     }
     d_highfd=max(s,d_highfd);
@@ -131,7 +131,6 @@ void UDPNameserver::bindIPv6()
   if(locals.empty())
     return;
 
-
   int s;
   for(vector<string>::const_iterator i=locals.begin();i!=locals.end();++i) {
     string localname(*i);
@@ -143,24 +142,8 @@ void UDPNameserver::bindIPv6()
     if(localname=="::0") {
       L<<Logger::Warning<<"It is advised to bind to explicit addresses with the --local-ipv6 option"<<endl;
     }
-
-    sockaddr_in6 locala;
-    locala.sin6_port=ntohs(arg().asNum("local-port"));
-    locala.sin6_family=AF_INET6;
-    locala.sin6_flowinfo=0;
-
-    if(!inet_pton(AF_INET6, localname.c_str(), (void *)&locala.sin6_addr)) {
-      addrinfo *addrinfos;
-      addrinfo hints;
-      memset(&hints,0,sizeof(hints));
-      hints.ai_socktype=SOCK_DGRAM;
-      hints.ai_family=AF_INET6;
-
-      if(getaddrinfo(localname.c_str(),arg()["local-port"].c_str(),&hints,&addrinfos))
-	throw AhuException("Unable to resolve local IPv6 address '"+localname+"'"); 
-      memcpy(&locala,addrinfos->ai_addr,addrinfos->ai_addrlen);
-    }
-
+    
+    ComboAddress locala(localname, arg().asNum("local-port"));
 
     if(bind(s, (sockaddr*)&locala, sizeof(locala))<0) {
       L<<Logger::Error<<"binding to UDP ipv6 socket: "<<strerror(errno)<<endl;
@@ -191,17 +174,17 @@ UDPNameserver::UDPNameserver()
 void UDPNameserver::send(DNSPacket *p)
 {
   const char *buffer=p->getData();
-  DLOG(L<<Logger::Notice<<"Sending a packet to "<<inet_ntoa( reinterpret_cast< sockaddr_in * >(( p->remote ))->sin_addr)<<" ("<<p->len<<" octets)"<<endl);
+  DLOG(L<<Logger::Notice<<"Sending a packet to "<< p->remote.toString() <<" ("<<p->len<<" octets)"<<endl);
   if(p->len>512) {
     p=new DNSPacket(*p);
     p->truncate(512);
     buffer=p->getData();
-    if(sendto(p->getSocket(),buffer,p->len,0,(struct sockaddr *)(p->remote),p->d_socklen)<0) 
+    if(sendto(p->getSocket(),buffer,p->len,0,(struct sockaddr *)(&p->remote),p->remote.getSocklen())<0) 
       L<<Logger::Error<<"Error sending reply with sendto (socket="<<p->getSocket()<<"): "<<strerror(errno)<<endl;
     delete p;
   }
   else {
-    if(sendto(p->getSocket(),buffer,p->len,0,(struct sockaddr *)(p->remote),p->d_socklen)<0)
+    if(sendto(p->getSocket(),buffer,p->len,0,(struct sockaddr *)(&p->remote),p->remote.getSocklen())<0)
       L<<Logger::Error<<"Error sending reply with sendto (socket="<<p->getSocket()<<"): "<<strerror(errno)<<endl;
   }
 }

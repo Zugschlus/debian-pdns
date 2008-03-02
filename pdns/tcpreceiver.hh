@@ -3,9 +3,9 @@
     Copyright (C) 2002  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2
+    as published by the Free Software Foundation
+    
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #ifndef PDNS_TCPRECEIVER_HH
 #define PDNS_TCPRECEIVER_HH
@@ -24,6 +24,7 @@
 #include "dnsbackend.hh"
 #include "packethandler.hh"
 #include <vector>
+#include <boost/shared_ptr.hpp>
 
 #ifndef WIN32
 # include <sys/select.h>
@@ -47,11 +48,11 @@ public:
   void go();
 private:
 
-  static int sendDelPacket(DNSPacket *p, int outsock);
-  static int readLength(int fd, struct sockaddr_in *remote);
-  static void getQuestion(int fd, char *mesg, int pktlen, const struct sockaddr_in &remote);
-  static int doAXFR(const string &target, DNSPacket *q, int outsock);
-  static bool canDoAXFR(DNSPacket *q);
+  static void sendPacket(boost::shared_ptr<DNSPacket> p, int outsock);
+  static int readLength(int fd, ComboAddress *remote);
+  static void getQuestion(int fd, char *mesg, int pktlen, const ComboAddress& remote);
+  static int doAXFR(const string &target, boost::shared_ptr<DNSPacket> q, int outsock);
+  static bool canDoAXFR(boost::shared_ptr<DNSPacket> q);
   static void *doConnection(void *data);
   static void *launcher(void *data);
   void thread(void);

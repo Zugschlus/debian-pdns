@@ -1,5 +1,5 @@
 /*
-    Copyright (C) 2002 - 2005  PowerDNS.COM BV
+    Copyright (C) 2002 - 2007  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 
@@ -12,7 +12,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "utility.hh"
 #include "ws.hh"
@@ -37,8 +37,6 @@ void StatWebServer::go()
   pthread_create(&d_tid, 0, threadHelper, this);
   pthread_create(&d_tid, 0, statThreadHelper, this);
 }
-
-
 
 void StatWebServer::statThread()
 {
@@ -136,7 +134,6 @@ void StatWebServer::printargs(ostringstream &ret)
     ret<<"<tr><td>"<<*i<<"</td><td>"<<arg()[*i]<<"</td><td>"<<arg().getHelp(*i)<<"</td>"<<endl;
   }
 }
-
 
 string StatWebServer::indexfunction(const map<string,string> &varmap, void *ptr, bool *custom)
 {
