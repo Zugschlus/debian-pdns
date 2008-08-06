@@ -13,7 +13,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "utility.hh"
 #include "dynhandler.hh"
@@ -190,11 +190,12 @@ string DLNotifyRetrieveHandler(const vector<string>&parts, Utility::pid_t ppid)
   if(!P.getBackend()->getDomainInfo(domain, di))
     return "Domain '"+domain+"' unknown";
   
-  if(di.master.empty())
+  if(di.masters.empty())
     return "Domain '"+domain+"' is not a slave domain (or has no master defined)";
 
-  Communicator.addSuckRequest(domain,di.master);
-  return "Added retrieval request for '"+domain+"' from master "+di.master;
+  random_shuffle(di.masters.begin(), di.masters.end());
+  Communicator.addSuckRequest(domain, di.masters.front());
+  return "Added retrieval request for '"+domain+"' from master "+di.masters.front();
 }
 
 string DLNotifyHostHandler(const vector<string>&parts, Utility::pid_t ppid)

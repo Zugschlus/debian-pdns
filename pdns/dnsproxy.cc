@@ -13,7 +13,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "utility.hh"
 #include "dnsproxy.hh"
@@ -93,7 +93,7 @@ void DNSProxy::onlyFrom(const string &ips)
 
 bool DNSProxy::recurseFor(DNSPacket* p)
 {
-  return d_ng.match((struct sockaddr_in *)&p->remote);
+  return d_ng.match((ComboAddress *)&p->remote);
 }
 
 /** returns false if p->remote is not allowed to recurse via us */
@@ -109,8 +109,8 @@ bool DNSProxy::sendPacket(DNSPacket *p)
 
     ConntrackEntry ce;
     ce.id       = p->d.id;
-    memcpy((void *)&ce.remote,(void *)&p->remote, p->d_socklen);
-    ce.addrlen  = p->d_socklen;
+    memcpy((void *)&ce.remote,(void *)&p->remote, p->remote.getSocklen()); 
+    ce.addrlen  = p->remote.getSocklen();
     ce.outsock  = p->getSocket();
     ce.created  = time( NULL );
 
@@ -139,7 +139,7 @@ int DNSProxy::getID_locked()
     else if(i->second.created<time(0)-60) {
       if(i->second.created)
 	L<<Logger::Warning<<"Recursive query for remote "<<
-	  sockAddrToString((struct sockaddr_in *)&i->second.remote, i->second.addrlen)<<" with internal id "<<n<<
+	  sockAddrToString((struct sockaddr_in *)&i->second.remote)<<" with internal id "<<n<<
 	  " was not answered by backend within timeout, reusing id"<<endl;
       
       return n;
@@ -167,7 +167,7 @@ void DNSProxy::mainloop(void)
       }
       (*d_resanswers)++;
       (*d_udpanswers)++;
-      DNSPacket::dnsheader d;
+      dnsheader d;
       memcpy(&d,buffer,sizeof(d));
       {
 	Lock l(&d_lock);

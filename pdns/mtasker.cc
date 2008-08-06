@@ -1,11 +1,10 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2005  PowerDNS.COM BV
+    Copyright (C) 2002 - 2006  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as 
+    published by the Free Software Foundation
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +13,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "mtasker.hh"
 #include <stdio.h>
@@ -25,7 +24,7 @@
     support for waiting on events which can return values.
 
     \section copyright Copyright and License
-    MTasker is (c) 2002 - 2005 by bert hubert. It is licensed to you under the terms of the GPL version 2.
+    MTasker is (c) 2002 - 2006 by bert hubert. It is licensed to you under the terms of the GPL version 2.
 
     \section overview High level overview
     MTasker is designed to support very simple cooperative multitasking to facilitate writing 
@@ -159,7 +158,7 @@ int main()
     \return returns -1 in case of error, 0 in case of timeout, 1 in case of an answer 
 */
 
-template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEvent(const EventKey &key, EventVal *val, unsigned int timeout)
+template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEvent(EventKey &key, EventVal *val, unsigned int timeout, unsigned int now)
 {
   if(d_waiters.count(key)) { // there was already an exact same waiter
     return -1;
@@ -167,7 +166,10 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEven
 
   Waiter w;
   w.context=new ucontext_t;
-  w.ttd= timeout ? time(0)+timeout : 0;
+  w.ttd=0;
+  if(timeout)
+    w.ttd= timeout + (now ? now : time(0));
+
   w.tid=d_tid;
   
   w.key=key;
@@ -181,6 +183,7 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEven
   if(val && d_waitstatus==Answer) 
     *val=d_waitval;
   d_tid=w.tid;
+  key=d_eventkey;
   return d_waitstatus;
 }
 
@@ -190,7 +193,7 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEven
 template<class Key, class Val>void MTasker<Key,Val>::yield()
 {
   d_runQueue.push(d_tid);
-  if(swapcontext(d_threads[d_tid].first ,&d_kernel) < 0) { // give control to the kernel
+  if(swapcontext(d_threads[d_tid] ,&d_kernel) < 0) { // give control to the kernel
     perror("swapcontext in  yield");
     exit(EXIT_FAILURE);
   }
@@ -201,10 +204,14 @@ template<class Key, class Val>void MTasker<Key,Val>::yield()
     \param key Key of the event for which threads may be waiting
     \param val If non-zero, pointer to the content of the event
     \return Returns -1 in case of error, 0 if there were no waiters, 1 if a thread was woken up.
+
+    WARNING: when passing val as zero, d_waitval is undefined, and hence waitEvent will return undefined!
 */
 template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::sendEvent(const EventKey& key, const EventVal* val)
 {
-  if(!d_waiters.count(key)) {
+  typename waiters_t::iterator waiter=d_waiters.find(key);
+
+  if(waiter == d_waiters.end()) {
     //    cout<<"Event sent nobody was waiting for!"<<endl;
     return 0;
   }
@@ -213,10 +220,10 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::sendEven
   if(val)
     d_waitval=*val;
   
-  ucontext_t *userspace=d_waiters.find(key)->context;
-  d_tid=d_waiters.find(key)->tid;         // set tid 
-  
-  d_waiters.erase(key);             // removes the waitpoint 
+  ucontext_t *userspace=waiter->context;
+  d_tid=waiter->tid;         // set tid 
+  d_eventkey=waiter->key;        // pass waitEvent the exact key it was woken for
+  d_waiters.erase(waiter);             // removes the waitpoint 
   if(swapcontext(&d_kernel,userspace)) { // swaps back to the above point 'A'
     perror("swapcontext in sendEvent");
     exit(EXIT_FAILURE);
@@ -230,7 +237,7 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::sendEven
     \param start Pointer to the function which will form the start of the thread
     \param val A void pointer that can be used to pass data to the thread
 */
-template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, void* val, const string& name)
+template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, void* val)
 {
   ucontext_t *uc=new ucontext_t;
   getcontext(uc);
@@ -239,13 +246,13 @@ template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, 
   uc->uc_stack.ss_sp = new char[d_stacksize];
   
   uc->uc_stack.ss_size = d_stacksize;
-#ifdef SOLARIS
+#ifdef SOLARIS8
   uc->uc_stack.ss_sp = (void*)(((char*)uc->uc_stack.ss_sp)+d_stacksize);
   makecontext (uc,(void (*)(...))threadWrapper, 5, this, start, d_maxtid, val);
 #else
   makecontext (uc, (void (*)(void))threadWrapper, 4, this, start, d_maxtid, val);
 #endif
-  d_threads[d_maxtid]=make_pair(uc, name);
+  d_threads[d_maxtid]=uc;
   d_runQueue.push(d_maxtid++); // will run at next schedule invocation
 }
 
@@ -260,11 +267,11 @@ template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, 
     \return Returns if there is more work scheduled and recalling schedule now would be useful
       
 */
-template<class Key, class Val>bool MTasker<Key,Val>::schedule()
+template<class Key, class Val>bool MTasker<Key,Val>::schedule(unsigned int now)
 {
   if(!d_runQueue.empty()) {
     d_tid=d_runQueue.front();
-    if(swapcontext(&d_kernel, d_threads[d_tid].first)) {
+    if(swapcontext(&d_kernel, d_threads[d_tid])) {
       perror("swapcontext in schedule");
       exit(EXIT_FAILURE);
     }
@@ -273,22 +280,26 @@ template<class Key, class Val>bool MTasker<Key,Val>::schedule()
     return true;
   }
   if(!d_zombiesQueue.empty()) {
-    delete[] (char *)d_threads[d_zombiesQueue.front()].first->uc_stack.ss_sp;
-    delete d_threads[d_zombiesQueue.front()].first;
+#ifdef SOLARIS8
+    delete[] (((char *)d_threads[d_zombiesQueue.front()]->uc_stack.ss_sp)-d_stacksize);
+#else
+    delete[] (char *)d_threads[d_zombiesQueue.front()]->uc_stack.ss_sp;
+#endif
+    delete d_threads[d_zombiesQueue.front()];
     d_threads.erase(d_zombiesQueue.front());
     d_zombiesQueue.pop();
     return true;
   }
   if(!d_waiters.empty()) {
-    time_t now=time(0);
+    if(!now)
+      now=time(0);
 
     typedef typename waiters_t::template index<KeyTag>::type waiters_by_ttd_index_t;
     //    waiters_by_ttd_index_t& ttdindex=d_waiters.template get<KeyTag>();
     waiters_by_ttd_index_t& ttdindex=boost::multi_index::get<KeyTag>(d_waiters);
 
-
     for(typename waiters_by_ttd_index_t::iterator i=ttdindex.begin(); i != ttdindex.end(); ) {
-      if(i->ttd && i->ttd < now) {
+      if(i->ttd && (unsigned int)i->ttd < now) {
 	d_waitstatus=TimeOut;
 	if(swapcontext(&d_kernel,i->context)) { // swaps back to the above point 'A'
 	  perror("swapcontext in schedule2");
@@ -321,7 +332,6 @@ template<class Key, class Val>unsigned int MTasker<Key,Val>::numProcesses()
 {
   return d_threads.size();
 }
-
 
 //! gives access to the list of Events threads are waiting for
 /** The kernel can call this to get a list of Events threads are waiting for. This is very useful

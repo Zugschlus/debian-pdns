@@ -1,6 +1,6 @@
-/*
+ /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002-2005  PowerDNS.COM BV
+    Copyright (C) 2002-2007  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -13,12 +13,12 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "utility.hh"
 #include <string>
 #include <sys/types.h>
-
+#include <boost/algorithm/string.hpp>
 #include "dns.hh"
 #include "dnsbackend.hh"
 #include "ueberbackend.hh"
@@ -83,6 +83,9 @@ void PacketHandler::addRootReferral(DNSPacket* r)
     r->addRecord(rr);
   }
 
+  if(boost::iequals(arg()["send-root-referral"], "lean"))
+     return;
+
   // add the additional stuff
   
   rr.ttl=3600000;
@@ -113,6 +116,7 @@ int PacketHandler::findMboxFW(DNSPacket *p, DNSPacket *r, string &target)
     wedoforward=true;
 
   if(wedoforward) {
+    r->clearRecords();
     rr.content=arg()["smtpredirector"];
     rr.priority=25;
     rr.ttl=7200;
@@ -134,6 +138,8 @@ int PacketHandler::findUrl(DNSPacket *p, DNSPacket *r, string &target)
   B.lookup("URL",target,p); // search for a URL before we search for an A
         
   while(B.get(rr)) {
+    if(!found) 
+      r->clearRecords();
     found=true;
     DLOG(L << "Found a URL!" << endl);
     rr.content=arg()["urlredirector"];
@@ -143,14 +149,16 @@ int PacketHandler::findUrl(DNSPacket *p, DNSPacket *r, string &target)
     r->addRecord(rr);
   }  
 
-  if(found)
+  if(found) 
     return 1;
-      
+
   // now try CURL
   
   B.lookup("CURL",target,p); // search for a URL before we search for an A
       
   while(B.get(rr)) {
+    if(!found) 
+      r->clearRecords();
     found=true;
     DLOG(L << "Found a CURL!" << endl);
     rr.content=arg()["urlredirector"];
@@ -186,7 +194,7 @@ int PacketHandler::doDNSCheckRequest(DNSPacket *p, DNSPacket *r, string &target)
   DNSResourceRecord rr;
 
   if (p->qclass == 3 && p->qtype.getName() == "HINFO") {
-    rr.content = "PowerDNS $Id: packethandler.cc 539 2005-11-11 11:17:47Z ahu $";
+    rr.content = "PowerDNS $Id: packethandler.cc 1036 2007-04-19 20:43:14Z ahu $";
     rr.ttl = 5;
     rr.qname=target;
     rr.qtype=13; // hinfo
@@ -206,7 +214,7 @@ int PacketHandler::doVersionRequest(DNSPacket *p, DNSPacket *r, string &target)
   const string mode=arg()["version-string"];
   if(p->qtype.getCode()==QType::TXT && target=="version.bind") {// TXT
     if(mode.empty() || mode=="full") 
-      rr.content="Served by POWERDNS "VERSION" $Id: packethandler.cc 539 2005-11-11 11:17:47Z ahu $";
+      rr.content="Served by POWERDNS "VERSION" $Id: packethandler.cc 1036 2007-04-19 20:43:14Z ahu $";
     else if(mode=="anonymous") {
       r->setRcode(RCode::ServFail);
       return 1;
@@ -303,10 +311,13 @@ int PacketHandler::doAdditionalProcessingAndDropAA(DNSPacket *p, DNSPacket *r)
   DNSResourceRecord rr;
   SOAData sd;
 
-  if(p->qtype.getCode()!=QType::AXFR && r->needAP()) { // this packet needs additional processing
+  if(p->qtype.getCode()!=QType::AXFR) { // this packet needs additional processing
+    vector<DNSResourceRecord *> arrs=r->getAPRecords();
+    if(arrs.empty()) 
+      return 1;
+
     DLOG(L<<Logger::Warning<<"This packet needs additional processing!"<<endl);
 
-    vector<DNSResourceRecord *> arrs=r->getAPRecords();
     vector<DNSResourceRecord> crrs;
 
     for(vector<DNSResourceRecord *>::const_iterator i=arrs.begin();
@@ -319,14 +330,14 @@ int PacketHandler::doAdditionalProcessingAndDropAA(DNSPacket *p, DNSPacket *r)
 	i!=crrs.end();
 	++i) {
       
-      if(i->qtype.getCode()==QType::NS && !B.getSOA(i->qname,sd,p)) { // drop AA in case of non-SOA-level NS answer
+      if(!i->qname.empty() && i->qtype.getCode()==QType::NS && !B.getSOA(i->qname,sd,p)) { // drop AA in case of non-SOA-level NS answer, except for root referral
 	r->d.aa=false;
 	//	i->d_place=DNSResourceRecord::AUTHORITY; // XXX FIXME
       }
 
       QType qtypes[2];
       qtypes[0]="A"; qtypes[1]="AAAA";
-      for(int n=0;n < d_doIPv6AdditionalProcessing + 1; ++n) {
+      for(int n=0 ; n < d_doIPv6AdditionalProcessing + 1; ++n) {
 	B.lookup(qtypes[n],i->content,p);  
 	bool foundOne=false;
 	while(B.get(rr)) {
@@ -338,26 +349,6 @@ int PacketHandler::doAdditionalProcessingAndDropAA(DNSPacket *p, DNSPacket *r)
 	  
 	  rr.d_place=DNSResourceRecord::ADDITIONAL;
 	  r->addRecord(rr);
-	  
-	}
-	if(!foundOne) {
-	  if(d_doRecursion && DP->recurseFor(p)) {
-	    try {
-	      Resolver resolver;
-	      resolver.resolve(arg()["recursor"],i->content.c_str(),QType::A);
-	      Resolver::res_t res=resolver.result();
-	      for(Resolver::res_t::const_iterator j=res.begin();j!=res.end();++j) {
-		if(j->d_place==DNSResourceRecord::ANSWER) {
-		  rr=*j;
-		  rr.d_place=DNSResourceRecord::ADDITIONAL;
-		  r->addRecord(rr);
-		}
-	      }
-	    }
-	    catch(ResolverException& re) {
-	      // L<<Logger::Error<<"Trying to do additional processing for answer to '"<<p->qdomain<<"' query: "<<re.reason<<endl;
-	    }
-	  }
 	}
       }
     }
@@ -452,18 +443,14 @@ int PacketHandler::trySuperMaster(DNSPacket *p)
   try {
     Resolver resolver;
     uint32_t theirserial;
-    int res=resolver.getSoaSerial(p->getRemote(),p->qdomain, &theirserial);  
-    if(res<=0) {
-      L<<Logger::Error<<"Unable to determine SOA serial for "<<p->qdomain<<" at potential supermaster "<<p->getRemote()<<endl;
-      return RCode::ServFail;
-    }
+    resolver.getSoaSerial(p->getRemote(),p->qdomain, &theirserial);  
   
     resolver.resolve(p->getRemote(),p->qdomain.c_str(), QType::NS);
 
     nsset=resolver.result();
   }
   catch(ResolverException &re) {
-    L<<Logger::Error<<"Error resolving SOA or NS for '"<<p->qdomain<<"' at "<<p->getRemote()<<endl;
+    L<<Logger::Error<<"Error resolving SOA or NS at: "<< p->getRemote() <<": "<<re.reason<<endl;
     return RCode::ServFail;
   }
 
@@ -493,7 +480,7 @@ int PacketHandler::processNotify(DNSPacket *p)
   }
   DNSBackend *db=0;
   DomainInfo di;
-  if(!B.getDomainInfo(p->qdomain,di) || !(db=di.backend)) {
+  if(!B.getDomainInfo(p->qdomain, di) || !(db=di.backend)) {
     L<<Logger::Error<<"Received NOTIFY for "<<p->qdomain<<" from "<<p->getRemote()<<" for which we are not authoritative"<<endl;
     return trySuperMaster(p);
   }
@@ -509,9 +496,11 @@ int PacketHandler::processNotify(DNSPacket *p)
   /* this is an instant DoS, just spoof notifications from the address of the master and we block  */
 
   Resolver resolver;
-  int res=resolver.getSoaSerial(p->getRemote(),p->qdomain, &theirserial);
-  if(res<=0) {
-    L<<Logger::Error<<"Unable to determine SOA serial for "<<p->qdomain<<" at "<<p->getRemote()<<endl;
+  try {
+    resolver.getSoaSerial(p->getRemote(),p->qdomain, &theirserial);
+  }
+  catch(ResolverException& re) {
+    L<<Logger::Error<<re.reason<<endl;
     return RCode::ServFail;
   }
 	
@@ -541,15 +530,26 @@ bool validDNSName(const string &name)
     if(!((c >= 'a' && c <= 'z') ||
 	 (c >= 'A' && c <= 'Z') ||
 	 (c >= '0' && c <= '9') ||
-	 c =='-' || c == '_' || c=='*' || c=='.' || c=='/'))
+	 c =='-' || c == '_' || c=='*' || c=='.' || c=='/' || c=='@'))
       return false;
   }
   return true;
 }  
 
-//! Called by the Distributor to ask a question. Returns 0 in case of an error
 DNSPacket *PacketHandler::question(DNSPacket *p)
 {
+  bool shouldRecurse=false;
+  DNSPacket *ret=questionOrRecurse(p, &shouldRecurse);
+  if(shouldRecurse) {
+    DP->sendPacket(p);
+  }
+  return ret;
+}
+
+//! Called by the Distributor to ask a question. Returns 0 in case of an error
+DNSPacket *PacketHandler::questionOrRecurse(DNSPacket *p, bool *shouldRecurse)
+{
+  *shouldRecurse=false;
   DNSResourceRecord rr;
   SOAData sd;
   sd.db=0;
@@ -561,7 +561,7 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
 
   DNSPacket *r=0;
   try {    
-    DLOG(L << Logger::Notice<<"Remote "<<inet_ntoa( reinterpret_cast< struct sockaddr_in * >( &( p->remote ))->sin_addr )<<" wants a type " << p->qtype.getName() << " ("<<p->qtype.getCode()<<") about '"<<p->qdomain << "'" << endl);
+    DLOG(L << Logger::Notice<<"Remote "<< p->remote.toString() <<" wants a type " << p->qtype.getName() << " ("<<p->qtype.getCode()<<") about '"<<p->qdomain << "'" << endl);
 
 // XXX FIXME Find out why this isn't working!
 #ifndef WIN32
@@ -575,7 +575,8 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
     // XXX FIXME do this in DNSPacket::parse ?
 
     if(!validDNSName(p->qdomain)) {
-      L<<Logger::Error<<"Received a malformed qdomain from "<<p->getRemote()<<", '"<<p->qdomain<<"': dropping"<<endl;
+      if(arg().mustDo("log-dns-details"))
+        L<<Logger::Error<<"Received a malformed qdomain from "<<p->getRemote()<<", '"<<p->qdomain<<"': dropping"<<endl;
       S.inc("corrupt-packets");
       return 0;
     }
@@ -637,12 +638,12 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
     mret=makeCanonic(p, r, target); // traverse CNAME chain until we have a useful record (may actually give the correct answer!)
 
     if(mret==2) { // there is some data, but not of the correct type
-      DLOG(L<<"There is some data, but not of the correct type"<<endl);
+      DLOG(L<<"There is some data, but not of the correct type, adding SOA for NXRECORDSET"<<endl);
       SOAData sd;
       if(getAuth(p, &sd, target, 0)) {
 	rr.qname=sd.qname;
 	rr.qtype=QType::SOA;
-	rr.content=DNSPacket::serializeSOAData(sd);
+	rr.content=serializeSOAData(sd);
 	rr.ttl=sd.ttl;
 	rr.domain_id=sd.domain_id;
 	rr.d_place=DNSResourceRecord::AUTHORITY;
@@ -650,9 +651,8 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
       }
     }
 
-    if(mret > 0) 
+    if(mret == 1) 
       goto sendit; // this might be the end of it (client requested a CNAME, or we found the answer already)
-    
 
     if(d_doFancyRecords) { // MBOXFW, URL <- fake records, emulated with MX and A
       int res=doFancyRecords(p,r,target);
@@ -670,7 +670,7 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
       if(B.getSOA(target,sd,p)) {
 	rr.qname=target;
 	rr.qtype=QType::SOA;
-	rr.content=DNSPacket::serializeSOAData(sd);
+	rr.content=serializeSOAData(sd);
 	rr.ttl=sd.ttl;
 	rr.domain_id=sd.domain_id;
 	rr.d_place=DNSResourceRecord::ANSWER;
@@ -731,7 +731,6 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
 
     // RECURSION CUT-OUT! 
 
-
     bool weAuth;
     int zoneId;
     zoneId=-1;
@@ -741,9 +740,9 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
     else
       weAuth=false;
 
-
     if(p->d.rd && d_doRecursion && !weAuth) {
-      if(DP->sendPacket(p)) {
+      if(DP->recurseFor(p)) {
+	*shouldRecurse=true;
 	delete r;
 	return 0;
       }
@@ -758,22 +757,30 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
       weAuth=getAuth(p, &sd, target, &zoneId); // TLDAuth perhaps
 
     if(weAuth) {
-      DLOG(L<<Logger::Warning<<"Soa found: "<<soa<<endl);
+      DLOG(L<<Logger::Warning<<"Soa found: '"<<sd.qname<<"'"<<endl);
       ;
     }
     if(!weAuth) {
+      DLOG(L<<Logger::Warning<<"We're not authoritative"<<endl);
       if(p->d.rd || target==p->qdomain) { // only servfail if we didn't follow a CNAME
+	DLOG(L<<Logger::Warning<<"Adding SERVFAIL as we did not followed a CNAME"<<endl);
 	if(d_logDNSDetails)
 	  L<<Logger::Warning<<"Not authoritative for '"<< target<<"', sending servfail to "<<
 	    p->getRemote()<< (p->d.rd ? " (recursion was desired)" : "") <<endl;
 
 	r->setA(false);
 	if(arg().mustDo("send-root-referral")) {
+	  DLOG(L<<Logger::Warning<<"Adding root-referral"<<endl);
 	  addRootReferral(r);
 	}
 	else {
-	  r->setRcode(RCode::ServFail);  // 'sorry' - this is where we might send out a root referral
+	  DLOG(L<<Logger::Warning<<"Adding SERVFAIL"<<endl);
+	  r->setRcode(RCode::ServFail);  // 'sorry' 
 	}
+      }
+      else if(!p->d.rd) {
+	addRootReferral(r);
+	goto sendit;
       }
 				       
       S.ringAccount("unauth-queries",p->qdomain+"/"+p->qtype.getName());
@@ -801,6 +808,10 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
 	B.lookup("NS", subdomain,p,zoneId);  // start our search at the backend
 	
 	while(B.get(rr)) {
+	  if(target==p->qdomain && !found) { // don't strip data if we've been retargeted!
+	    DLOG(L<<Logger::Warning<<"Clearing records - we've discovered we are auth (see cs 947)"<<endl);
+	    r->clearRecords(); // we need to start out with an empty slate
+	  }
 	  found=true;
 	  rr.d_place=DNSResourceRecord::AUTHORITY; // this for the authority section
 	  r->addRecord(rr);
@@ -825,7 +836,7 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
 	// we have authority but no answer, so we add the SOA for negative caching
 	rr.qname=sd.qname;
 	rr.qtype=QType::SOA;
-	rr.content=DNSPacket::serializeSOAData(sd);
+	rr.content=serializeSOAData(sd);
 	rr.ttl=sd.ttl;
 	rr.domain_id=sd.domain_id;
 	rr.d_place=DNSResourceRecord::AUTHORITY;
@@ -864,13 +875,12 @@ DNSPacket *PacketHandler::question(DNSPacket *p)
   sendit:;
     if(doAdditionalProcessingAndDropAA(p,r)<0)
       return 0;
-    
     r->wrapup(); // needed for inserting in cache
     if(!noCache)
       PC.insert(p,r); // in the packet cache
   }
   catch(DBException &e) {
-    L<<Logger::Error<<"Database module reported condition which prevented lookup - sending out servfail"<<endl;
+    L<<Logger::Error<<"Database module reported condition which prevented lookup ("+e.reason+") sending out servfail"<<endl;
     r->setRcode(RCode::ServFail);
     S.inc("servfail-packets");
     S.ringAccount("servfail-queries",p->qdomain);

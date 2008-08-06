@@ -13,7 +13,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #ifndef PDNS_DNSRECORDS_HH
@@ -31,6 +31,7 @@ using namespace boost;
 #define includeboilerplate(RNAME)   RNAME##RecordContent(const DNSRecord& dr, PacketReader& pr); \
   RNAME##RecordContent(const string& zoneData);                                                  \
   static void report(void);                                                                      \
+  static void unreport(void);                                                                    \
   static DNSRecordContent* make(const DNSRecord &dr, PacketReader& pr);                          \
   static DNSRecordContent* make(const string& zonedata);                                         \
   string getZoneRepresentation() const;                                                          \
@@ -132,6 +133,15 @@ private:
   string d_content;
 };
 
+class MRRecordContent : public DNSRecordContent
+{
+public:
+  includeboilerplate(MR)
+
+private:
+  string d_alias;
+};
+
 
 class OPTRecordContent : public DNSRecordContent
 {
@@ -185,6 +195,48 @@ private:
   string d_digest;
 };
 
+class SSHFPRecordContent : public DNSRecordContent
+{
+public:
+  includeboilerplate(SSHFP)
+
+private:
+  uint8_t d_algorithm, d_fptype;
+  string d_fingerprint;
+};
+
+class KEYRecordContent : public DNSRecordContent
+{
+public:
+  includeboilerplate(KEY)
+
+private:
+  uint16_t d_flags;
+  uint8_t d_protocol, d_algorithm;
+  string d_certificate;
+};
+
+class AFSDBRecordContent : public DNSRecordContent
+{
+public:
+  includeboilerplate(AFSDB)
+
+private:
+  uint16_t d_subtype;
+  string d_hostname;
+};
+
+
+class CERTRecordContent : public DNSRecordContent
+{
+public:
+  includeboilerplate(CERT)
+
+private:
+  uint16_t d_type, d_tag;
+  uint8_t d_algorithm;
+  string d_certificate;
+};
 
 class RRSIGRecordContent : public DNSRecordContent
 {
@@ -242,7 +294,24 @@ public:
 private:
 };
 
+class LOCRecordContent : public DNSRecordContent
+{
+public:
+  static void report(void);
+  LOCRecordContent() : DNSRecordContent(ns_t_loc)
+  {}
+  LOCRecordContent(const string& content, const string& zone="");
 
+  static DNSRecordContent* make(const DNSRecord &dr, PacketReader& pr);
+  static DNSRecordContent* make(const string& content);
+  string getZoneRepresentation() const;
+  void toPacket(DNSPacketWriter& pw);
+
+  uint8_t d_version, d_size, d_horizpre, d_vertpre;
+  uint32_t d_latitude, d_longitude, d_altitude;
+  
+private:
+};
 
 #define boilerplate(RNAME, RTYPE)                                                                         \
 RNAME##RecordContent::DNSRecordContent* RNAME##RecordContent::make(const DNSRecord& dr, PacketReader& pr) \
@@ -270,11 +339,20 @@ void RNAME##RecordContent::report(void)                                         
 {                                                                                                  \
   regist(1, RTYPE, &RNAME##RecordContent::make, &RNAME##RecordContent::make, #RNAME);              \
 }                                                                                                  \
+void RNAME##RecordContent::unreport(void)                                                          \
+{                                                                                                  \
+  unregist(1, RTYPE);                                                                              \
+}                                                                                                  \
                                                                                                    \
 RNAME##RecordContent::RNAME##RecordContent(const string& zoneData) : DNSRecordContent(RTYPE)       \
 {                                                                                                  \
-  RecordTextReader rtr(zoneData);                                                                  \
-  xfrPacket(rtr);                                                                                  \
+  try {                                                                                            \
+    RecordTextReader rtr(zoneData);                                                                \
+    xfrPacket(rtr);                                                                                \
+  }                                                                                                \
+  catch(RecordTextException& rtr) {                                                                \
+    throw MOADNSException("Parsing record content: "+string(rtr.what()));                          \
+  }												   \
 }                                                                                                  \
                                                                                                    \
 string RNAME##RecordContent::getZoneRepresentation() const                                         \

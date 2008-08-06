@@ -3,9 +3,9 @@
     Copyright (C) 2002  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2
+    as published by the Free Software Foundation
+    
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 // Utility class specification.
 
@@ -22,13 +22,19 @@
 #define UTILITY_HH
 
 #ifndef WIN32
-# include "config.h"
+// # include "config.h"
 #endif // WIN32
+
+#ifdef _MSC_VER
+# define NEED_POSIX_TYPEDEF
+# pragma warning (disable:4996)
+#endif // _MSC_VER
 
 #ifdef NEED_POSIX_TYPEDEF
 typedef unsigned char uint8_t;
 typedef unsigned short int uint16_t;
 typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
 #endif
 
 
@@ -43,20 +49,17 @@ typedef unsigned int uint32_t;
 # include <semaphore.h>
 # include <signal.h>
 # include <errno.h>
+# include <unistd.h>
 #else
-// Disable debug info truncation warning.
-# pragma warning ( disable: 4786 )
-# pragma warning ( disable: 4503 )
-# pragma warning ( disable: 4101 )
-
-# define _WIN32_WINNT 0x0400
+typedef int socklen_t;
+#define _WIN32_WINNT 0x0400
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <io.h>
 # define WINDOWS_LEAN_AND_MEAN
 # include <windows.h>
 # include <signal.h>
 # include <map>
-
-// For scope fix.
-# define for if ( false ) {} else for
 
 #ifndef ETIMEDOUT
 # define ETIMEDOUT    WSAETIMEDOUT
@@ -64,36 +67,11 @@ typedef unsigned int uint32_t;
 
 # define EINPROGRESS  WSAEWOULDBLOCK
 
-# define VERSION "2.9.13-WIN32"
-
 # define snprintf _snprintf
-
-// Custom bittypes.
-typedef unsigned char int8_t;
-typedef unsigned int  int16_t;
-typedef unsigned long int32_t;
-typedef unsigned char uint8_t;
-typedef unsigned int  uint16_t;
-typedef unsigned long uint32_t;
-
-struct in6_addr {
-	unsigned char s6_addr[16]; /* IPv6 address */
-};
-
-struct sockaddr_in6 {
-	unsigned short sin6_family; /* AF_INET6 */
-	unsigned short sin6_port; /* transport layer port # */
-	unsigned long sin6_flowinfo; /* IPv6 flow information */
-	struct in6_addr sin6_addr; /* IPv6 address */
-};
-
 #endif // WIN32
-
-#include <semaphore.h>
 #include <string>
 
 using namespace std;
-
 
 //! A semaphore class.
 class Semaphore
@@ -127,7 +105,7 @@ public:
 
   //! Destructor.
   ~Semaphore( void );
-  
+
   //! Posts to a semaphore.
   int post( void );
 
@@ -136,12 +114,10 @@ public:
 
   //! Tries to wait for a semaphore.
   int tryWait( void );
-  
+
   //! Retrieves the semaphore value.
   int getValue( Semaphore::sem_value_t *sval );
-  
 };
-
 
 //! This is a utility class used for platform independant abstraction.
 class Utility

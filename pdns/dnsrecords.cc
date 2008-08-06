@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005  PowerDNS.COM BV
+    Copyright (C) 2005 - 2007  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -13,17 +13,23 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
+#include "utility.hh"
 #include "dnsrecords.hh"
 
 boilerplate_conv(A, ns_t_a, conv.xfrIP(d_ip));
 
+uint32_t ARecordContent::getIP() const
+{
+  return d_ip;
+}
+
 void ARecordContent::doRecordCheck(const DNSRecord& dr)
 {  
   if(dr.d_clen!=4)
-    throw MOADNSException("Wrong size for A record");
+    throw MOADNSException("Wrong size for A record ("+lexical_cast<string>(dr.d_clen)+")");
 }
 
 class AAAARecordContent : public DNSRecordContent
@@ -63,19 +69,15 @@ public:
   
   string getZoneRepresentation() const
   {
-    ostringstream str;
+    struct sockaddr_in6 addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin6_family=AF_INET6;
+    memcpy(&addr.sin6_addr, d_ip6, 16);
 
-    char hex[4];
-    for(size_t n=0; n< 16 ; n+=2) {
-      snprintf(hex,sizeof(hex)-1, "%x", d_ip6[n]);
-      str << hex;
-      snprintf(hex,sizeof(hex)-1, "%02x", d_ip6[n+1]);
-      str << hex;
-      if(n!=14)
-	str<<":";
-    }
-
-    return str.str();
+    char tmp[128];
+    tmp[0]=0;
+    Utility::inet_ntop(AF_INET6, (const char*)& addr.sin6_addr, tmp, sizeof(tmp));
+    return tmp;
   }
 
 private:
@@ -171,13 +173,12 @@ string NSECRecordContent::getZoneRepresentation() const
   return ret;
 }
 
-
-
 boilerplate_conv(NS, ns_t_ns, conv.xfrLabel(d_content, true));
 boilerplate_conv(PTR, ns_t_ptr, conv.xfrLabel(d_content, true));
 boilerplate_conv(CNAME, ns_t_cname, conv.xfrLabel(d_content, true));
-boilerplate_conv(TXT, ns_t_txt, conv.xfrText(d_text));
-boilerplate_conv(SPF, 99, conv.xfrText(d_text));
+boilerplate_conv(MR, ns_t_mr, conv.xfrLabel(d_alias, false));
+boilerplate_conv(TXT, ns_t_txt, conv.xfrText(d_text, true));
+boilerplate_conv(SPF, 99, conv.xfrText(d_text, true));
 boilerplate_conv(HINFO, ns_t_hinfo,  conv.xfrText(d_cpu);   conv.xfrText(d_host));
 
 boilerplate_conv(RP, ns_t_rp,
@@ -199,13 +200,17 @@ boilerplate_conv(MX, ns_t_mx,
 		 conv.xfrLabel(d_mxname, true);
 		 )
 
+boilerplate_conv(AFSDB, ns_t_afsdb, 
+		 conv.xfr16BitInt(d_subtype);
+		 conv.xfrLabel(d_hostname);
+		 )
+
 
 boilerplate_conv(NAPTR, ns_t_naptr,
 		 conv.xfr16BitInt(d_order);    conv.xfr16BitInt(d_preference);
 		 conv.xfrText(d_flags);        conv.xfrText(d_services);         conv.xfrText(d_regexp);
 		 conv.xfrLabel(d_replacement);
 		 )
-
 
 
 SRVRecordContent::SRVRecordContent(uint16_t preference, uint16_t weight, uint16_t port, const string& target) 
@@ -234,13 +239,32 @@ boilerplate_conv(SOA, ns_t_soa,
 		 conv.xfr32BitInt(d_st.expire);
 		 conv.xfr32BitInt(d_st.minimum);
 		 );
+#undef KEY
+boilerplate_conv(KEY, ns_t_key, 
+		 conv.xfr16BitInt(d_flags); 
+		 conv.xfr8BitInt(d_protocol); 
+		 conv.xfr8BitInt(d_algorithm); 
+		 conv.xfrBlob(d_certificate);
+		 );
 
-
+boilerplate_conv(CERT, 37, 
+		 conv.xfr16BitInt(d_type); 
+		 conv.xfr16BitInt(d_tag); 
+		 conv.xfr8BitInt(d_algorithm); 
+		 conv.xfrBlob(d_certificate);
+		 )
+#undef DS
 boilerplate_conv(DS, 43, 
 		 conv.xfr16BitInt(d_tag); 
 		 conv.xfr8BitInt(d_algorithm); 
 		 conv.xfr8BitInt(d_digesttype); 
-		 conv.xfrBlob(d_digest);
+		 conv.xfrHexBlob(d_digest);
+		 )
+
+boilerplate_conv(SSHFP, 44, 
+		 conv.xfr8BitInt(d_algorithm); 
+		 conv.xfr8BitInt(d_fptype); 
+		 conv.xfrHexBlob(d_fingerprint);
 		 )
 
 boilerplate_conv(RRSIG, 46, 
@@ -265,28 +289,35 @@ boilerplate_conv(DNSKEY, 48,
 
 void reportBasicTypes()
 {
-    ARecordContent::report();
-    AAAARecordContent::report();
-    NSRecordContent::report();
-    CNAMERecordContent::report();
-    MXRecordContent::report();
-    SOARecordContent::report();
-    SRVRecordContent::report();
-    PTRRecordContent::report();
+  ARecordContent::report();
+  AAAARecordContent::report();
+  NSRecordContent::report();
+  CNAMERecordContent::report();
+  MXRecordContent::report();
+  SOARecordContent::report();
+  SRVRecordContent::report();
+  PTRRecordContent::report();
+  DNSRecordContent::regist(3, ns_t_txt, &TXTRecordContent::make, &TXTRecordContent::make, "TXT");
+  TXTRecordContent::report();
+  DNSRecordContent::regist(1, 255, 0, 0, "ANY");
 }
 
 void reportOtherTypes()
 {
-   TXTRecordContent::report();
+   AFSDBRecordContent::report();
    SPFRecordContent::report();
    NAPTRRecordContent::report();
+   LOCRecordContent::report();
+   HINFORecordContent::report();
    RPRecordContent::report();
+   KEYRecordContent::report();
    DNSKEYRecordContent::report();
    RRSIGRecordContent::report();
    DSRecordContent::report();
+   SSHFPRecordContent::report();
+   CERTRecordContent::report();
    NSECRecordContent::report();
    OPTRecordContent::report();
-   DNSRecordContent::regist(1,255, 0, 0, "ANY");
 }
 
 void reportAllTypes()

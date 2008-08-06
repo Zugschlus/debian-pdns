@@ -11,7 +11,7 @@
       </affiliation>
     </author>
     
-    <PubDate>v2.9.19 $Date: 2006-03-15 19:27:07 +0100 (Wed, 15 Mar 2006) $</PubDate>
+    <PubDate>v2.9.19 $Date: 2007-04-21 11:55:54 +0200 (Sat, 21 Apr 2007) $</PubDate>
     
     <Abstract>
 	<para>	
@@ -75,15 +75,953 @@
 	for updates. The PDF version is available on <ulink url="http://doc.powerdns.com/pdf">http://doc.powerdns.com/pdf</ulink>, a text file is
 	on <ulink url="http://doc.powerdns.com/txt">http://doc.powerdns.com/txt/</ulink>. 
       </para>
+    </sect1>
     <sect1 id="changelog">
       <title>Release notes</title>
       <para>
 	Before proceeding, it is advised to check the release notes for your PDNS version, as specified in the name of the distribution
 	file.
       </para>
+      <sect2 id="changelog-2-9-21"><title>PowerDNS Authoritative Server version 2.9.21</title>
+	<para>
+	  Released the 21st of April 2007.
+	</para>
+	<para>
+	  This is the first release the PowerDNS Authoritative Server since the Recursor was split off to a separate product, and also marks the transfer
+	  of the new technology developed specifically for the recursor, back to the authoritative server.
+	</para>
+	<para>
+	  This move has reduced the amount of code of the Authoritative server by over 2000 lines, while improving the quality
+	  of the program enormously.
+	</para>
+	<para>
+	  However, since so much has been changed, care should be taken when deploying 2.9.21.
+	</para>
+	<para>
+	  To signify the magnitude of the underlying improvements, the next release of the PowerDNS Authoritative Server will be called 3.0.
+	</para>
+	<para>
+	  This release would not have been possible without large amounts of help and support from the PowerDNS Community. We specifically want to thank
+	  Massimo Bandinelli of Italy's <ulink url="http://register.it">Register.it</ulink>, <ulink url="http://aaldering-ict.nl">Dave Aaldering of Aaldering ICT</ulink>, 
+	  <ulink url="http://true.nl">True BV</ulink>, <ulink url="http://www.xs4all.nl">XS4ALL</ulink>, Daniel Bilik of <ulink url="http://www.neosystem.cz">Neosystem</ulink>,
+	  <ulink url="http://www.easydns.com">EasyDNS</ulink>, <ulink url="http://www.siemens.com">Heinrich Ruthensteiner</ulink> of Siemens, 
+	  <ulink url="http://schwer.us">Augie Schwer</ulink>, <ulink url="http://www.wikipedia.org">Mark Bergsma</ulink>, <ulink url="http://www.forfun.net">Marco Davids</ulink>,
+	  <ulink url="http://www.opensuse.org">Marcus Rueckert of OpenSUSE</ulink>, Andre Muraro of <ulink url="http://www.locaweb.com.br">Locaweb</ulink>, 
+	  Antony Lesuisse, <ulink url="http://www.linuxnetworks.de">Norbert Sendetzky</ulink>, <ulink url="http://www.aruba.it">Marco Chiavacci</ulink>, Christoph Haas,
+	  Ralf van der Enden and Ruben Kerkhof.
+	</para>
+	<para>
+	  Security issues:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		The previous packet parsing and generating code contained no known bugs, but was however very lengthy and overly complex, and might have had
+		security problems. The new code is 'inherently safe' because it relies on bounds-checking C++ constructs. Therefore, a move to 2.9.21 is highly
+		recommended.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Pre-2.9.21, communication between master and server nameservers was not checked as rigidly as possible, possibly allowing third parties to disrupt
+		but not modify such communications.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+	<para>
+	  <warning>
+	    <para>
+	      The 'bind1' legacy version of our BIND backend has been dropped! There should be no need to rely on this old version anymore, as the main BIND backend
+	      has been very well tested recently.
+	    </para>
+	  </warning>
+	<para>
+	  Bugs:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		Multi-part TXT records weren't supported. This has been fixed, and regression tests have been added. Code in commits C1016, C996, C994.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Email addresses with embedded dots in SOA records were not parsed correctly, nor were other embedded dots. Noted by 'Bastiaan', fixed in c1026.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		BIND backend treated the 'm' TTL modifier as 'months' and not 'minutes'. Closes Debian bug 406462. Addressed in c1026.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Our snapshots were built against a static version of PosgreSQL that was incompatible with many Linux distributions, leading to instant
+		crashes on startup. Fixed in C1022 and C1023.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		CNAME referrals to child zones gave improper responses. Noted by Augie Schwer in t123, fixed in c992.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		When passing a port number with the <command>recursor</command> setting, this would sometimes generate errors during additional processing. Switched off
+		overly helpful additional processing for recursive queries to remove this problem. Implemented in c1031, spotted by Ralf van der Enden.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		NS to a nameserver with the name of the zone itself generated problems. Spotted by Augie Schwer, fixed in c947.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Multi-line records in the BIND backend were not always parsed correctly. Fixed in c1014.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The LOC-record had problems operating outside of the eastern hemisphere of the northern part of the world! Fixed in c1011.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Backends were compiled without multithreading preprocessor flags. As far as we can determine, this would only cause problems for the BIND backend, 
+		but we cannot rule out this caused instability in other backends. Fixed in c1001.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The BIND backend was highly unstable under reloads, and leaked memory and file descriptors. 
+		Thanks to Mark Bergsma and Massimo Bandinelli for respectively pointing this out to us and testing
+		large amounts of patches to fix the problem. The fixes have resulted in better performance, less code, and a remarkable simplification 
+		of this backend. Commits C1039, C1034, C1035, C1006, C999, C905 and previous.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		BIND backend gave convincing NXDOMAINS on unloaded zones in some cases. Spotted and fixed by Daniel Bilik in c984.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		SOA records in zone transfers sometimes contained the wrong SOA TTL. Spotted by Christian Kuehn, fixed in c902.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		PowerDNS could get confused by very high SOA serial numbers. Spotted and fixed by Dan Billik, fixed in c626.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Some versions of FreeBSD perform very strict checks on socket address sizes passed to 'connect', which could lead to problems retrieving zones over AXFR.
+		Fixed in c891.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Some versions of FreeBSD perform very strict checks on IPv6 socket addresses, leading to problems. Discovered by Sten Spans, fixed in c885 and c886.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		IXFR requests were not logged properly. Noted by Ralf van der Enden, fixed in c990.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Some NAPTR records needed an additional space character to encode correctly. Spotted by Heinrich Ruthensteiner, fixed in c1029.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Many bugs in the TCP nameserver, leading to a PowerDNS process that did not respond to TCP queries over time. Many fixes provided by
+		Dan Bilik, other problems were fixed by rewriting our TCP handling code. Commits C982 and C980, C950, C924, C889, C874, C869, C685, C684.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Fix crashes on the ARM processor due to alignment errors. Thanks to Sjoerd Simons. Closes Debian bug 397031. 
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Missing data in generic SQL backends would sometimes lead to faked SOA serial data. Spotted by Leander Lakkas from True. Fix in c866.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		When receiving two quick notifications in succession, the packet cache would sometimes "process" the second one, leading PowerDNS to ignore it. Spotted by 
+		Dan Bilik, fixed in c686.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Geobackend (by Mark Bergsma) did not properly override the getSOA method, breaking non-overlay operation of this fine backend. The geobackend now also
+		skips '.hidden' configuration files, and now properly disregards empty configuration files. Additionally, the overlapping abilities were improved. Details
+		available in c876, by Mark.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+	<para>
+	  Features:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		Thanks to <ulink url="http://www.easydns.com">EasyDNS</ulink>, PowerDNS now supports multiple masters per domain. For configuration
+		details, see <xref linkend="slave">. Implemented in c1018, c1017.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Thanks to <ulink url="http://www.easydns.com">EasyDNS</ulink>, PowerDNS now supports the KEY record type, as well the SPF record. In c976.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Added support for CERT, SSHFP, DNSKEY, DS, NSEC, RRSIG record types, as part of the move to the new DNS parsing/generating code.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Support for the AFSDB record type, as requested by 'Bastian'. Implemented in c978, closing t129.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Support for the MR record type. Implemented in c941 and c1019.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Gsqlite3 backend was added by Antony Lesuisse in c942;
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Added the ability to send out light-weight root-referrals that save bandwidth yet still placate mediocre resolver implementations. Implemented in c912, 
+		enable with 'root-referral=lean'.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+	<para>
+	  Improvements:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		Miscellaneous OpenDBX and LDAP backend improvements by Norbert Sendetzky. Applied in c977 and c1040.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		SGML source of the documentation was cleaned up by Ruben Kerkhof in c936.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Speedups in core DNS label processing code. Implemented in c928, c654, c1020.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		When communicating with master servers and encountering errors, more useful details are logged. Reported by Stefan Arentz in t137, closed by c1015.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Database errors are now logged with more details. Addressed in c1004.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		pdns_control problems are now logged more verbosely. Change in c910.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Erroneous address configuration was logged unclearly. Spotted by River Tarnell, fixed in c888.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Example configuration shipped with PowerDNS was very old. Noted by Leen Besselink, fixed in c946.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		PowerDNS neglected to chdir to the root when chrooted. This closes t110, fixed in c944.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Microsoft resolver had problems with responses we generated for CNAMEs pointing out of our bailiwick. Fixed in c983 and expedited by Locaweb.com.br.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Built-in webserver logs errors more verbosely. Closes t82, gixed in c991.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Queries containing '@' no longer flood the logs. Addressed in c1014.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The build process now looks for PostgreSQL in more places. Implemented in c998, closes t90.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Speedups in the BIND backend now mean large installations enjoy startup times up to 30 times faster than with the original BIND nameserver. Many thanks
+		to Massimo Bandinelli.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		BIND backend now offers full support for query logging, implemented in c1026, c1029.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		BIND backend named.conf parsing is now fully case-insensitive for domain names. This closes Debian bug 406461, fixed in c1027.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		IPv6 and IPv4 address parsing routines have been replaced, which should result in prettier output in some cases. c962, c1012 and others.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		5 new regression tests have been added to insure old bugs do not return.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Fix small issues with very modern compilers and BOOST snapshots. Noted by Marcus Rueckert, addressed in c954, c964 c965, c1003.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+      </sect2>
+      <sect2 id="changelog-recursor-3-1-4"><title>Recursor version 3.1.4</title>
+	<para>
+	  Released the 13th of November 2006.
+	</para>
+	<para>
+	  This release contains almost no new features, but consists mostly of minor and major bug fixes. It also addresses two major security issues, which makes 
+	  this release a highly recommended upgrade.
+	</para>
+	<para>
+	  Security issues:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		Large TCP questions followed by garbage could cause the recursor to crash. This critical security issue has been assigned CVE-2006-4251, and is fixed in 
+		c915. More information can be found in <xref linkend="powerdns-advisory-2006-01">.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		CNAME loops with zero second TTLs could cause crashes in some conditions. These loops could be constructed by malicious parties, 
+		making this issue a potential denial of service attack. This security issue has been assigned CVE-2006-4252 and is fixed by c919. 
+		More information can be found in <xref linkend="powerdns-advisory-2006-02">. Many thanks to David Gavarret for helping pin down this problem.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+	<para>
+	  Bugs:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		On certain error conditions, PowerDNS would neglect to close a socket, which might therefore eventually run out. Spotted by Stefan Schmidt, fixed in commits C892, C897, C899.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Some nameservers (including PowerDNS in rare circumstances) emit a SOA record in the authority section. The recursor mistakenly interpreted this as an 
+		authoritative "NXRRSET". Spotted by Bryan Seitz, fixed in c893.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		In some circumstances, PowerDNS could end up with a useless (not working, or no longer working) set of nameserver records for a domain. This release contains logic
+		to invalidate such broken NSSETs, without overloading authoritative servers. This problem had previously been spotted by Bryan Seitz, 'Cerb' and Darren Gamble. 
+		Invalidations of NSSETs can be plotted using the "nsset-invalidations" metric, available through <command>rec_control get</command>.
+		Implemented in c896 and c901.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		PowerDNS could crash while dumping the cache using <command>rec_control dump-cache</command>. Reported by Wouter of WideXS and Stefan Schmidt and many others, fixed in c900.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Under rare circumstances (depleted TCP buffers), PowerDNS might send out incomplete questions to remote servers. Additionally, on big-endian systems (non-Intel and non-AMD 
+		generally), sending out large TCP answers questions would not work at all, and possibly crash. Brought to our attention by David Gavarret, fixed in c903.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The recursor contained the potential for a dead-lock processing an invalid domain name. It is not known how this might be triggered, 
+		but it has been observed by 'Cerb' on #powerdns. Several dead-locks where PowerDNS consumed all CPU, but did not answer questions, 
+		have been reported in the past few months. These might be fixed by c904.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		IPv6 'allow-from' matching had problems with the least significant bits, sometimes allowing disallowed addresses, but mostly disallowing allowed addresses. Spotted by Wouter
+		from WideXS, fixed in c916.
+	      </para>
+	    </listitem>
+
+	  </itemizedlist>
+	  Improvements:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		PowerDNS has support to drop answers from so called 'delegation only' zones. A statistic ("dlg-only-drops") is now available to plot how often this happens. Implemented in c890.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Hint-file parameter was mistakenly named "hints-file" in the documentation. Spotted by my Marco Davids, fixed in c898.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		<command>rec_control quit</command> should be near instantaneous now, as it no longer meticulously cleans up memory before exiting. Problem spotted by Darren Gamble, fixed in 
+		c914, closing t84.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		init.d script no longer refers to the Recursor as the Authoritative Server. Spotted by Wouter of WideXS, fixed in c913.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		A potentially serious warning for users of the GNU C Library version 2.5 was fixed. Spotted by Marcus Rueckert, fixed in c920.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+      </sect2>
+
+      <sect2 id="changelog-recursor-3-1-3"><title>Recursor version 3.1.3</title>
+	<para>
+	  Released the 12th of September 2006.
+	</para>
+	<para>
+	  Compared to 3.1.2, this release again consists of a number of mostly minor bug fixes, and some slight improvements. 
+	</para>
+	<para>
+	  Many thanks are again due to Darren Gamble who together with his team has discovered many misconfigured domains that do work 
+	  with some other name servers. DNS has long been tolerant of misconfigurations, PowerDNS intends to uphold that tradition. Almost all of
+	  the domains found by Darren now work as well in PowerDNS as in other name server implementations.
+	</para>
+	<para>
+	  Thanks to some recent migrations, this release, or something very close to it, is powering over 40 million internet connections that
+	  we know of. We appreciate hearing about succesful as well as unsuccesful migrations, please feel free to notify pdns.bd@powerdns.com of your 
+	  experiences, good or bad.
+	</para>
+	<para>
+	  Bug-fixes:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		The MThread default stack size was too small, which led to problems, mostly on 64-bit platforms. This stack size is now configurable
+		using the <command>stack-size</command> setting should our estimate be off. Discovered by Darren Gamble, Sten Spans and a number of others. 
+		Fixed in c868.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Plug a small memory leak discovered by Kai and Darren Gamble, fixed in c870.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Switch from the excellent nedmalloc to dlmalloc, based on advice by the nedmalloc author. Nedmalloc is optimised for multithreaded
+		operation, whereas the PowerDNS recursor is single threaded. The version of nedmalloc shipped contained a number of possible bugs,
+		which are probably resolved by moving to dlmalloc. Some reported crashes on hitting 2G of allocated memory on 64 bit systems might 
+		be solved by this switch, which should also increase performance. See c873 for details.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+        </para>
+	<para>
+	  Improvements:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		The cache is now explicitly aware of the difference between authoritative and unauthoritative data, allowing it to deal
+		with some domains that have different data in the parent zone than in the authoritative zone. Patch in c867.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		No longer try to parse DNS updates as if they were queries. Discovered and fixed by Jan Gyselinck, fix in c871.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Rebalance logging priorities for less log cluttering and add IP address to a remote server error message. 
+		Noticed and fixed by Jan Gyselinck (c877).
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Add <command>logging-facility</command> setting, allowing syslog to send PowerDNS logging to a separate file. Added in c871.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+        </para>
+      </sect2>
+      <sect2 id="changelog-recursor-3-1-2"><title>Recursor version 3.1.2</title>
+	<para>
+	  Released Monday 26th of June 2006.
+	</para>
+	<para>
+	  Compared to 3.1.1, this release consists almost exclusively of bug-fixes and speedups. A quick update is recommended, as some of the bugs
+	  impact operators of authoritative zones on the internet. This version has been tested by some of the largest internet providers on the planet,
+	  and is expected to perform well for everybody.
+	</para>
+	<para>
+	  Many thanks are due to Darren Gamble, Stefan Schmidt and Bryan Seitz who all provided excellent feedback based on their large-scale
+	  tests of the recursor.
+	</para>
+	<para>
+	  Bug-fixes:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		Internal authoritative server did not differentiate between 'NXDOMAIN' and 'NXRRSET', in other words, it would answer
+		'no such host' when an AAAA query came in for a domain that did exist, but did not have an AAAA record. This only affects
+		users with <command>auth-zones</command> configured. Discovered by Bryan Seitz, fixed in c848.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		ANY queries for hosts where nothing was present in the cache would not work. This did not cause real problems as ANY queries are 
+		not reliable (by design) for anything other than debugging, but did slow down the nameserver and cause unnecessary load on remote
+		nameservers. Fixed in c854.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		When exceeding the configured maximum amount of TCP sessions, TCP support would break and the nameserver would waste CPU trying to accept TCP
+		connections on UDP ports. Noted by Bryan Seitz, fixed in c849.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		DNS queries come in two flavours: recursion desired and non-recursion desired. The latter is not very useful for a recursor, but is 
+		sometimes (erroneously) used by monitoring software or loadbalancers to detect nameserver availability. A non-rd query would not only not recurse,
+		but also not query authoritative zones, which is confusing. Fixed in c847.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Non-standard DNS TCP queries, that did occur however, could drive the recursor to 100% CPU usage for extended periods of time. This did not disrupt service
+		immediately, but does waste a lot of CPU, possibly exhausting resources. Discovered by Bryan Seitz, fixed in c858, which is post-3.1.2-rc1.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The PowerDNS recursor did not honour the rare but standardised 'ANY' query class (normally 'ANY' refers to the query type, not class), upsetting the Wildfire
+		Jabber server. Discovered and debugged by Daniel Nauck, fixed in c859, which is post-3.1.2-rc1.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Everybody's favorite, when starting up under high load, a bogus line of statistics was sometimes logged. Fixed in c851.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Remove some spurious debugging output on dropping a packet by an unauthorized host. Discovered by Kai. Fixed in c854.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+	<para>
+	  Improvements:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		Misconfigured domains, with a broken nameserver in the parent zone, should now work better. Changes motivated and suggested by
+		Darren Gamble. This makes PowerDNS more compliant with RFC 2181 by making it prefer authoritative data over non-authoritative data.
+		Implemented in c856.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		PowerDNS can now listen on multiple ports, using the <command>local-address</command> setting. Added in c845.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		A number of speedups which should have a noticeable impact, implemented in commits C850, C852, C853, C855
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The recursor now works around an issue with the Linux kernel 2.6.8, as shipped by Debian. Fixed by Christof Meerwald in c860, which is post 3.1.2-rc1.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+      </sect2>
+      <sect2 id="changelog-recursor-3-1-1"><title>Recursor version 3.1.1</title>
+	<para>
+	  <warning>
+	    <para> 
+	      3.1.1 is identical to 3.1 except for a bug in the packet chaining code which would mainly manifest itself for IPv6 enabled Konqueror 
+	      users with very fast connections to their PowerDNS installation. However, all 3.1 users are urged to upgrade to 3.1.1.
+	      Many thanks to Alessandro Bono for his quick aid in solving this problem.
+	    </para>
+	  </warning>
+	</para>
+	<para>
+	  Released on the 23rd of May 2006. Many thanks are due to the operators of some of the largest internet access providers in the world,
+	  each having many millions of customers, who have tested the various 3.1 pre-releases for suitability. They have uncovered and helped 
+	  fix bugs that could impact us all, but are only (quickly) noticeable with such vast amounts of DNS traffic.
+	</para>
+	<para>
+	  After version 3.0.1 has proved to hold up very well under tremendous loads, 3.1 adds important new features:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		Ability to serve authoritative data from 'BIND' style zone files (using <command>auth-zones</command> statement).
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Ability to forward domains so configured to external servers (using <command>forward-zones</command>).
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Possibility of 'serving' the contents of <filename>/etc/hosts</filename> over DNS, which is very well 
+		suited to simple domestic router/DNS setups. Enabled using <command>export-etc-hosts</command>.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		As recommended by recent standards documents, the PowerDNS recursor is now authoritative for RFC-1918 private IP space
+		zones by default (suggested by Paul Vixie).
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Full outgoing IPv6 support (off by default) with IPv6 servers getting equal treatment with IPv4, nameserver 
+		addresses are chosen based on average response speed, irrespective of protocol.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Initial Windows support, including running as a service ('NET START "POWERDNS RECURSOR"'). <command>rec_channel</command> is still missing,
+		the rest should work. Performance appears to be below that of the UNIX versions, this situation is expected to improve.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+	<para>
+	  Bug fixes:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		No longer send out SRV and MX record priorities as zero on big-endian platforms (UltraSPARC). Discovered by Eric Sproul, fixed in c773.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		SRV records need additional processing, especially in an Active Directory setting. Reported by Kenneth Marshall, fixed in c774.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The root-records were not being refreshed, which could lead to problems under inconceivable conditions. Fixed in c780.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Fix resolving domain names for nameservers with multiple IP addresses, with one of these addresses being lame. Other nameserver implementations
+		were also unable to resolve these domains, so not a big bug. Fixed in c780.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		For a period of 5 minutes after expiring a negative cache entry, the domain would not be re-cached negatively, leading to a lot of duplicate
+		outgoing queries for this short period. This fix has raised the average cache hit rate of the recursor by a few percent. Fixed in c783.
+	      </para>
+	    </listitem>
+
+	    <listitem>
+	      <para>
+		Query throttling was not aggressive enough and not all sorts of queries were throttled. Implemented in c786.
+	      </para>
+	    </listitem>
+
+	    <listitem>
+	      <para>
+		Fix possible crash during startup when parsing empty configuration lines (c807).
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Fix possible crash when the first query after wiping a cache entry was for the just deleted entry. Rare in production servers. Fixed in c820.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Recursor would send out differing TTLs when receiving a misconfigured, standards violating, RRSET with different TTLs. Implement fix as mandated by
+		RFC 2181, paragraph 5.2. Reported by Stephen Harker (c819).
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The <command>top-remotes</command> would list remotes duplicately, once per source port. Discovered by Jorn Ekkelenkamp, fixed in c827, which is post 3.1-pre1.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Default <command>allow-from</command> allowed queries from fe80::/16, corrected to fe80::/10. Spotted by Niels Bakker, fixed in c829, which is post 3.1-pre1.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		While PowerDNS blocks failing queries quickly, multiple packets could briefly be in flight for the same domain and nameserver. This situation is now
+		explicitly detected and queries are chained to identical queries already in flight. Fixed in c833 and c834, post 3.1-pre1.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+	<para>
+	  Improvements:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		ANY queries are now implemented as in other nameserver implementations, leading to a decrease in outgoing queries. The RFCs are not very 
+		clear on desired behaviour, what is implemented now saves bandwidth and CPU and brings us in line with existing practice. Previously
+		ANY queries were not cached by the PowerDNS recursor. Implemented in c784.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		<command>rec_control</command> was very sparse in its error reporting, and user unfriendly as well. Reported by Erik Bos, fixed in c818 and c820.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		IPv6 addresses were printed in a non-standard way, fixed in c788.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		TTLs of records are now capped at two weeks, c820.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+	      <command>allow-from</command> IPv4 netmasks now automatically work for IP4-to-IPv6 mapper IPv4 addresses, which appear when running on the wildcard 
+	      <command>::</command> IPv6 address. Lack of feature noted by Marcus 'darix' Rueckert. Fixed in c826, which is post 3.1-pre1.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+	      Errors before daemonizing are now also sent to syslog. Suggested by Marcus 'darix' Rueckert. Fixed in c825, which is post 3.1-pre1.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		When launching without any form of configured network connectivity, all root-servers would be cached as 'down' for some time. Detect this special case
+		and treat it as a resource-constraint, which is not accounted against specific nameservers. Spotted by Seth Arnold, fixed in c835, which is post 3.1-pre1.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The recursor now does not allow authoritative servers to keep supplying its own NS records into perpetuity, which causes problems
+		when a domain is redelegated but the old authorative servers are not updated to this effect. Noticed and explained at length by Darren 
+		Gamble of Shaw Communications, addressed by c837, which is post 3.1-pre2.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Some operators may want to follow RFC 2181 paragraph 5.2 and 5.4. This harms performance and does not solve any real problem,
+		but does make PowerDNS more compliant. If you want this, enable <command>auth-can-lower-ttl</command>. Implemented in c838, which is
+		post 3.1-pre2.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+      </sect2>
+      <sect2 id="changelog-recursor-3-0-1"><title>Recursor version 3.0.1</title>
+	<para>
+	  Released 25th of April 2006, <ulink url="http://www.powerdns.com/en/downloads.aspx">download</ulink>.
+	</para>
+	<para>
+	  This release consists of nothing but tiny fixes to 3.0, including one with security implications. An upgrade is highly recommended.
+	</para>
+	<para>
+	<itemizedlist>
+	  <listitem>
+	    <para>
+	      Compilation used both <filename>cc</filename> and <filename>gcc</filename>, leading to the possibility of compiling with different compiler versions (c766).
+	    </para>
+	  </listitem>
+	  <listitem>
+	    <para>
+	      <command>rec_control</command> would leave files named <filename>lsockXXXXXX</filename> around in the configured socket-dir. Operators
+	      may wish to remove these files from  their socket-dir (often <filename>/var/run</filename>), quite a few might have accumulated already (c767).
+	    </para>
+	  </listitem>
+
+	  <listitem>
+	    <para>
+	      Certain malformed packets could crash the recursor. As far as we can determine these packets could only lead to a crash, 
+	      but as always, there are no guarantees. A quick upgrade is highly recommended (commits C760, C761). Reported by David Gavarret.
+	    </para>
+	  </listitem>
+
+	  <listitem>
+	    <para>
+	      Recursor would not distinguish between NXDOMAIN and NXRRSET (c756). Reported and debugged by Jorn Ekkelenkamp.
+	    </para>
+	  </listitem>
+	  <listitem>
+	    <para>
+	      Some error messages and trace logging statements were improved (commits C756, C758, C759).
+	    </para>
+	  </listitem>
+	  <listitem>
+	    <para>
+	      stderr was closed during daemonizing, but not dupped to /dev/null, leading to slight chance of odd behaviour on reporting errors (c757)
+	    </para>
+	  </listitem>
+	</itemizedlist>
+	Operating system specific fixes:
+	<itemizedlist>
+	  <listitem>
+	    <para>
+	      The stock Debian sarge Linux kernel, 2.6.8, claims to support epoll but fails at runtime. The epoll self-testing code has been improved,
+	      and PowerDNS will fall back to a select based multiplexer if needed (c758) Reported by Michiel van Es.
+	    </para>
+	  </listitem>
+	  <listitem>
+	    <para>
+	      Solaris 8 compilation and runtime issues were addressed. See the README for details (c765). Reported by Juergen Georgi and Kenneth Marshall.
+	    </para>
+	  </listitem>
+	  <listitem>
+	    <para>
+	      Solaris 10 x86_64 compilation issues were addressed (c755). Reported and debugged by Eric Sproul.
+	    </para>
+	  </listitem>
+	</itemizedlist>
+      </para>
+      </sect2>
+      <sect2 id="changelog-recursor-3-0"><title>Recursor version 3.0</title>
+	<para>
+	  Released 20th of April 2006, <ulink url="http://www.powerdns.com/en/downloads.aspx">download</ulink>.
+	</para>
+	<para>
+	  This is the first separate release of the PowerDNS Recursor. There are many reasons for this, one of the most important ones is that 
+	  previously we could only do a release when both the recursor and the authoritative nameserver were fully tested and in good shape. The split
+	  allows us to release new versions when each part is ready.
+	</para>
+	<para>
+	  Now for the real news. This version of the PowerDNS recursor powers the network access of over two million internet connections. Two large
+	  access providers have been running pre-releases of 3.0 for the past few weeks and results are good. Furthermore, the various pre-releases
+	  have been tested nearly non-stop with DNS traffic replayed at 3000 queries/second.
+	</para>
+	<para>
+	  As expected, the 2 million househoulds shook out some very rare bugs. But even a rare bug happens once in a while when there are this many users.
+	</para>
+	<para>
+	  We consider this version of the PowerDNS recursor to be the most advanced resolver publicly available. Given current levels of spam, phishing 
+	  and other forms of internet crime we think no recursor should offer less than the best in spoofing protection. We urge all 
+	  operators of resolvers without proper spoofing countermeasures to consider PowerDNS, as it is a Better Internet Nameserver Daemon.
+	</para>
+	<para>
+	  A good article on DNS spoofing can be found <ulink url="http://www.securesphere.net/download/papers/dnsspoof.htm">here</ulink>. Some 
+	  more information, based on a previous version of PowerDNS, can be found on the 
+	  <ulink url="http://blog.netherlabs.nl/articles/2006/04/14/holy-cow-1-3-million-additional-ip-addresses-served-by-powerdns">PowerDNS development blog</ulink>.
+	</para>
+	<para>
+	  <warning>
+	    <para>
+	      Because of recent DNS based denial of service attacks, running an open recursor has become a security risk. Therefore, unless configured otherwise
+	      this version of PowerDNS will only listen on localhost, which means it does not resolve for hosts on your network.
+	      To fix, configure the <command>local-address</command> setting with all addresses you want to listen on. Additionally, by default
+	      service is restricted to RFC 1918 private IP addresses. Use <command>allow-from</command> to selectively open up the recursor
+	      for your own network. See <xref linkend="recursor-settings"> for details.
+	    </para>
+	  </warning>
+	</para>
+	<para>
+	  Important new features of the PowerDNS recursor 3.0:
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		Best spoofing protection and detection we know of. Not only is spoofing made harder by using a new network address for each query,
+		PowerDNS detects when an attempt is made to spoof it, and temporarily ignores the data. For details, see <xref linkend="anti-spoofing">.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		First nameserver to benefit from epoll/kqueue/Solaris completion ports event reporting framework, for stellar performance.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Best statistics of any recursing nameserver we know of, see <xref linkend="recursor-stats">.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Last-recently-used based cache cleanup algorithm, keeping the 'best' records in memory
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		First class Solaris support, built on a 'try and buy' Sun CoolThreads T&nbsp;2000.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Full IPv6 support, implemented natively.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Access filtering, both for IPv4 and IPv6.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Experimental SMP support for nearly double performance. See <xref linkend="recursor-performance">.
+	      </para>
+	  </itemizedlist>
+	</para>
+	<para>
+	  Many people helped package and test this release. Jorn Ekkelenkamp of ISP-Services helped find the '8000 SOAs' bug and spotted
+	  many other oddities and <ulink url="http://www.xs4all.nl">XS4ALL</ulink> internet funded a lot of the recent development. 
+	  Joaqu&iacute;n M L&oacute;pez Mu&ntilde;oz of the boost::multi_index_container was again of great help. 
+	</para>
+      </sect2>
       <sect2 id="changelog-2-9-20"><title>Version 2.9.20</title>
 	<para>
-	  Released the 15th of March 2005
+	  Released the 15th of March 2006
 	</para>
 	<para>
 	  Besides adding OpenDBX, this release is mostly about fixing problems and speeding up the recursor. This release has been made possible by 
@@ -784,7 +1722,7 @@
 	  <itemizedlist>
 	    <listitem>
 	      <para>
-		Reported version can be changed, or removed - see the "version-string" setting.
+		Reported version can be changed, or removed - see the "version-string" setting. 
 	      </para>
 	    </listitem>
 	    <listitem>
@@ -796,8 +1734,7 @@
 	  </itemizedlist>
 	</para>
 	<para>
-	Bug fixes:
-	<para>
+	  Bug fixes:
 	  <itemizedlist>
 	    <listitem>
 	      <para>
@@ -1277,7 +2214,7 @@
 	    </listitem>
 	    <listitem>
 	      <para>
-		delegation-only, a Verisign special. See <xref linkend="verisign">.
+		delegation-only, a Verisign special. 
 	      </para>
 	    </listitem>
 	    <listitem>
@@ -1332,6 +2269,7 @@
 	      <para>
 		gpgsql no longer reports as gmysql (Sherwin Daganoto)
 	      </para>
+	    </listitem>
 	    <listitem>
 	      <para>
 		SRV would not be parsed right from disk (Christof Meerwald)
@@ -1375,13 +2313,16 @@
 	    <listitem>
 	      <para>
 		Cleanups by Norbert: getAuth moved to chopOff, arguments::contains massive cleanup, more.
+	      </para>
 	    </listitem>
 	  </itemizedlist>
+	</para>
       </sect2>
       
       <sect2 id="changelog-2-9-11"><title>Version 2.9.11</title>	
       	<para>
 	  Yet another iteration, hopefully this will be the last silly release. 
+	</para>
 	<para>
 	  <warning>
 	    <para>
@@ -1469,8 +2410,9 @@
 		LDAP: added support for scoped searches (Norbert Sendetzky)
 	      </para>
 	    </listitem>
-	</itemizedlist>
-	</sect2>		
+	  </itemizedlist>
+	</para>
+      </sect2>		
       <sect2 id="changelog-2-9-8"><title>Version 2.9.8</title>	
 	<para>
 	  Queen's day release! 30th of April 2003.
@@ -1709,6 +2651,7 @@
 	      this issue. We hope to resolve it soon.
 	    </para>
 	  </warning>
+	</para>
 	<para>
 	  <itemizedlist>
 	    <listitem>
@@ -2464,29 +3407,30 @@ pdns[17495]: AXFR done for 'forfun.net', zone committed
 doing. Stability is expected to return with 2.9.1, as are the binary builds.
 	</para>
 	<para>	
-	<itemizedlist>
-	<listitem>
-	<para>
-	License changed to the GNU General Public License version 2.
-	</para>
-	</listitem>
-	<listitem>
-	<para>
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		License changed to the GNU General Public License version 2.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
 		Cleanups by Erik Bos @ xs4all.
-	</para>
-	</listitem>
-	<listitem>
-	<para>
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
 		Build improvements by Wichert Akkerman
-	</para>
-	</listitem>
-	<listitem>
-	<para>
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
 		Lots of work on the build system, entirely revamped. By PowerDNS.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
 	</para>
-	</listitem>
-	</itemizedlist>
-	</sect2>
+      </sect2>
 	
       <sect2 id="changelog-2-8"><title>Version 2.8</title>	
 	<para>
@@ -2934,6 +3878,7 @@ doing. Stability is expected to return with 2.9.1, as are the binary builds.
 	      </para>
 	    </listitem>
 	  </itemizedlist>
+	</para>
 	<para>
 	  Documentation: added details for <command>strict-rfc-axfrs</command>. This feature can be used if very old clients need to be able
 	  to do zone transfers with PDNS. Very slow.
@@ -3521,8 +4466,9 @@ doing. Stability is expected to return with 2.9.1, as are the binary builds.
 	      </para>	  
 	    </listitem>
 	  </itemizedlist>
-
+	</para>
       </sect2>
+
       <sect2 id="changelog-1-99-11"><title>Version 1.99.11 Prerelease</title>
 	<para>
 	  This release is important because it is the first release which is accompanied by an Open Source Backend Development Kit, allowing external 
@@ -4404,7 +5350,8 @@ doing. Stability is expected to return with 2.9.1, as are the binary builds.
 	  Stability may be an issue as well as performance. This version has a tendency to log a bit too much which slows 
 	  the nameserver down a lot.
 	</para>
-	<sect3><title>Known bugs</title>
+	<sect3>
+	  <title>Known bugs</title>
 	  <para>
 	    Decreasing a ringbuffer on the website is a sure way to crash the daemon. Zone2sql, while improved, still
 	    has problems with a zone in the following format:
@@ -4418,11 +5365,11 @@ name         IN            A        1.2.3.4
 	  </para>
 	  <para>
 	    Zone2sql does not close filedescriptors.
-	  <para>
+	  </para>
 
 	  <para>
 	    FreeBSD version does not stop when requested via the init.d script.
-	  <para>
+	  </para>
 
 	</sect3>
 	<sect3><title>Missing features</title>
@@ -4486,9 +5433,18 @@ name         IN            A        1.2.3.4
     </sect1>
     <sect1 id="security-policy"><title>Security</title>
       <para>
-	As of the 16th of July 2005, no actual security problems with PowerDNS 2.9.18 or later are known about. This page 
+	As of the 11th of November 2006, no actual security problems with PowerDNS 2.9.18, Recursor 3.1.4, or later are known about.  This page 
 	will be updated with all bugs which are deemed to be security problems, or could conceivably lead to those. Any such notifications
 	will also be sent to all PowerDNS mailinglists.
+      </para>
+      <para>
+	Version 3.1.3 and earlier of the PowerDNS recursor contain two security issues, both of which can lead to a denial of service, both of which can be triggered
+	by remote users. One of the issues might lead be exploited and lead to a system compromise. For more detail, see <xref linkend="powerdns-advisory-2006-01"> and
+	<xref linkend="powerdns-advisory-2006-02">.
+      </para>
+      <para>
+	Version 3.0 of the PowerDNS recursor contains a denial of service bug which can be exploited remotely. This bug, which we believe to only lead to a crash,
+	has been fixed in 3.0.1. There are no guarantees however, so an upgrade from 3.0 is highly recommended.
       </para>
       <para>
 	All versions of PowerDNS before 2.9.18 contain the following two bugs, which only apply to installations running with the LDAP backend, or installations providing recursion
@@ -4523,7 +5479,195 @@ name         IN            A        1.2.3.4
 	This license is included in the distribution and in this documentation, see <xref linkend="license">.
       </para>
     </sect1>
-      
+    <sect1 id="powerdns-advisory-2006-01">
+      <title>PowerDNS Security Advisory 2006-01: Malformed TCP queries can lead to a buffer overflow which might be exploitable</title>
+      <para>
+	<table>
+	  <title>PowerDNS Security Advisory</title>
+	  <tgroup cols=2>
+	    <tbody>
+	      <row>
+		<entry>
+		  CVE
+		</entry>
+		<entry>
+		  CVE-2006-4251
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Date
+		</entry>
+		<entry>
+		  13th of November 2006
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Affects
+		</entry>
+		<entry>
+		  PowerDNS Recursor versions 3.1.3 and earlier, on all operating systems.
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Not affected
+		</entry>
+		<entry>
+		  No versions of the PowerDNS Authoritative Server ('pdns_server') are affected.
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Severity 
+		</entry>
+		<entry>
+		  Critical
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Impact
+		</entry>
+		<entry>
+		  Potential remote system compromise. 
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Exploit
+		</entry>
+		<entry>
+		  As far as we know, no exploit is available as of 11th of November 2006.
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Solution
+		</entry>
+		<entry>
+		  Upgrade to PowerDNS Recursor 3.1.4, or apply the patches referred below and recompile
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Workaround
+		</entry>
+		<entry>
+		  Disable TCP access to the Recursor. This will have slight operational impact, but it is likely that this will not lead
+		  to meaningful degradation of service. Disabling access is best performed at packet level, either by configuring a firewall, or 
+		  instructing the host operating system to drop TCP connections to port 53.
+		  Additionally, exposure can be limited by configuring the <command>allow-from</command> setting so only trusted users
+		  can query your nameserver.
+		</entry>
+	      </row>
+	  </tgroup>
+	</table>
+      </para>
+      <para>
+	PowerDNS Recursor 3.1.3 and previous miscalculate the length of incoming TCP DNS queries, and will attempt to read up to 4 gigabytes of query
+	into a 65535 byte buffer.
+      </para>
+      <para>
+	We have not verified if this problem might actually lead to a system compromise, but are acting on the assumption that it might.
+      </para>
+      <para>
+	For distributors, a minimal patch is available on <ulink url="http://wiki.powerdns.com/cgi-bin/trac.fcgi/changeset/915">the PowerDNS wiki</ulink>.
+	Additionally, those shipping very old versions of the PowerDNS Recursor might benefit from this <ulink url="http://ds9a.nl/tmp/cve-2006-4251.patch">
+	  patch</ulink>.
+      </para>
+      <para>
+        The impact of these and other security problems can be lessened by considering the advice in <xref linkend="security">.
+      </para>
+    </sect1>
+    <sect1 id="powerdns-advisory-2006-02">
+      <title>PowerDNS Security Advisory 2006-02: Zero second CNAME TTLs can make PowerDNS exhaust allocated stack space, and crash</title>
+      <para>
+	<table>
+	  <title>PowerDNS Security Advisory</title>
+	  <tgroup cols=2>
+	    <tbody>
+	      <row>
+		<entry>
+		  CVE
+		</entry>
+		<entry>
+		  CVE-2006-4252
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Date
+		</entry>
+		<entry>
+		  13th of November 2006
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Affects
+		</entry>
+		<entry>
+		  PowerDNS Recursor versions 3.1.3 and earlier, on all operating systems.
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Not affected
+		</entry>
+		<entry>
+		  No versions of the PowerDNS Authoritative Server ('pdns_server') are affected.
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Severity 
+		</entry>
+		<entry>
+		  Moderate
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Impact
+		</entry>
+		<entry>
+		  Denial of service
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Exploit
+		</entry>
+		<entry>
+		  This problem can be triggered by sending queries for specifically configured domains
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Solution
+		</entry>
+		<entry>
+		  Upgrade to PowerDNS Recursor 3.1.4, or apply c919.
+		</entry>
+	      </row>
+	      <row>
+		<entry>
+		  Workaround
+		</entry>
+		<entry>
+		  None known. Exposure can be limited by configuring the <command>allow-from</command> setting so only trusted users
+		  can query your nameserver.
+		</entry>
+	      </row>
+	  </tgroup>
+	</table>
+      </para>
+      <para>
+	PowerDNS would recurse endlessly on encountering a CNAME loop consisting entirely of zero second CNAME records, eventually exceeding resources and crashing.
+      </para>
+    </sect1>
     <sect1 id="thanks-to"><title>Acknowledgements</title>
       <para>
 	PowerDNS is grateful for the help of the following people or institutions:
@@ -4545,7 +5689,8 @@ name         IN            A        1.2.3.4
       <para>
 	(these people don't share the blame for any errors or mistakes in powerdns - those are all ours)
       </para>
-  </Chapter>
+    </sect1>
+</Chapter>
 
 <Chapter id="installing-on-unix">
     <Title>Installing on Unix</Title>
@@ -4991,7 +6136,7 @@ name         IN            A        1.2.3.4
 create table domains (
  id		 INT auto_increment,
  name		 VARCHAR(255) NOT NULL,
- master		 VARCHAR(20) DEFAULT NULL,
+ master		 VARCHAR(128) DEFAULT NULL,
  last_check	 INT DEFAULT NULL,
  type		 VARCHAR(6) NOT NULL,
  notified_serial INT DEFAULT NULL, 
@@ -5140,6 +6285,7 @@ GRANT ALL ON records TO pdns;
 	      </listitem>
 	    </varlistentry>
 	  </variablelist>
+	</para>
 	</sect2>
     </sect1>
   </chapter>
@@ -5367,6 +6513,7 @@ LegendI[recursing]: recursing-answers
 
 	</screen>
       </para>
+      </sect1>
       <sect1 id="syslog"><title>Operational logging using syslog</title>
       <para>(<command>logging-facility</command> is available from 1.99.10 and onwards)</para>
       <para>
@@ -5414,7 +6561,9 @@ local0.err                        /var/log/pdns.err
     <sect1 id="settings"><title>Settings</title>
       <para>PDNS has several options to easily allow it to run more securely. Most notable are the <command>chroot</command>, 
 	<command>setuid</command> and <command>setgid</command> options which can be specified.</para>
-
+      <para>
+	For additional information on PowerDNS security, PowerDNS security incidents and PowerDNS security policy, see <xref linkend="security-policy">.
+      </para>
 	<sect2><title>Running as a less privileged identity</title>
 	<para>
 	  By specifying <command>setuid</command> and <command>setgid</command>, PDNS changes to this identity shortly after
@@ -5426,6 +6575,7 @@ local0.err                        /var/log/pdns.err
 	  Both these parameters can be specified either numerically or as real names.
 	  You should set these parameters immediately if they are not set!
 	</para>
+	</sect2>
 	<sect2><title>Jailing the process in a chroot</title>
 	<para>
 	  The <command>chroot</command> option secures PDNS to its own directory so that even if it should become compromised and
@@ -5589,8 +6739,8 @@ local0.err                        /var/log/pdns.err
       <para>
 	The size of the packetcache can be observed with <command>/etc/init.d/pdns show packetcache-size</command>
       </para>
-    </sect1>
-    <sect1 id="querycache"><title>Query Cache</title>
+    </sect2>
+    <sect2 id="querycache"><title>Query Cache</title>
       <para>
 	Besides entire packets, PDNS can also cache individual backend queries. Each DNS query leads to a number of backend queries,
 	the most obvious additional backend query is the check for a possible CNAME. So, when a query comes in for the 'A' record for
@@ -5614,7 +6764,8 @@ local0.err                        /var/log/pdns.err
 	but that the Packet Cache also saves a lot of CPU because 0 internal processing is done when answering a question from the
 	Packet Cache.
       </para>
-    </sect1>
+    </sect2>
+  </sect1>
   </chapter>
   <chapter id="migration"><title>Migrating to PDNS</title>
     <para>
@@ -5624,7 +6775,7 @@ local0.err                        /var/log/pdns.err
 	  <term>PDNS does not operate as a 'slave' or 'master' server with all backends</term>
 	  <listitem>
 	    <para>
-	      Only the Generic SQL and BIND backends have the ability to act as master or slave.
+	      Only the Generic SQL, OpenDBX and BIND backends have the ability to act as master or slave.
 	    </para>
 	  </listitem>
 	</varlistentry>
@@ -5845,37 +6996,39 @@ local0.err                        /var/log/pdns.err
   </chapter>
   <chapter id="built-in-recursor"><title>PowerDNS resolver/recursing nameserver</title>
     <para>
-      As of 2.9.4, a small recursor comes with PowerDNS. The algorithm is influenced by the works of Dan J. Bernstein although
-      all mistakes are ours. Here are the current faults, so nobody can accuse us of false advertising:
-      <itemizedlist>
-	<listitem><para>
-	    Only compiles on Linux, FreeBSD 5.x, Windows and possibly Solaris. FreeBSD 4.x decided not to support the 
-	    POSIX get/set/swapcontext functions. Bug your favorite FreeBSD kernel or libc maintainer for a fix,
-	    or ask him to port MTasker (see below) to your operating system. It may work on recent 4.x systems, 
-	    let us know!
-	  </para></listitem>
-	<listitem><para>
-	    May have big problems with truncated packets (solved in 2.9.18)
-	  </para></listitem>
-      </itemizedlist>
+      The PowerDNS recursor is part of the source tarball of the main PowerDNS distribution, but it is released separately. Starting from
+      the version 3.0 pre-releases, there are zero known bugs or issues with the recursor. It is known to power the resolving needs of over 2 million
+      internet connections.
     </para>
     <para>
-      To compile, add <command>--enable-recursor</command> to configure and the file <filename>pdns_recursor</filename> will be 
-      compiled. To run on a different port, use <command>./syncres --local-port=53</command>.
-      To bind to another address, use the <command>local-address</command> setting.
+      The documentation below is only for the 3.0 series, users of older versions are urged to upgrade!
     </para>
-
     <para>
-      Good points:
+      Notable features:
       <itemizedlist>
 	<listitem><para>
 	    Uses MTasker (<ulink url="http://ds9a.nl/mtasker">homepage</ulink>)
 	  </para></listitem>
 	<listitem><para>
-	    Can handle thousands of concurrent questions
+	    Can handle thousands of concurrent questions. A dual Xeon 3GHz has been measured functioning very well at 9000 real life replayed
+	    packets per second, with 40% cpu idle. More testing equipment is needed to max out the recursor.
 	  </para></listitem>
-	  <listitem><para>
-	  Appears to be very fast, and contains innovative query-throttling code to save time talking to obsolete or broken nameservers.
+	<listitem><para>
+	    Powered by a highly modern DNS packet parser that should be resistant against many forms of buffer overflows.
+	  </para></listitem>
+	<listitem><para>
+	    Best spoofing protection that we know about, involving both source port randomisation and spoofing detection.
+	  </para></listitem>
+	<listitem><para>
+	    Uses 'connected' UDP sockets which allow the recursor to react quickly to unreachable hosts or hosts for which 
+	    the server is running, but the nameserver is down. This makes the recursor faster to respond in case of misconfigured domains,
+	    which are sadly very frequent.
+	  </para></listitem>
+	<listitem><para>
+	    Special support for FreeBSD, Linux and Solaris stateful multiplexing (kqueue, epoll, completion ports).
+	  </para></listitem>
+	<listitem><para>
+	    Very fast, and contains innovative query-throttling code to save time talking to obsolete or broken nameservers.
 	  </para></listitem>
 	<listitem><para>
 	    Code is written linearly, sequentially, which means that there are no problems with 'query restart' or anything.
@@ -5884,17 +7037,23 @@ local0.err                        /var/log/pdns.err
 	    Relies heavily on Standard C++ Library infrastructure, which makes for little code (406 core lines).
 	  </para></listitem>
 	<listitem><para>
-	    Is very verbose in showing how recursion actually works.
+	    Is very verbose in showing how recursion actually works, when enabled to do so with --verbose.
 	  </para></listitem>
 	<listitem><para>
 	    The algorithm is simple and quite nifty.
 	  </para></listitem>
       </itemizedlist>
     </para>
-    <sect1><title>pdns_recursor settings</title>
+    <para>
+      The PowerDNS recursor is controlled and queried using the <filename>rec_control</filename> tool. 
+    <sect1 id="recursor-settings"><title>pdns_recursor settings</title>
       <para>
 	At startup, the recursing nameserver reads the file <filename>recursor.conf</filename> from the configuration directory,
-	often <filename>/etc/powerdns</filename> or <filename>/usr/local/etc</filename>.
+	often <filename>/etc/powerdns</filename> or <filename>/usr/local/etc</filename>. Each setting below can appear on the command line,
+	prefixed by '--', or in the configuration file. The command line overrides the configuration file.
+      </para>
+      <para>
+	A switch can be set to on simply by passing it, like '--daemon', and turned off explicitly by '--daemon=off' or '--daemon=no'.
       </para>
       <para>
 	The following settings can be configured:
@@ -5910,10 +7069,45 @@ local0.err                        /var/log/pdns.err
 	    </listitem>
 	  </varlistentry>
 	  <varlistentry>
+	    <term>allow-from</term>
+	    <listitem>
+	      <para>
+		Comma separated netmasks (both IPv4 and IPv6) that are allowed to use the server. The default allows access only from RFC 1918 
+		private IP addresses, like 10.0.0.0/8. Due to the agressive nature of the internet these days, it is highly recommended
+		to not open up the recursor for the entire internet. Questions from IP addresses not listed here are ignored and do 
+		not get an answer.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>auth-can-lower-ttl</term>
+	    <listitem>
+	      <para>
+		Authoritative zones can transmit a TTL value that is lower than that specified in the parent zone. This is called a
+		'delegation inconsistency'. To follow RFC 2181 paragraphs 5.2 and 5.4 to the letter, enable this feature. 
+		This will mean a slight deterioration of performance, and it will not solve any problems, but does make
+		the recursor more standards compliant. Not recommended unless you have to tick an 'RFC 2181 compliant' box. Off by default.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>auth-zones</term>
+	    <listitem>
+	      <para>
+		Comma separated list of 'zonename=filename' pairs. Zones read from these files are served authoritatively. Example:
+		<command>auth-zones= ds9a.nl=/var/zones/ds9a.nl, powerdns.com=/var/zones/powerdns.com</command>. Available since 3.1.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry><term>chroot</term>
+	    <listitem><para>
+		If set, chroot to this directory for more security. See <xref linkend="security">.
+	      </para></listitem></varlistentry>
+	  <varlistentry>
 	    <term>client-tcp-timeout</term>
 	    <listitem>
 	      <para>
-	      Time to wait for data from TCP clients. Defaults to 2 seconds. Available since 2.9.18. 
+	      Time to wait for data from TCP clients. Defaults to 2 seconds. 
 	      </para>
 	    </listitem>
 	  </varlistentry>
@@ -5937,15 +7131,62 @@ local0.err                        /var/log/pdns.err
 	    <term>delegation-only</term>
 	    <listitem>
 	      <para>
-		A Verisign special, see <xref linkend="verisign">.
+		A Verisign special.
 	      </para>
 	    </listitem>
 	  </varlistentry>
 	  <varlistentry>
-	    <term>hints-file</term>
+	    <term>dont-query</term>
 	    <listitem>
 	      <para>
-		If set, the root-hints are read form this file. If unset, default root hints are used. Available since 2.9.19.
+		The DNS is a public database, but sometimes contains delegations to private IP addresses, like for example 127.0.0.1. This can have odd effects, 
+		depending on your network, and may even be a security risk. Therefore, since version 3.1.5, the PowerDNS recursor by default does not query
+		private space IP addresses. This setting can be used to expand or reduce the limitations.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>export-etc-hosts</term>
+	    <listitem>
+	      <para>
+		If set, this flag will export the host names and IP addresses mentioned in <filename>/etc/hosts</filename>. Available since 3.1.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
+	    <term>fork</term>
+	    <listitem>
+	      <para>
+		If running on an SMP system with enough memory, this feature forks PowerDNS so it benefits from two processors. Experimental. Renames
+		controlsockets, so care is needed to connect to the right one using <command>rec_control</command>, using <command>--socket-pid</command>.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>forward-zones</term>
+	    <listitem>
+	      <para>
+		Comma separated list of 'zonename=IP' pairs. Queries for zones listed here will be forwarded to the IP address listed.
+		<command>forward-zones= ds9a.nl=213.244.168.210, powerdns.com=127.0.0.1</command>. Available since 3.1.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>forward-zones-file</term>
+	    <listitem>
+	      <para>
+		Same as <command>forward-zones</command>, parsed from a file. Only 1 zone is allowed per line, specified as follows:
+		<command>ds9a.nl=213.244.168.210</command>. Available since 3.1.5.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
+	    <term>hint-file</term>
+	    <listitem>
+	      <para>
+		If set, the root-hints are read from this file. If unset, default root hints are used. Available since 2.9.19.
 	      </para>
 	    </listitem>
 	  </varlistentry>
@@ -5954,7 +7195,9 @@ local0.err                        /var/log/pdns.err
 	    <term>local-address</term>
 	    <listitem>
 	      <para>
-		Local IP address (singular) to bind to. Defaults to all addresses.
+		Local IPv4 or IPv6 addresses to bind to, comma separated. Defaults to only loopback. Addresses can also contain port numbers,
+		for IPv4 specify like this: <command>1.2.3.4:5300</command>, for IPv6: <command>[::1]:5300</command>. Port specifications are available since
+		3.1.2.
 	      </para>
 	    </listitem>
 	  </varlistentry>
@@ -5967,11 +7210,57 @@ local0.err                        /var/log/pdns.err
 	      </para>
 	    </listitem>
 	  </varlistentry>
+
+	  <varlistentry>
+	    <term>log-common-errors</term>
+	    <listitem>
+	      <para>
+		Some DNS errors occur rather frequently and are no cause for alarm. Logging these is on by default.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>logging-facility</term>
+	    <listitem>
+	      <para>
+		If set to a digit, logging is performed under this LOCAL facility. See <xref linkend="syslog"/>. Available from 3.1.3 and onwards. Do not pass names like 'local0'!
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  
+
+	  <varlistentry>
+	    <term>max-cache-entries</term>
+	    <listitem>
+	      <para>
+		Maximum number of cache entries. 1 million will generally suffice for most installations.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>max-negative-ttl</term>
+	    <listitem>
+	      <para>
+		A query for which there is authoritatively no answer is cached to quickly deny a record's existence later on, without
+		putting a heavy load on the remote server. In practice, caches can become saturated with hundreds of thousands of hosts
+		which are tried only once. This setting, which defaults to 3600 seconds, puts a maximum on the amount of time negative
+		entries are cached.
+	      </para>
+	    </listitem>
+	  </varlistentry>
 	  <varlistentry>
 	    <term>max-tcp-clients</term>
 	    <listitem>
 	      <para>
 	      Maximum number of simultaneous incoming TCP connections allowed. Defaults to 128. Available since 2.9.18. 
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>max-tcp-per-client</term>
+	    <listitem>
+	      <para>
+	      Maximum number of simultaneous incoming TCP connections allowed per client (remote IP address). Defaults to 0, which means unlimited.
 	      </para>
 	    </listitem>
 	  </varlistentry>
@@ -5984,10 +7273,73 @@ local0.err                        /var/log/pdns.err
 	    </listitem>
 	  </varlistentry>
 	  <varlistentry>
+	    <term>query-local-address6</term>
+	    <listitem>
+	      <para>
+		Send out local IPv6 queries from this address. Disabled by default, which also disables
+		outgoing IPv6 support. A useful setting is <command>::0</command>.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+
+	  <varlistentry>
 	    <term>quiet</term>
 	    <listitem>
 	      <para>
-		Don't log queries.
+		Don't log queries. On by default.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>remotes-ringbuffer-entries</term>
+	    <listitem>
+	      <para>
+		Number of entries in the remotes ringbuffer, which keeps statistics on who is querying your server. Can be read out using
+		<command>rec_control top-remotes</command>. Defaults to 0.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>serve-rfc1918</term>
+	    <listitem>
+	      <para>
+		On by default, this makes the server authoritatively aware of: <filename>10.in-addr.arpa</filename>, 
+		<filename>168.192.in-addr.arpa</filename>, <filename>16-31.172.in-addr.arpa</filename>, which saves
+		load on the AS112 servers. Individual parts of these zones can still be loaded or forwarded.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>server-id</term>
+	    <listitem>
+	      <para>
+		The PowerDNS recursor by replies to a query for 'id.server' with its hostname, useful for in clusters. Use this setting to override
+		the answer it gives.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>setgid</term>
+	    <term>setuid</term>
+	    <listitem>
+	      <para>
+		PowerDNS can change its user and group id after binding to its socket. Can be used for better security.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>socket-dir</term>
+	    <listitem>
+	      <para>
+		Where to store the control socket. This option also works with the controller, <command>rec_control</command>.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>spoof-nearmiss-max</term>
+	    <listitem>
+	      <para>
+		If set to non-zero, PowerDNS will assume it is being spoofed after seeing this many answers with the wrong id. Defaults to 20.
 	      </para>
 	    </listitem>
 	  </varlistentry>
@@ -5999,60 +7351,274 @@ local0.err                        /var/log/pdns.err
 	      </para>
 	    </listitem>
 	  </varlistentry>
+	  <varlistentry>
+	    <term>version</term>
+	    <listitem>
+	      <para>
+		Print version of this binary. Useful for checking which version of the PowerDNS recursor is installed on a system. Available since 3.1.5.
+	      </para>
+	    </listitem>
+	  </varlistentry>
+	  <varlistentry>
+	    <term>version-string</term>
+	    <listitem>
+	      <para>
+		By default, PowerDNS replies to the 'version.bind' query with its version number. Security concious users may wish to override
+		the reply PowerDNS issues.
+	      </para>
+	    </listitem>
+	  </varlistentry>
 	</variablelist>
       <para>
-    <sect2 id="verisign"><title>Verisign weirdness</title>
-	<para>
-	  Verisign, the current operator of the COM and NET zones, decided to add a wildcard record so as to draw all queries for non-existing 
-	  domains to their own page, which lists domains you might want to visist instead. 
-	</para>
-	<para>
-	  To reinstate old behaviour, add <command>delegation-only=com,net</command> to your recursor configuration.
-	</para>
-	<para>
-	  What this does is reject all authoritative answers from the COM and NET servers. ISC, the current maintainers of BIND, have 
-	  implemented this feature first, PowerDNS has mostly copied their algorithm. Thanks!
-	</para>
-	<para>
-	  Verisign might decide to evade our tactic with wildcard NS records, by which time other measures will be needed to restore the 
-	  old behaviour.
-	</para>
-      </sect2>
-	  
-
     </sect1>
-    <sect1><title>Details</title>
+    <sect1 id="rec-control"><title>Controlling and querying the recursor</title>
       <para>
-	PowerDNS implements a very simple but effective nameserver. Care has been taken not to overload remote servers in case
-	of overly active clients.
+	To control and query the PowerDNS recursor, the tool <filename>rec_control</filename> is provided. This program
+	talks to the recursor over the 'controlsocket', often stored in <filename>/var/run</filename>.
       </para>
       <para>
-	This is implemented using the 'throttle'. This accounts all recent traffic and prevents queries that have been sent out
-	recently from going out again.
+	As a sample command, try:
+	<screen>
+	  # rec_control ping
+	  pong
+	</screen>
       </para>
       <para>
-	There are three levels of throttling.
+	When not running as root, <command>--socket-dir=/tmp</command> might be appropriate.
+      </para>
+	<para>
+	  All rec_control commands are documented below:
+	  <variablelist>
+	    <varlistentry>
+	      <term>dump-cache filename</term>
+	      <listitem>
+		<para>
+		  Dumps the entire cache to the filename mentioned. This file should not exist already, PowerDNS
+		  will refuse to overwrite it. While dumping, the recursor will not answer questions.
+		</para>
+	      </listitem>
+	    </varlistentry>	  
+	    <varlistentry>
+	      <term>get statistic</term>
+	      <listitem>
+		<para>
+		  Retrieve a statistic. For items that can be queried, see below.
+		</para>
+	      </listitem>
+	    </varlistentry>	  
+	    <varlistentry>
+	      <term>ping</term>
+	      <listitem>
+		<para>
+		  Check if server is alive.
+		</para>
+	      </listitem>
+	    </varlistentry>	  
+	    <varlistentry>
+	      <term>quit</term>
+	      <listitem>
+		<para>
+		  Request shutdown of the recursor.
+		</para>
+	      </listitem>
+	    </varlistentry>	  
+	    <varlistentry>
+	      <term>reload-zones</term>
+	      <listitem>
+		<para>
+		Reload data about all authoritative and forward zones. The configuration file is also scanned 
+		to see if the <command>auth-domain</command>, <command>forward-domain</command> and <command>export-etc-hosts</command>
+		statements have changed, and if so, these changes are incorporated.
+		</para>
+	      </listitem>
+	    </varlistentry>	  
+	    <varlistentry>
+	      <term>top-remotes</term>
+	      <listitem>
+		<para>
+		  Shows the top-20 most active remote hosts. Statistics are over the last 'remotes-ringbuffer-entries' queries, which
+		  defaults to 0.
+		</para>
+	      </listitem>
+	    </varlistentry>	  
+	    <varlistentry>
+	      <term>wipe-cache domain0. [domain1. domain2.]</term>
+	      <listitem>
+		<para>
+		  Wipe entries from the cache. This is useful if, for example, an important server has a new IP address, but the TTL has not
+		  yet expired. Multiple domain names can be passed. For versions before 3.1, you must terminate a domain with a .! So to wipe powerdns.org,
+		  issue 'rec_control wipe-cache powerdns.org.'. For later versions, the dot is optional. 
+		</para>
+		<para>
+		  Note that deletion is exact, wiping 'com.' will leave 'www.powerdns.com.' untouched!
+		</para>
+		<para>
+		  <warning>
+		    <para>
+		    In PowerDNS versions 3.0.0 and 3.0.1 this command is slightly buggy and might cause your nameserver to crash if the first
+		    query after wiping the cache is for the domain you just wiped.
+		    </para>
+		  </warning>
+		  <warning>
+		    <para>
+		    Don't just wipe 'www.somedomain.com', its NS records or CNAME target may still be undesired, so wipe 'somedomain.com' as well.
+		    </para>
+		  </warning>
+		</para>
+	      </listitem>
+	    </varlistentry>	  
+	  </variablelist>
+	</para>
+	<para>
+	  The command 'get' can query a large number of statistics, which are detailed in <xref linkend="recursor-stats">.
+
+	</para>
+	<para>
+	  More details on what 'throttled' queries and the like are can be found below in <xref linkend="recursor-details">.
+	</para>
+    </sect1>
+    <sect1 id="recursor-performance"><title>PowerDNS Recursor performance</title>
+      <para>
+	To get the best out of the PowerDNS recursor, which is important if you are doing thousands of queries per second, please 
+	consider the following. 
 	<itemizedlist>
 	  <listitem>
 	    <para>
-	      If a remote server indicates that it is lame for a zone, the exact question won't
-	      be repeated in the next 60 seconds.
+	      Limit the size of the cache to a sensible value. Cache hit rate does not improve meaningfully beyond 4 million <command>max-cache-entries</command>,
+	      reducing the memory footprint reduces CPU cache misses.
 	    </para>
 	  </listitem>
 	  <listitem>
 	    <para>
-	      After 4 ServFail responses in 60 seconds, the query gets throttled too.
+	      Compile using g++ 4.1 or later. This compiler really does a good job on PowerDNS, much better than 3.4 or 4.0.
 	    </para>
 	  </listitem>
 	  <listitem>
 	    <para>
-	      5 timeouts in 20 seconds also lead to query suppression.
+	      Consider performing a 'profiled build' as described in the README. This is good for a 20% performance boost in some cases.
+	    </para>
+	  </listitem>
+	  <listitem>
+	    <para>
+	      When running with &gt;3000 queries per second, and running Linux versions prior to 2.6.17 on some motherboards, your computer may 
+	      spend an inordinate amount of time working around an ACPI bug for each call to gettimeofday. This is solved by rebooting with 'clock=tsc'
+	      or upgrading to a 2.6.17 kernel.
+	    </para>
+	    <para>
+	      The above is relevant if dmesg shows <command>Using pmtmr for high-res timesource</command>
+	    </para>
+	  </listitem>
+	  <listitem>
+	    <para>
+	      A busy server may need hundreds of file descriptors on startup, and deals with spikes better if it has that many available
+	      later on. Linux by default restricts processes to 1024 file descriptors, which should suffice most of the time, but Solaris
+	      has a default limit of 256. This can be raised using the ulimit command. FreeBSD has a default limit that is high enough for even
+	      very heavy duty use.
+	    </para>
+	  </listitem>
+	  <listitem>
+	    <para>
+	      If you need it, try <command>--fork</command>, this will fork the daemon into two halves, allowing it to benefit from a second CPU.
+	      This feature almost doubles performance, but is a bit of a hack. 
 	    </para>
 	  </listitem>
 	</itemizedlist>
+	Following the instructions above, you should be able to attain very high query rates.
       </para>
     </sect1>
-    <sect1><title>Statistics</title>
+    <sect1 id="recursor-details"><title>Details</title>
+      <sect2 id="anti-spoofing"><title>Anti-spoofing</title>
+	<para>
+	  The PowerDNS recursor 3.0 uses a fresh UDP source port for each outgoing query, making spoofing around 64000 times harder. This 
+	  raises the bar from 'easily doable given some time' to 'very hard'. Under some circimstances, 'some time' has been measured at 2 seconds. 
+	  This technique was first used by <filename>dnscache</filename> by Dan J. Bernstein.
+	</para>
+	<para>
+	  In addition, PowerDNS detects when it is being sent too many unexpected answers, and mistrusts a proper answer if found within
+	  a clutch of unexpected ones.
+	</para>
+	<para>
+	  This behaviour can be tuned using the <command>spoof-nearmiss-max</command>.
+	</para>
+      </sect2>
+      <sect2><title>Throttling</title>
+	<para>
+	  PowerDNS implements a very simple but effective nameserver. Care has been taken not to overload remote servers in case
+	  of overly active clients.
+	</para>
+	<para>
+	  This is implemented using the 'throttle'. This accounts all recent traffic and prevents queries that have been sent out
+	  recently from going out again.
+	</para>
+	<para>
+	  There are three levels of throttling.
+	  <itemizedlist>
+	    <listitem>
+	      <para>
+		If a remote server indicates that it is lame for a zone, the exact question won't
+		be repeated in the next 60 seconds.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		After 4 ServFail responses in 60 seconds, the query gets throttled too.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		5 timeouts in 20 seconds also lead to query suppression.
+	      </para>
+	    </listitem>
+	  </itemizedlist>
+	</para>
+      </sect2>
+
+    </sect1>
+    <sect1 id="recursor-stats"><title>Statistics</title>
+      <para>
+	The <command>rec_control get</command> command can be used to query the following keys, either single keys or multiple keys 
+	at once:
+	  <screen>
+all-outqueries      counts the number of outgoing UDP queries since starting
+answers0-1          counts the number of queries answered within 1 milisecond
+answers100-1000     counts the number of queries answered within 1 second
+answers10-100       counts the number of queries answered within 100 miliseconds
+answers1-10         counts the number of queries answered within 10 miliseconds
+answers-slow        counts the number of queries answered after 1 second
+cache-entries       shows the number of entries in the cache
+cache-hits          counts the number of cache hits since starting
+cache-misses        counts the number of cache misses since starting
+chain-resends       number of queries chained to existing outstanding query
+client-parse-errors counts number of client packets that could not be parsed
+concurrent-queries  shows the number of MThreads currently running
+dlg-only-drops      number of records dropped because of delegation only setting
+negcache-entries    shows the number of entries in the Negative answer cache
+noerror-answers     counts the number of times it answered NOERROR since starting
+nsspeeds-entries    shows the number of entries in the NS speeds map
+nsset-invalidations number of times an nsset was dropped because it no longer worked
+nxdomain-answers    counts the number of times it answered NXDOMAIN since starting
+outgoing-timeouts   counts the number of timeouts on outgoing UDP queries since starting
+qa-latency          shows the current latency average
+questions           counts all End-user initiated queries with the RD bit set
+resource-limits     counts number of queries that could not be performed because of resource limits
+server-parse-errors counts number of server replied packets that could not be parsed
+servfail-answers    counts the number of times it answered SERVFAIL since starting
+spoof-prevents      number of times PowerDNS considered itself spoofed, and dropped the data
+sys-msec            number of CPU milliseconds spent in 'system' mode
+tcp-client-overflow number of times an IP address was denied TCP access because it already had too many connections
+tcp-outqueries      counts the number of outgoing TCP queries since starting
+tcp-questions       counts all incoming TCP queries (since starting)
+throttled-out       counts the number of throttled outgoing UDP queries since starting
+throttle-entries    shows the number of entries in the throttle map
+unauthorized-tcp    number of TCP questions denied because of allow-from restrictions
+unauthorized-udp    number of UDP questions denied because of allow-from restrictions
+unexpected-packets  number of answers from remote servers that were unexpected (might point to spoofing)
+uptime              number of seconds process has been running (since 3.1.5)
+user-msec           number of CPU milliseconds spent in 'user' mode
+	  </screen>
+	In the <filename>rrd/</filename> subdirectory a number of rrdtool scripts is provided to make nice
+	graphs of all these numbers.
+      </para>
       <para>
 	Every half our or so, the recursor outputs a line with statistics. More infrastructure is planned so as to allow
 	for Cricket or MRTG graphs. To force the output of statistics, send the process a SIGUSR1. A line of statistics looks 
@@ -6071,6 +7637,267 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
       <para>
 	Finally, 12% of queries were not performed because identical queries had gone out previously, saving load servers worldwide.
       </para>
+    </sect1>
+    <sect1 id="recursor-design-and-engineering">
+      <title>Design and Engineering of the PowerDNS Recursor</title>
+      <para>
+	<warning>
+	  <para>
+	    This section is aimed at programmers wanting to contibute to the recursor, or to help fix bugs. It is not required
+	    reading for a PowerDNS operator, although it might prove interesting.
+	  </para>
+	</warning>
+      </para>
+      <para>The PowerDNS Recursor consists of very little code, the core DNS logic is less than a thousand lines.</para>
+	  
+	  <para>This smallness is achieved through the use of some fine infrastructure: MTasker, MOADNSParser, MPlexer and the C++ Standard Library/Boost. This page will explain the conceptual relation between these components, and the route of a packet through the program.</para>
+	  
+      <sect2>
+	<title>The PowerDNS Recursor</title>
+	<para>The Recursor started out as a tiny project, mostly a technology demonstration. These days it  consists of the core plus 9000 lines of features. This combined with a need for very high performance has made the recursor code less accessible than it was. The page you are reading hopes to rectify this situation.</para>
+	
+      </sect2>
+      <sect2>
+	<title>Synchronous code using MTasker</title>
+	<para>The original name of the program was <command>syncres</command>, which is still reflected in the filename <literal>syncres.cc</literal>, and the class SyncRes. This means that PowerDNS is written naively, with one thread of execution per query, synchronously waiting for packets, Normally this would lead to very bad performance (unless running on a computer with very fast threading, like possibly the Sun CoolThreads family), so PowerDNS employs <ulink url="http://ds9a.nl/mtasker">MTasker</ulink> for very fast userspace threading.</para>
+	
+	<para>MTasker, which was developed separately from PowerDNS, does not provide a full multithreading system but restricts itself to those features a nameserver needs. It offers cooperative multitasking, which means there is no forced preemption of threads. This in turn means that no two <command>MThreads</command> ever really run at the same time.</para>
+	
+	<para>This is both good and bad, but mostly good. It means PowerDNS does not have to think about locking. No two threads will ever be talking to the DNS cache at the same time, for example.</para>
+	
+	<para>It also means that the recursor could block if any operation takes too long.</para>
+	
+	<para>The core interaction with MTasker are the waitEvent() and sendEvent() functions. These pass around PacketID objects. Everything PowerDNS needs to wait for is described by a PacketID event, so the name is a bit misleading. Waiting for a TCP socket to have data available is also passed via a PacketID, for example.</para>
+	
+	<para>The version of MTasker in PowerDNS is newer than that described at the MTasker site, with a vital difference being that thet waitEvent() structure passes along a copy of the exact PacketID sendEvent() transmitted. Furthermore, threads can trawl through the list of events being waited for and modify the respective PacketIDs. This is used for example with <command>near miss</command> packets: packets that appear to answer questions we asked, but differ in the DNS id. On seeing such a packet, the recursor trawls through all PacketIDs and if it finds any nearmisses, it updates the PacketID::nearMisses counter. The actual PacketID thus lives inside MTasker while any thread is waiting for it.</para>
+	
+      </sect2>
+      <sect2>
+	<title>MPlexer</title>
+	<para>The Recursor uses a separate socket per outgoing query. This has the important benefit of making spoofing 64000 times harder, and additionally means that ICMP errors are reported back to the program. In measurements this appears to happen to one in ten queries, which would otherwise take a two-second timeout before PowerDNS moves on to another nameserver.</para>
+	
+	<para>However, this means that the program routinely needs to wait on hundreds or even thousands of sockets. Different operating systems offer various ways to monitor the state of sockets or more generally, filedescriptors. To abstract out the differing strategies (<function>select</function>, <function>epoll</function>, <function>kqueue</function>, <function>completion ports</function>), PowerDNS contains <command>MPlexer</command> classes, all of which descend from the FDMultiplexer class.</para>
+	
+	<para>This class is very simple and offers only five important methods: addReadFD(), addWriteFD(), removeReadFD(), removeWriteFD() and run.</para>
+	
+	<para>The arguments to the <command>add</command> functions consist of an fd, a callback, and a boost::any variable that is passed as a reference to the callback.</para>
+	
+	<para>This might remind you of the MTasker above, and it is indeed the same trick: state is stored within the MPlexer. As long as a filedescriptor remains within either the Read or Write active list, its state will remain stored.</para>
+	
+	<para>On arrival of a packet (or more generally, when an FD becomes readable or writable, which for example might mean a new TCP connection), the callback is called with the aforementioned reference to its parameter.</para>
+	
+	<para>The callback is free to call removeReadFD() or removeWriteFD() to remove itself from the active list.</para>
+	
+	<para>PowerDNS defines such callbacks as newUDPQuestion(), newTCPConnection(), handleRunningTCPConnection().</para>
+	
+	<para>Finally, the run() method needs to be called whenever the program is ready for new data. This happens in the main loop in pdns_recursor.cc. This loop is what MTasker refers to as <command>the kernel</command>. In this loop, any packets or other MPlexer events get translated either into new MThreads within MTasker, or into calls to sendEvent(), which in turn wakes up other MThreads.</para>
+	
+      </sect2>
+      <sect2>
+	<title>MOADNSParser</title>
+	<para>Yes, this does stand for <command>the Mother of All DNS Parsers</command>. And even that name does not do it justice! The MOADNSParser is the third attempt I've made at writing DNS packet parser and after two miserable failures, I think I've finally gotten it right.</para>
+	
+	<para>Writing and parsing DNS packets, and the DNS records it contains, consists of four things:
+	  <orderedlist>
+	    <listitem>
+	      <para>
+		Parsing a DNS record (from packet) into memory
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Generating a DNS record from memory (to packet)
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Writing out memory to user-readable zone format
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		Reading said zone format into memory
+	      </para>
+	    </listitem>
+	  </orderedlist>
+	</para>
+
+	<para>This gets tedious very quickly, as one needs to implement all four operations for each new record type, and there are dozens of them.</para>
+	
+	<para>While writing the MOADNSParser, it was discovered there is a remarkable symmetry between these four transitions. DNS Records are nearly always laid out in the same order in memory as in their zone format representation. And reading is nothing but inverse writing.</para>
+	
+	<para>So, the MOADNSParser is built around the notion of a <command>Conversion</command>, and we write all Conversion types once. So we have a Conversion from IP address in memory to an IP address in a DNS packet, and vice versa. And we have a Conversion from an IP address in zone format to memory, and vice versa.</para>
+	
+	<para>This in turn means that the entire implementation of the ARecordContent is as follows (wait for it!)</para>
+	
+	<literallayout class="monospaced">conv.xfrIP(d_ip);</literallayout>
+	<para>Through the use of the magic called <literal>c++ Templates</literal>, this one line does everything needed to perform the four operations mentioned above.</para>
+	
+	<para>At one point, I got really obsessed with PowerDNS memory use. So, how do we store DNS data in the PowerDNS recorsor? I mentioned <command>memory</command> above a lot - this means we could just store the DNSRecordContent objects. However, this would be wasteful.</para>
+	
+	<para>For example, storing the following:</para>
+	
+	<literallayout class="monospaced">www.ds9a.nl  3600 IN   CNAME  outpost.ds9a.nl.</literallayout>
+	<para>Would duplicate a lot of data. So, what is actually stored is a partial DNS packet. To store the CNAMEDNSRecordContent that corresponds to the above, we generate a DNS packet that has <command>www.ds9a.nl IN CNAME</command> as its question. Then we add <command>3600 IN CNAME outpost.ds9a.nl</command>. as its answer. Then we chop off the question part, and store the rest in the <command>www.ds9a.nl IN CNAME</command> key in our cache.</para>
+	
+	<para>When we need to retrieve <command>www.ds9a.nl IN CNAME</command>, the inverse happens. We find the proper partial packet, prefix it with a question for <command>www.ds9a.nl IN CNAME</command>, and expand the resulting packet into the answer <command>3600 IN CNAME outpost.ds9a.nl.</command>.</para>
+	
+	<para>Why do we go through all these motions? Because of DNS compression, which allows us to omit the whole <command>.ds9a.nl.</command> part, saving us 9 bytes. This is amplified when storing multiple MX records which all look more or less alike. This optimization is not performed yet though.</para>
+	
+	<para>Even without compression, it makes sense as all records are automatically stored very compactly.</para>
+	
+	<para>The PowerDNS recursor only parses a number of <command>well known record types</command> and passes all other information across verbatim - it doesn't have to know about the content it is serving.</para>
+	
+      </sect2>
+      <sect2>
+	<title>The C++ Standard Library / Boost</title>
+	<para>C++ is a powerful language. Perhaps a bit too powerful at times, you can turn a program into a real freakshow if you so desire.</para>
+	
+	<para>PowerDNS generally tries not to go overboard in this respect, but we do build upon a very advanced part of the <ulink url="http://www.boost.org">Boost</ulink> C++ library: 
+	  <ulink url="http://boost.org/libs/multi_index/doc/index.html">boost::multi index container</ulink>.</para>
+	
+	<para>This container provides the equivalent of SQL indexes on multiple keys. It also implements compound keys, which PowerDNS uses as well.</para>
+	
+	<para>The main DNS cache is implemented as a multi index container object, with a compound key on the name and type of a record. Furthermore, the cache is sequenced, each time a record is accessed it is moved to the end of the list. When cleanup is performed, we start at the beginning. New records also get inserted at the end. For DNS correctness, the sort order of the cache is case insensitive.</para>
+	
+	<para>The multi index container appears in other parts of PowerDNS, and MTasker as well.</para>
+	
+      </sect2>
+      <sect2>
+	<title>Actual DNS Algorithm</title>
+	<para>The DNS rfcs do define the DNS algorithm, but you can't actually implement it exactly that way, it was written in 1987.</para>
+	
+	<para>Also, like what happened to HTML, it is expected that even non-standards conforming domains work, and a sizeable fraction of them is misconfigured these days.</para>
+	
+	<para>Everything begins with SyncRes::beginResolve(), which knows nothing about sockets, and needs to be passed a domain name, dns type and dns class which we are interested in. It returns a vector of DNSResourceRecord objects, ready for writing either into an answer packet, or for internal use.</para>
+	
+	<para>After checking if the query is for any of the hardcoded domains (localhost, version.bind, id.server), the query is passed to SyncRes::doResolve, together with two vital parameters: the <literal>depth</literal> and <literal>beenthere</literal> set. As the word <command>recursor</command> implies, we will need to recurse for answers. The <command>depth</command> parameter documents how deep we've recursed already.</para>
+	
+	<para>The <literal>beenthere</literal> set prevents loops. At each step, when a nameserver is queried, it is added to the <literal>beenthere</literal> set. No nameserver in the set will ever be queried again for the same question in the recursion process - we know for a fact it won't help us further. This prevents the process from getting stuck in loops.</para>
+	
+	<para>SyncRes::doResolve first checks if there is a CNAME in cache, using SyncRes::doCNAMECacheCheck, for the domain name and type queried and if so, changes the query (which is passed by reference) to the domain the CNAME points to. This is the cause of many DNS problems, a CNAME record really means <command>start over with this query</command>.</para>
+	
+	<para>This is followed by a call do SyncRes::doCacheCheck, which consults the cache for a straight answer to the question (as possibly rerouted by a CNAME). This function also consults the so called negative cache, but we won't go into that just yet.</para>
+	
+	<para>If this function finds the correct answer, and the answer hasn't expired yet, it gets returned and we are (almost) done. This happens in 80 to 90% of all queries. Which is good, as what follows is a lot of work.</para>
+	
+	<para>To recap:
+	  <orderedlist>
+	    <listitem>
+	      <para>
+		beginResolve() - entry point, does checks for hardcoded domains
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		doResolve() - start of recursion process, gets passed <literal>depth</literal> of 0 and empty <literal>beenthere</literal> set
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		doCNAMECacheCheck() - check if there is a CNAME in cache which would reroute the query
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		doCacheCheck() - see if cache contains straight answer to possibly rerouted query.
+	      </para>
+	    </listitem>
+	  </orderedlist>
+	</para>
+	<para>If the data we were queried for was in the cache, we are almost done. One final step, which might as well be optional as nobody benefits from it, is SyncRes::addCruft. This function does additional processing, which means that if the query was for the MX record of a domain, we also add the IP address of the mail exchanger.</para>
+	
+      </sect2>
+      <sect2>
+	<title>The non-cached case</title>
+	<para>This is where things get interesting, because we start out with a nearly empty cache and have to go out to the net to get answers to fill it.</para>
+	
+	<para>The way DNS works, if you don't know the answer to a question, you find somebody who does. Initially you have no other place to go than the root servers. This is embodied in the SyncRes::getBestNSNamesFromCache method, which gets passed the domain we are interested in, as well as the <literal>depth</literal> and <literal>beenthere</literal> parameters mentioned earlier.</para>
+	
+	<para>From now on, assume our query will be for <command><literal>www.powerdns.com.</literal></command>. SyncRes::getBestNSNamesFromCache will first check if there are NS records in cache for <literal><command>www.powerdns.com.</command></literal>, but there won't be. It then checks <literal>powerdns.com. NS</literal>, and while these records do exist on the internet, the recursor doesn't know about them yet. So, we go on to check the cache for <literal><command>com. NS</command></literal>, for which the same holds. Finally we end up checking for <literal><command>. NS</command></literal>, and these we do know about: they are the root servers and were loaded into PowerDNS on startup.</para>
+	
+	<para>So, SyncRes::getBestNSNamesFromCache fills out a set with the <command>names</command> of nameservers it knows about for the <command><literal>.</literal></command> zone.</para>
+	
+	<para>This set, together with the original query <command><literal>www.powerdns.com</literal></command> gets passed to SyncRes::doResolveAt. This function can't yet go to work immediately though, it only knows the names of nameservers it can try. This is like asking for directions and instead of hearing <command>take the third right</command> you are told <command>go to 123 Fifth Avenue, and take a right</command> - the answer doesn't help you further unless you know where 123 Fifth Avenue is.</para>
+	
+	<para>SyncRes::doResolveAt first shuffles the nameservers both randomly and on performance order. If it knows a nameserver was fast in the past, it will get queried first. More about this later.</para>
+	
+	<para>Ok, here is the part where things get a bit scary. How does SyncRes::doResolveAt find the IP address of a nameserver? Well, by calling SyncRes::getAs (<command>get A records</command>), which in turn calls.. SyncRes::doResolve. Hang on! That's where we came from! Massive potential for loops here. Well, it turns out that for any domain which can be resolved, this loop terminates. We do pass the <literal>beenthere</literal> set again, which makes sure we don't keep on asking the same questions to the same nameservers.</para>
+	
+	<para>Ok, SyncRes::getAs will give us the IP addresses of the chosen root-server, because these IP addresses were loaded on startup. We then ask these IP addresses (nameservers can have several) for its best answer for <command><literal>www.powerdns.com.</literal></command>. This is done using the LWRes class and specifically LWRes::asyncresolve, which gets passed domain name, type and IP address. This function interacts with MTasker and MPlexer above in ways which needn't concern us now. When it returns, the LWRes object contains the best answers the queried server had for our domain, which in this case means it tells us about the nameservers of <literal>com.</literal>, and their IP addresses.</para>
+	
+	<para>All the relevant answers it gives are stored in the cache (or actually, merged), after which SyncRes::doResolveAt (which we are still in) evaluates what to do now.</para>
+	
+	<para>There are 6 options:
+	  <orderedlist>
+	    <listitem>
+	      <para>
+		The final answer is in, we are done, return to SyncRes::doResolve and SyncRes::beginResolve
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The nameserver we queried tells us the domain we asked for authoritatively does not exist. In case of the root-servers, this happens when we query for <emphasis><literal>www.powerdns.kom.</literal></emphasis> for example, there is no <emphasis><literal>kom.</literal></emphasis>. Return to SyncRes::beginResolve, we are done.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		A lesser form - it tells us it is authoritative for the query we asked about, but there is no record matching our type. This happens when querying for the IPv6 address of a host which only has an IPv4 address. Return to SyncRes::beginResolve, we are done.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The nameserver passed us a CNAME to another domain, and we need to reroute. Go to SyncRes::doResolve for the new domain.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The namserver did not know about the domain, but does know who does, a <emphasis>referral</emphasis>. Stay within doResolveAt and loop to these new nameservers.
+	      </para>
+	    </listitem>
+	    <listitem>
+	      <para>
+		The nameserver replied saying <emphasis>no idea</emphasis>. This is called a <emphasis>lame delegation</emphasis>. Stay within SyncRes::doResolveAt and try the other nameservers we have for this domain.
+	      </para>
+	    </listitem>
+	  </orderedlist>
+	</para>
+	<para>When not redirected using a CNAME, this function will loop until it has exhausted all nameservers and all their IP addresses. DNS is surprisingly resilient that there is often only a single non-broken nameserver left to answer queries, and we need to be prepared for that.</para>
+	
+	<para>This is the whole DNS algorithm in PowerDNS, all in less than 700 lines of code. It contains a lot of tricky bits though, related to the cache.</para>
+	
+      </sect2>
+      <sect2>
+	<title>Some of the things we glossed over</title>
+	<para>Whenever a packet is sent to a remote nameserver, the response time is stored in the SyncRes::s_nsSpeeds map, using an exponentially weighted moving average. This EWMA averages out different response times, and also makes them decrease over time. This means that a nameserver that hasn't been queried recently gradually becomes <command>faster</command> in the eyes of PowerDNS, giving it a chance again.</para>
+	
+	<para>A timeout is accounted as a 1s response time, which should take that server out of the running for a while.</para>
+	
+	<para>Furthermore, queries are throttled. This means that each query to a nameserver that has failed is accounted in the <literal>s_throttle</literal> object. Before performing a new query, the query and the nameserver are looked up via shouldThrottle. If so, the query is assumed to have failed without even being performed. This saves a lot of network traffic and makes PowerDNS quick to respond to lame servers.</para>
+	
+	<para>It also offers a modicum of protection against birthday attack powered spoofing attempts, as PowerDNS will not innundate a broken server with queries.</para>
+	
+	<para>The negative query cache we mentioned earlier caches the cases 2 and 3 in the enumeration above. This data needs to be stored separately, as it represents <command>non-data</command>. Each negcache query entry is the name of the SOA record that was presented with the evidence of non-existance. This SOA record is then retrieved from the regular cache, but with the TTL that originally came with the NXDOMAIN (case 2) or NXRRSET (case 3).</para>
+	
+      </sect2>
+      <sect2>
+	<title>The Recursor Cache</title>
+	<para>As mentioned before, the cache stores partial packets. It also stores not the <command>Time To Live</command> of records, but in fact the <command>Time To Die</command>. If the cache contains data, but it is expired, that data should not be deemed present. This bit of PowerDNS has proven tricky, leading to deadlocks in the past.</para>
+	
+	<para>There are some other very tricky things to deal with. For example, through a process called <command>more details</command>, a domain might have more nameservers than listed in its parent zone. So, there might only be two nameservers for <literal><command>powerdns.com.</command></literal> in the <command><literal>com.</literal></command> zone, but the <command><literal>powerdns.com</literal></command> zone might list more.</para>
+	
+	<para>This means that the cache should not, when talking to the <command><literal>com.</literal></command> servers later on, overwrite these four nameservers with only the two copies the <command><literal>com.</literal></command> servers pass us.</para>
+	
+	<para>However, in other cases (like for example for SOA and CNAME records), new data should overwrite old data.</para>
+	<para>Note that PowerDNS deviates from RFC 2181 (section 5.4.1) in this respect.</para>
+	
+      </sect2>
+      <sect2>
+	<title>Some small things</title>
+	<para>The server-side part of PowerDNS (<literal>pdns_recursor.cc</literal>), which listens to queries by end-users, is fully IPv6 capable using the ComboAddress class. This class is in fact a union of a <literal>struct sockaddr_in</literal> and a <literal>struct sockaddr_in6</literal>. As long as the <literal>sin_family</literal> (or <literal>sin6_family</literal>) and <literal>sin_port</literal> members are in the same place, this works just fine, allowing us to pass a ComboAddress*, cast to a <literal>sockaddr*</literal> to the socket functions. For convenience, the ComboAddress also offers a length() method which can be used to indicate the length - either sizeof(sockaddr_in) or sizeof(sockaddr_in6).</para>
+	
+	<para>Access to the recursor is governed through the NetmaskGroup class, which internally contains Netmaks, which in turn contain a ComboAddress.</para>
+      </sect2>
     </sect1>
   </chapter>
   <chapter id="replication"><title>Master/Slave operation &amp; replication</title>
@@ -6120,6 +7947,10 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	Slave operation can also be programmed using several pdns_control commands, see <xref linkend="pdnscontrol">. The 'retrieve' command
 	is especially useful as it triggers an immediate retrieval of the zone from the configured master.
       </para>
+      <para>
+	Since 2.9.21, PowerDNS supports multiple masters. For the BIND backend, the native BIND configuration language suffices to specify
+	multiple masters, for SQL based backends, list all master servers separated by commas in the 'master' field of the domains table.
+      </para>
       <sect2 id=supermaster><title>Supermaster automatic provisioning of slaves</title>
 	<para>
 	  PDNS can recognize so called 'supermasters'. A supermaster is a host which is master for domains and for which we are to be a slave. When
@@ -6144,7 +7975,6 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	if the zone changed, and transferring its contents if it has. Notifications are a way to promptly propagate zone changes to slaves, as 
 	described in RFC 1996.
       </para>
-      <para>
       <para>
 	<warning>
 	  <para>
@@ -6221,6 +8051,7 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	      support@yourdomain.com should go to.
 	    </para>
 	  </listitem>
+	</varlistentry>
 	<varlistentry>
 	  <term>URL</term>
 	  <listitem>
@@ -6307,6 +8138,10 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	    <listitem><para>
 		Default number of Distributor (backend) threads to start. See <xref linkend="performance">.
 	      </para></listitem></varlistentry>
+	  <varlistentry><term>do-ipv6-additional-processing=...</term>
+	    <listitem><para>
+		Perform AAAA additional processing. 
+	      </para></listitem></varlistentry>
 	  <varlistentry><term>fancy-records=...</term>
 	    <listitem><para>
 		Process URL and MBOXFW records. See <xref linkend="fancy-records">.
@@ -6336,6 +8171,10 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 		Local IP address to which we bind. You can specify multiple addresses separated by commas or whitespace. It is highly 
 	      advised to bind to specific interfaces and not use the default 'bind to any'. This causes big problems if you have multiple
 	      IP addresses. Unix does not provide a way of figuring out what IP address a packet was sent to when binding to any.
+	      </para></listitem></varlistentry>
+	  <varlistentry><term>local-ipv6=...</term>
+	    <listitem><para>
+		Local IPv6 address to which we bind. You can specify multiple addresses separated by commas or whitespace.
 	      </para></listitem></varlistentry>
 	  <varlistentry><term>local-port=...</term>
 	    <listitem><para>
@@ -6378,6 +8217,10 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	    <listitem><para>
 	      Do not attempt to read the configuration file.
 	      </para></listitem></varlistentry>
+	  <varlistentry><term>no-shuffle</term>
+	    <listitem><para>
+	      Do not attempt to shuffle query results.
+	      </para></listitem></varlistentry>
 	  <varlistentry><term>out-of-zone-additional-processing | --out-of-zone-additional-processing=yes | --out-of-zone-additional-processing=no</term>
 	    <listitem><para>
 	      Do out of zone additional processing. This means that if a malicious user adds a '.com' zone to your server, it is not used for 
@@ -6387,10 +8230,6 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	    <listitem><para>
 	      Seconds to store queries with an answer in the Query Cache. See <xref linkend="querycache">.
 	    </para></listitem></varlistentry>
-	<varlistentry><term>queue-limit=...</term>
-	    <listitem><para>
-		Maximum number of miliseconds to queue a query. See <xref linkend="performance">.
-	      </para></listitem></varlistentry>
 	  <varlistentry><term>query-local-address=...</term>
 	    <listitem><para>
 	      The IP address to use as a source address for sending queries. Useful if you have multiple IPs and pdns is not bound to the IP address your operating system uses by default for outgoing packets.
@@ -6398,6 +8237,10 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	  <varlistentry><term>query-logging | query-logging=yes | query-logging=no</term>
 	    <listitem><para>
 	      Hints to a backend that it should log a textual representation of queries it performs. Can be set at runtime.
+	      </para></listitem></varlistentry>
+	<varlistentry><term>queue-limit=...</term>
+	    <listitem><para>
+		Maximum number of miliseconds to queue a query. See <xref linkend="performance">.
 	      </para></listitem></varlistentry>
 	  <varlistentry><term>recursive-cache-ttl=...</term>
 	    <listitem><para>
@@ -6407,11 +8250,14 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	    <listitem><para>
 	      If set, recursive queries will be handed to the recursor specified here. See <xref linkend="recursion">.
 	    </para></listitem></varlistentry>
-	<varlistentry><term>send-root-referral | --send-root-referral=yes | --send-root-referral=no</term>
+	<varlistentry><term>send-root-referral | --send-root-referral=yes | --send-root-referral=no | --send-root-referral=lean</term>
 	    <listitem><para>
 	      If set, PowerDNS will send out old-fashioned root-referrals when queried for domains for which it is not authoritative. Wastes some bandwidth
 	      but may solve incoming query floods if domains are delegated to you for which you are not authoritative, but which are queried by broken
 	      recursors. Available since 2.9.19.
+	      </para>
+	    <para>
+	      Since 2.9.21, it is possible to specify 'lean' root referrals, which waste less bandwidth.
 	    </para></listitem></varlistentry>
 	<varlistentry><term>setgid=...</term>
 	    <listitem><para>
@@ -6504,13 +8350,15 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
     </para>
   </chapter>
   <chapter id="metrics"><title>Index of all internal metrics</title>
-    <para></para>
-      <sect1 id="counters-variables"><title>Counters &amp; variables</title>
+    <sect1 id="counters-variables"><title>Counters &amp; variables</title>
       <para>
       A number of counters and variables are set during PDNS operation. These can be queried with the init.d
       <command>dump</command>, <command>show</command> and <command>mrtg</command> commands, or viewed with the
       webserver.
-      
+      </para>
+      <sect2 id="counters">
+	<title>Counters</title>
+      <para>
       <variablelist>
 	<varlistentry>
 	  <term>corrupt-packets</term>
@@ -6566,8 +8414,9 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	</varlistentry>
       </variablelist>
     </para>
-    <para>
-      <sect2><title>Ring buffers</title>
+    </sect2>
+    <sect2>
+      <title>Ring buffers</title>
 	<para>
 	  Besides counters, PDNS also maintains the ringbuffers. A ringbuffer records events, each new event gets a place
 	  in the buffer until it is full. When full, earlier entries get overwritten, hence the name 'ring'.
@@ -6645,6 +8494,8 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
       </varlistentry>
     </variablelist>
   </para>
+  </sect2>
+  </sect1>
   </chapter>
 
   <chapter id="types"><title>Supported record types and their storage</title>
@@ -7100,6 +8951,7 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	  </varlistentry>
 	</variablelist>
       </para>
+    </sect1>
     <sect1 id="pdns-devel-faq"><title>Backend developer HOWTO</title>
       <para>
 	Writing backends without access to the full PDNS source means that you need to write code that can be loaded by PDNS at runtime. 
@@ -7197,15 +9049,6 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	  </listitem>
 	</varlistentry>
 	<varlistentry>
-	  <term>Q: What I want can't be done from a backend - I need the whole PDNS source</term>
-	  <listitem>
-	    <para>
-	      A: If you require the source, please contact us (pdns@powerdns.com). All commercial licensees receive the source, 
-	      for others we may grant exceptions.
-	    </para>
-	  </listitem>
-	</varlistentry>
-	<varlistentry>
 	  <term>Q: What is this 'AhuException' I keep reading about?</term>
 	  <listitem>
 	    <para>
@@ -7268,6 +9111,7 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 		to far higher adoption rates. We hope that PowerDNS will soon be included in major Linux and UNIX distributions.
 	      </para>
 	    </listitem>
+	  </varlistentry>
 	  <varlistentry>
 	    <term>Q: How does PowerDNS.COM BV expect to make money now that the nameserver is free?</term>
 	    <listitem>
@@ -7286,6 +9130,7 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	      <para>
 		In fact, their strategy is a lot like ours in general.
 	      </para>
+	    </listitem>
 	  </varlistentry>
 	  <varlistentry>
 	    <term>Q: Can I buy support contracts for PowerDNS?</term>
@@ -7293,6 +9138,7 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	      <para>
 		Sure, to do so, please contact us at <email>sales@powerdns.com</email>
 	      </para>
+	    </listitem>
 	  </varlistentry>
 	  <varlistentry>
 	    <term>Q: Will you accept patches? We've added a feature</term>
@@ -7325,7 +9171,7 @@ Feb 10 14:16:03 stats: 125784 questions, 13971 cache entries, 309 negative entri
 	  </varlistentry>
 
 	  <varlistentry>
-	    <term>Q: We are a Linux/Unix vendor, can we include PowerDNS?
+	    <term>Q: We are a Linux/Unix vendor, can we include PowerDNS?</term>
 	    <listitem>
 	      <para>
 	      A: Please do. In fact, we'd be very happy to work with you to make this happen. Contact <email>ahu@ds9a.nl</email> 
@@ -7689,7 +9535,7 @@ while(&lt;&gt;)
       <para>
 	<warning>
 	  <para>
-	    This backend is deprecated! Use the Generic MySQL backend which is better in <emphasis>all</emphasis> respects.
+	    This backend is deprecated! Use the Generic MySQL backend which is better in <command>all</command> respects.
 	    It does support master/slave operation, this backend does not. See <xref linkend="generic-mypgsql-backends">.
 	  </para>
 	  <para>
@@ -8071,7 +9917,7 @@ CREATE TABLE Zones (
 	<para>
 	  <warning>
 	    <para>
-	      If using MySQL with 'slave' support enabled in PowerDNS you <emphasis>must</emphasis> run MySQL with a table engine that supports transactions.
+	      If using MySQL with 'slave' support enabled in PowerDNS you <command>must</command> run MySQL with a table engine that supports transactions.
 	    </para>
 	  </warning>
 	</para>
@@ -8085,7 +9931,7 @@ CREATE TABLE Zones (
 create table domains (
  id		 INT auto_increment,
  name		 VARCHAR(255) NOT NULL,
- master		 VARCHAR(20) DEFAULT NULL,
+ master		 VARCHAR(128) DEFAULT NULL,
  last_check	 INT DEFAULT NULL,
  type		 VARCHAR(6) NOT NULL,
  notified_serial INT DEFAULT NULL, 
@@ -8123,11 +9969,21 @@ GRANT ALL ON records TO pdns;
 	  </programlisting>
 	</para>
 	<para>
+	  Zone2sql with the --gmysql flag also assumes this layout is in place.
+	</para>
+	<para>
 	  This schema contains all elements needed for master, slave and superslave operation. Depending on which features will be used, the 'GRANT' statements
 	  can be trimmed to make sure PDNS cannot subvert the contents of your database.
 	</para>
 	<para>
-	  Zone2sql with the --gmysql flag also assumes this layout is in place.
+	  When using the InnoDB storage engine, we suggest adding the following lines to the 'create table records' command above:
+<programlisting>
+CONSTRAINT `records_ibfk_1` FOREIGN KEY (`domain_id`) REFERENCES `domains`
+(`id`) ON DELETE CASCADE
+</programlisting>
+	</para>
+	<para>
+	  This automates deletion of records on deletion of a domain from the domains table.
 	</para>
       </sect2>
       <sect2><title>PostgresSQL specifics</title>
@@ -8137,7 +9993,7 @@ GRANT ALL ON records TO pdns;
 create table domains (
  id		 SERIAL PRIMARY KEY,
  name		 VARCHAR(255) NOT NULL,
- master		 VARCHAR(20) DEFAULT NULL,
+ master		 VARCHAR(128) DEFAULT NULL,
  last_check	 INT DEFAULT NULL,
  type		 VARCHAR(6) NOT NULL,
  notified_serial INT DEFAULT NULL, 
@@ -8197,7 +10053,7 @@ GRANT ALL ON records_id_seq TO pdns;
 create table domains (
  id		 NUMBER,
  name		 VARCHAR(255) NOT NULL,
- master		 VARCHAR(20) DEFAULT NULL,
+ master		 VARCHAR(128) DEFAULT NULL,
  last_check	 INT DEFAULT NULL,
  type		 VARCHAR(6) NOT NULL,
  notified_serial INT DEFAULT NULL, 
@@ -8482,6 +10338,8 @@ insert into domains (id,name,type) values (domains_id_sequence.nextval,'netherla
 	      </listitem>
 	    </varlistentry>
 	  </variablelist>
+	</para>
+      </sect2>
       <sect2><title>Fancy records</title>
 	<para>
 	  If PDNS is used with so called 'Fancy Records', the 'MBOXFW' record exists which specifies an email address forwarding instruction, 
@@ -8649,6 +10507,7 @@ insert into domains (id,name,type) values (domains_id_sequence.nextval,'netherla
 	  </programlisting>
 	  Make sure that the assigned id in the domains table matches the domain_id field in the records table!
 	</para>
+      </sect2>
     </sect1>
     
     <sect1 id="oracle"><Title>Oracle backend</title>
@@ -8808,7 +10667,7 @@ insert into domains (id,name,type) values (domains_id_sequence.nextval,'netherla
 create table Domains (
  ID		 number(11) NOT NULL,
  NAME		 VARCHAR(255) NOT NULL,
- MASTER		 VARCHAR(20) DEFAULT NULL,
+ MASTER		 VARCHAR(128) DEFAULT NULL,
  LAST_CHECK	 INT DEFAULT NULL,
  TYPE		 VARCHAR(6) NOT NULL,
  NOTIFIED_SERIAL INT DEFAULT NULL,
@@ -8858,7 +10717,7 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
     </sect1>
 
     <sect1 id="gsqlite">
-      <title>Generic SQLite backend</title>
+      <title>Generic SQLite backend (2 and 3)</title>
       <para>
       	<table>
 	        <title>Generic SQLite backend capabilities</title>
@@ -8882,6 +10741,10 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
       <para>
         As this is a generic backend, built on top of the gSql framework, you can specify all queries as documented in <link linkend="generic-mypgsql-backends">Generic MySQL and PgSQL backends</link>.
       </para>
+      <para>
+	SQLite exists in two incompatible versions, numbered 2 and 3, and from 2.9.21 onwards, PowerDNS supports both. It is recommended to go with version 3 
+	as it is newer, has better performance and is actively maintained.
+      </para>
       <sect2>
         <title>Compiling the SQLite backend</title>
         <para>
@@ -8889,8 +10752,9 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
           You can download these from <ulink url="http://www.sqlite.org/download.html">http://www.sqlite.org/download.html</ulink>, or you can use packages (if your distribution provides those).
         </para>
         <para>
-          When you've installed the library you can use: <command>./configure --with-modules="gsqlite"</command> to configure PowerDNS to use the SQLite backend.
-          Compilation can then proceed as usual.
+          When you've installed the library you can use: <command>./configure --with-modules="gsqlite"</command> or
+	  <command>./configure --with-modules="gsqlite3"</command> to configure PowerDNS to use the SQLite backend.
+          Compilation can then proceed as usual. 
         </para>
 	<para>
 	  SQLite is included in most PowerDNS binary releases.
@@ -8904,11 +10768,11 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
 	        
 	        <programlisting>
             create table domains (
-              id		INTEGER PRIMARY KEY,
-              name		VARCHAR(255) NOT NULL,
-              master		VARCHAR(20) DEFAULT NULL,
-              last_check	INTEGER DEFAULT NULL,
-              type		VARCHAR(6) NOT NULL,
+              id                INTEGER PRIMARY KEY,
+              name              VARCHAR(255) NOT NULL,
+              master            VARCHAR(128) DEFAULT NULL,
+              last_check        INTEGER DEFAULT NULL,
+              type              VARCHAR(6) NOT NULL,
               notified_serial   INTEGER DEFAULT NULL, 
               account           VARCHAR(40) DEFAULT NULL
             );
@@ -8943,8 +10807,11 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
       	<para>
 	        After you have created the database you probably want to fill it with data. 
 	        If you have a BIND zonefile it's as easy as: <command>zone2sql --zone=myzonefile --gmysql | sqlite powerdns.sqlite</command>, but
-	        you can also use AXFR (or insert data manually if you have too much time ;)).
+	        you can also use AXFR (or insert data manually).
 	      </para>
+	<para>
+	  To communicate with a SQLite database, use either the 'sqlite' or 'sqlite3' program, and feed it SQL.
+	</para>
       </sect2>
       <sect2>
         <title>Using the SQLite backend</title>
@@ -8954,8 +10821,8 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
         <para>
           <programlisting>
             # in pdns.conf
-            launch=gsqlite
-            gsqlite-database=&lt;path to your SQLite database&gt;
+            launch=gsqlite # or gsqlite3
+            gsqlite-database=&lt;path to your SQLite database&gt;   # or gsqlite3-database
           </programlisting>
         </para>
         <para>
@@ -9072,13 +10939,6 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
 	</table>
       </para>
       <para>
-	<note>
-	  <para>
-	    There is also the Bind2backend which works exactly like this backend but is far more experimental. In the future it supplant the bindbackend.
-	  </para>
-	</note>
-      </para>
-      <para>
 	The BindBackend started life as a demonstration of the versatility of PDNS but quickly gained in importance when there appeared to be demand
 	for a Bind 'workalike'.
       </para>
@@ -9101,7 +10961,7 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
 	    <listitem>
 	      <para>
 		Loads the 'example.com' zone which can be queried to determine if PowerDNS is functioning without configuring 
-		database backends.
+		database backends. This feature is no longer supported from 2.9.21 onwards.
 	      </para>
 	    </listitem>
 	  </varlistentry>
@@ -9148,6 +11008,7 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
           If <command>bind-check-interval</command> is specified as zero, no checks will be performed until the <command>pdns_control reload</command>
 	  is given.
         </para>
+      </sect2>
       <sect2 id="bind-control-commands"><title>Pdns_control commands</title>
 	<para>
 	  <variablelist>
@@ -9206,6 +11067,7 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
 	    In the future, this may be improved so the old zone remains available should parsing fail.
 	  </para>
 	</sect3>
+      </sect2>
       <sect2><title>Commands</title>
 	<para>
 	  <command>pdns_control</command> offers commands to communicate instructions to PowerDNS. These are detailed here.
@@ -9344,6 +11206,7 @@ insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RE
 	    may be outdated!
 	  </para>
 	</warning>
+      </para>
       <para>
 	The main author for this module is Norbert Sendetzky who also has his own <ulink url="http://www.linuxnetworks.de/pdnsldap/index.html">PowerDNS-LDAP page</ulink>.
       </para>
@@ -9731,6 +11594,7 @@ associateddomain: ns.example.dom
 	PDNS breaks strict RFC compatability by not always checking for the presence of a SOA record first. This is unlikely to lead to 
 	problems though.
       </para>
+  </sect1>
   </appendix>
   <appendix id="backend-writers-guide"><title>Backend writers' guide</title>
     <para>
@@ -9745,6 +11609,13 @@ associateddomain: ns.example.dom
       <warning><para>
       However, please note that your backend can get queries in aNy CAsE! If your database is case sensitive, like most are (with the notable
       exception of MySQL), you must make sure that you do find answers which differ only in case.
+	</para></warning>
+    </para>
+    <para> 
+      <warning><para>
+	  PowerDNS may instantiate multiple instances of your backend, or destroy existing copies and instantiate new ones. Backend code
+	  should therefore be thread-safe with respect to its static data. Additionally, it is wise if instantiation is a fast operation, 
+	  with the possible exception of the first construction.
 	</para></warning>
     </para>
     <sect1 id="simple-backends"><title>Simple read-only native backends</title>
@@ -9882,7 +11753,7 @@ public:
 class RandomLoader
 {
 public:
-  Loader()
+  RandomLoader()
   {
     BackendMakers().report(new RandomFactory);
     
@@ -9910,8 +11781,7 @@ static RandomLoader randomloader;
 	  that by setting <command>random-hostname</command>.
 	</para>
 	<para>
-	  NOTE: this simple backend neglects to handle case properly! For a more complete example, see the full pdns-dev distribution as found on
-	  <ulink url="http://www.powerdns.com/pdns">the website</ulink>.
+	  NOTE: this simple backend neglects to handle case properly!
 	</para>
     </sect2>
     <sect2><title>Interface definition</title>
@@ -10022,7 +11892,7 @@ static RandomLoader randomloader;
 	    </varlistentry>
 	  
 	  <varlistentry>
-	    <term>bool list(int domain_id)
+	    <term>bool list(int domain_id)</term>
 	    <listitem>
 	      <para>
 		Initiates a list of the indicated domain. Records should then be made available via the <function>get()</function> method. 
@@ -10397,6 +12267,7 @@ static RandomLoader randomloader;
         </para>
         <para>
           Supermaster/superslave is a complicated concept, if this is all unclear see <xref linkend="supermaster">.
+	</para>
       </sect2>
     </sect1>
     <sect1 id="master-backends"><title>Read/write master-capable backends</title>
@@ -10495,6 +12366,7 @@ static RandomLoader randomloader;
 	<para>
 	  The FreeBSD Boost include files are installed in <filename>/usr/local/include</filename>, so prefix <command>CXXFLAGS=-I/usr/local/lib</command>
 	  to your <command>./configure</command> invocation.
+	</para>
       </sect2>
       <sect2 id="unix-linux"><title>Linux</title>
 	<para>
@@ -10528,6 +12400,7 @@ static RandomLoader randomloader;
     <sect1 id="on-windows"><title>Compiling PowerDNS on Windows</title>
       <para>
 	By Michel Stol (<email>michel@powerdns.com</email>).
+      </para>
       <sect2><title>Assumptions</title>
         <para>
 	  I will assume these things from you:      
@@ -10638,7 +12511,7 @@ static RandomLoader randomloader;
 	  </para>          
 	</sect4>
 	
-	<sect3>
+	<sect4>
 	  <title>Installing pthreads for Windows</title>
 	  
 	  <para>
@@ -10656,7 +12529,8 @@ static RandomLoader randomloader;
 	    The library is now installed, we still have to tell Visual C++ where it's located though, more
 	    on that later.
 	  </para>        
-	</sect3>
+	</sect4>
+      </sect3>
 	
       </sect2>
       
@@ -10817,11 +12691,11 @@ static RandomLoader randomloader;
 	  <para>
 	    First add the include directory, to do this you have to select <guilabel>Include files</guilabel>
 	    from the <guilabel>Show directories for:</guilabel> combobox. Then press the <guibutton>New</guibutton>
-	    button and browse to the <emphasis>include</emphasis> directory of pthreads (ie. <filename>C:\pthreads\include</filename>).
+	    button and browse to the <command>include</command> directory of pthreads (ie. <filename>C:\pthreads\include</filename>).
 	  </para>
 	  
 	  <para>
-	    Then switch to <guilabel>Library files</guilabel> and add the <emphasis>library</emphasis> directory
+	    Then switch to <guilabel>Library files</guilabel> and add the <command>library</command> directory
 	    (ie. <filename>C:\pthreads\lib</filename>) using the same method as above.
 	  </para>        
 	</sect4>
@@ -11006,6 +12880,7 @@ static RandomLoader randomloader;
       
       </sect2>
     </sect1>
+  </appendix>
   <appendix id="license"><title>PowerDNS license (GNU General Public License version 2)</title>
     <para>
       GNU GENERAL PUBLIC LICENSE

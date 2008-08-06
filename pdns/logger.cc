@@ -13,10 +13,15 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "logger.hh"
+#include "config.h"
+
+#ifndef RECURSOR
 #include "statbag.hh"
+extern StatBag S;
+#endif
 
 using namespace std;
 
@@ -42,8 +47,9 @@ void Logger::log(const string &msg, Urgency u)
     clog <<msg <<endl;
   }
   if( u <= d_loglevel ) {
-    extern StatBag S;
+#ifndef RECURSOR
     S.ringAccount("logmessages",msg);
+#endif
     syslog(u,"%s",msg.c_str());
   }
 }
@@ -138,6 +144,17 @@ Logger& Logger::operator<<(unsigned long i)
 
   return *this;
 }
+
+Logger& Logger::operator<<(unsigned long long i)
+{
+  ostringstream tmp;
+  tmp<<i;
+
+  *this<<tmp.str();
+
+  return *this;
+}
+
 
 Logger& Logger::operator<<(long i)
 {

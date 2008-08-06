@@ -3,9 +3,9 @@
     Copyright (C) 2002 - 2005 PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2
+    as published by the Free Software Foundation
+    
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #ifndef PDNS_LWRES_HH
@@ -22,11 +22,9 @@
 #include <string>
 #include <vector>
 #include <sys/types.h>
-
+#include "misc.hh"
+#include "iputils.hh"
 #ifndef WIN32
-
-# include <arpa/nameser.h>
-# include <resolv.h>
 # include <netdb.h> 
 # include <unistd.h>
 # include <sys/time.h>
@@ -42,8 +40,10 @@
 #include "dns.hh"
 using namespace std;
 
-int asendto(const char *data, int len, int flags, struct sockaddr *toaddr, int addrlen, int id);
-int arecvfrom(char *data, int len, int flags, struct sockaddr *toaddr, Utility::socklen_t *addrlen, int *d_len, int id);
+int asendto(const char *data, int len, int flags, const ComboAddress& ip, uint16_t id, 
+	    const string& domain, uint16_t qtype,  int* fd);
+int arecvfrom(char *data, int len, int flags, const ComboAddress& ip, int *d_len, uint16_t id, 
+	      const string& domain, uint16_t, int fd, unsigned int now);
 
 class LWResException : public AhuException
 {
@@ -61,7 +61,7 @@ public:
 
   typedef vector<DNSResourceRecord> res_t;
 
-  int asyncresolve(const string &ip, const char *domain, int type, bool doTCP);
+  int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool doTCP, struct timeval* now);
   vector<DNSResourceRecord> result();
   int d_rcode;
   bool d_aabit, d_tcbit;
@@ -75,7 +75,7 @@ private:
   string d_domain;
   int d_type;
   int d_timeout;
-  uint32_t d_ip;
+  ComboAddress d_ip;
   bool d_inaxfr;
   int d_bufsize;
 };

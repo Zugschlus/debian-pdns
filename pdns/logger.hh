@@ -13,7 +13,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #ifndef LOGGER_HH
 #define LOGGER_HH
@@ -24,15 +24,16 @@
 #include <ctime>
 #include <iostream>
 #include <sstream>
-#include <pthread.h>
 
 #ifndef WIN32
 # include <syslog.h>
+#include <pthread.h>
 
 #else
 # define WINDOWS_LEAN_AND_MEAN
 # include <windows.h>
-
+typedef int pthread_mutex_t;
+typedef int pthread_t;
 #endif // WIN32
 
 using namespace std;
@@ -112,6 +113,7 @@ public:
   Logger& operator<<(unsigned int);   //!< log an unsigned int
   Logger& operator<<(long);   //!< log an unsigned int
   Logger& operator<<(unsigned long);   //!< log an unsigned int
+  Logger& operator<<(unsigned long long);   //!< log an unsigned 64 bit int
   Logger& operator<<(Urgency);    //!< set the urgency, << style
 
 #ifndef WIN32

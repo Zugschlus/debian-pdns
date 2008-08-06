@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002-2005  PowerDNS.COM BV
+    Copyright (C) 2002-2007  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -13,7 +13,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include <string>
 #include <map>
@@ -21,13 +21,17 @@
 #include <pthread.h>
 #include <time.h>
 #include <fstream>
+#include <boost/utility.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/tuple/tuple_comparison.hpp>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include "misc.hh"
 
 using namespace std;
 using namespace boost;
-
 
 /** This struct is used within the Bind2Backend to store DNS information. 
     It is almost identical to a DNSResourceRecord, but then a bit smaller and with different sorting rules, which make sure that the SOA record comes up front.
@@ -56,7 +60,6 @@ struct Bind2DNSRecord
 class BB2DomainInfo
 {
 public:
-
   BB2DomainInfo();
 
   void setCtime();
@@ -70,34 +73,29 @@ public:
   string d_name;   //!< actual name of the domain
   string d_filename; //!< full absolute filename of the zone on disk
   unsigned int d_id;  //!< internal id of the domain
-  time_t d_last_check; //!< last time domain was checked for freshness
-  string d_master;     //!< IP address of the master of this domain
+  time_t d_lastcheck; //!< last time domain was checked for freshness
+  vector<string> d_masters;     //!< IP address of the master of this domain
 
   uint32_t d_lastnotified; //!< Last serial number we notified our slaves of
-
-
 
   //! configure how often this domain should be checked for changes (on disk)
   void setCheckInterval(time_t seconds);
 
   shared_ptr<vector<Bind2DNSRecord> > d_records;  //!< the actual records belonging to this domain
-
 private:
   time_t getCtime();
   time_t d_checkinterval;
-  time_t d_lastcheck;
 };
-
 
 class Bind2Backend : public DNSBackend
 {
 public:
   Bind2Backend(const string &suffix=""); //!< Makes our connection to the database. Calls exit(1) if it fails.
+  ~Bind2Backend();
   void getUnfreshSlaveInfos(vector<DomainInfo> *unfreshDomains);
   void getUpdatedMasters(vector<DomainInfo> *changedDomains);
   bool getDomainInfo(const string &domain, DomainInfo &di);
   time_t getCtime(const string &fname);
-  
 
   void lookup(const QType &, const string &qdomain, DNSPacket *p=0, int zoneId=-1);
   bool list(const string &target, int id);
@@ -113,7 +111,17 @@ public:
   bool feedRecord(const DNSResourceRecord &r);
   bool commitTransaction();
   bool abortTransaction();
-  void insert(int id, const string &qname, const string &qtype, const string &content, int ttl, int prio);  
+
+  typedef map<string, int, CIStringCompare> name_id_map_t;
+  typedef map<uint32_t, BB2DomainInfo> id_zone_map_t;
+
+  struct State : public boost::noncopyable
+  {
+    name_id_map_t name_id_map;  //!< convert a name to a domain id
+    id_zone_map_t id_zone_map;
+  };
+
+  static void insert(shared_ptr<State> stage, int id, const string &qname, const QType &qtype, const string &content, int ttl, int prio);  
   void rediscover(string *status=0);
 
   bool isMaster(const string &name, const string &ip);
@@ -129,15 +137,12 @@ private:
     bool get(DNSResourceRecord &);
     void reset()
     {
-      parent=0;
       d_records.reset();
       qname.clear();
-
+      mustlog=false;
     }
 
     handle();
-
-    Bind2Backend *parent;
 
     shared_ptr<vector<Bind2DNSRecord> > d_records;
     vector<Bind2DNSRecord>::const_iterator d_iter, d_end_iter;
@@ -151,9 +156,9 @@ private:
     string qname;
     string domain;
     QType qtype;
+    bool mustlog;
+
   private:
-    int count;
-    
     bool get_normal(DNSResourceRecord &);
     bool get_list(DNSResourceRecord &);
 
@@ -161,18 +166,13 @@ private:
     handle(const handle &);
   };
 
-  typedef map<string,int> name_id_map_t;
-  static name_id_map_t s_name_id_map;  //!< convert a name to a domain id
 
-  typedef map<uint32_t, BB2DomainInfo> id_zone_map_t;
-  static id_zone_map_t s_id_zone_map, s_staging_zone_map; //!< convert a domain id to a pointer to a BB2DomainInfo
+  static shared_ptr<State> s_state;
+  static pthread_mutex_t s_state_lock;               //!< lock protecting ???
 
   static int s_first;                                  //!< this is raised on construction to prevent multiple instances of us being generated
 
-  static pthread_mutex_t s_zonemap_lock;               //!< lock protecting ???
-
-  string d_binddirectory;                              //!< this is used to store the 'directory' setting of the bind configuration
-
+  static string s_binddirectory;                              //!< this is used to store the 'directory' setting of the bind configuration
   string d_logprefix;
 
   int d_transaction_id;
@@ -181,7 +181,7 @@ private:
   ofstream *d_of;
   handle d_handle;
 
-  void queueReload(BB2DomainInfo *bbd);
+  static void queueReload(BB2DomainInfo *bbd);
 
   void reload();
   static string DLDomStatusHandler(const vector<string>&parts, Utility::pid_t ppid);
@@ -189,5 +189,5 @@ private:
   static string DLReloadNowHandler(const vector<string>&parts, Utility::pid_t ppid);
 
   void loadConfig(string *status=0);
-  void nukeZoneRecords(BB2DomainInfo *bbd);
+  static void nukeZoneRecords(BB2DomainInfo *bbd);
 };

@@ -1,9 +1,9 @@
 Buildroot: /tmp/pdns
 Name: pdns-static
-Version: 2.9.20
+Version: 2.9.21
 Release: 1
 Summary: extremely powerful and versatile nameserver
-Copyright: see /usr/doc/pdns/copyright
+License: GPL
 Distribution: Neutral
 Vendor: PowerDNS.COM BV
 Group: System/DNS
@@ -24,9 +24,13 @@ backend'.
 %files
 %defattr(-,root,root)
 "/usr/sbin/pdns_server"
-"/usr/sbin/pdns_recursor"
 "/usr/bin/pdns_control"
 "/usr/bin/zone2sql"
+#"/usr/bin/zone2ldap"
+"/usr/man/man8/pdns_control.8"
+"/usr/man/man8/pdns_server.8"
+"/usr/man/man8/zone2sql.8"
+
 %dir "/etc/powerdns/"
 %config(noreplace) "/etc/powerdns/pdns.conf"
 %config "/etc/init.d/pdns"

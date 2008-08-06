@@ -3,9 +3,9 @@
     Copyright (C) 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2
+    as published by the Free Software Foundation
+    
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -14,7 +14,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 #include "common_startup.hh"
 
@@ -184,7 +184,7 @@ void sendout(const DNSDistributor::AnswerData &AD)
   N->send(AD.A);
   numanswered++;
 
-  if(AD.A->d_socklen==sizeof(sockaddr_in))
+  if(AD.A->remote.getSocklen()==sizeof(sockaddr_in))
     numanswered4++;
   else
     numanswered6++;
@@ -229,7 +229,7 @@ void *qthread(void *p)
       continue;                    // packet was broken, try again
     }
 
-    if(P->d_socklen==sizeof(sockaddr_in))
+    if(P->remote.getSocklen()==sizeof(sockaddr_in))
       numreceived4++;
     else
       numreceived6++;
@@ -237,8 +237,8 @@ void *qthread(void *p)
     S.ringAccount("queries", P->qdomain+"/"+P->qtype.getName());
     S.ringAccount("remotes",P->getRemote());
 
-    if(PC.get(P,&cached)) { // short circuit - does the PacketCache recognize this question?
-      cached.setRemote((struct sockaddr *)(P->remote),P->d_socklen);  // inlined
+    if((P->d.opcode != Opcode::Notify) && PC.get(P,&cached)) { // short circuit - does the PacketCache recognize this question?
+      cached.setRemote(&P->remote);  // inlined
       cached.setSocket(P->getSocket());                               // inlined
       cached.spoofID(P->d.id);                                        // inlined 
       cached.d.rd=P->d.rd; // copy in recursion desired bit 
@@ -249,7 +249,7 @@ void *qthread(void *p)
       avg_latency=(int)(0.999*avg_latency+0.001*diff); // 'EWMA'
       
       numanswered++;
-      if(P->d_socklen==sizeof(sockaddr_in))
+      if(P->remote.sin4.sin_family==AF_INET)
 	numanswered4++;
       else
 	numanswered6++;
@@ -278,7 +278,7 @@ void mainthread()
    if(!arg()["chroot"].empty()) {  
      if(arg().mustDo("master") || arg().mustDo("slave"))
 	gethostbyname("a.root-servers.net"); // this forces all lookup libraries to be loaded
-     if(chroot(arg()["chroot"].c_str())<0) {
+     if(chroot(arg()["chroot"].c_str())<0 || chdir("/")<0) {
        L<<Logger::Error<<"Unable to chroot to '"+arg()["chroot"]+"': "<<strerror(errno)<<", exiting"<<endl; 
        exit(1);
      }   

@@ -13,7 +13,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "utility.hh"
@@ -83,21 +83,21 @@ void Utility::dropPrivs( int uid, int gid )
 {
   if(gid) {
     if(setgid(gid)<0) {
-      theL()<<Logger::Error<<"Unable to set effective group id to "<<gid<<": "<<stringerror()<<endl;
+      theL()<<Logger::Critical<<"Unable to set effective group id to "<<gid<<": "<<stringerror()<<endl;
       exit(1);
     }
     else
-      theL()<<Logger::Error<<"Set effective group id to "<<gid<<endl;
+      theL()<<Logger::Info<<"Set effective group id to "<<gid<<endl;
 
   }
 
   if(uid) {
     if(setuid(uid)<0) {
-      theL()<<Logger::Error<<"Unable to set effective user id to "<<uid<<":  "<<stringerror()<<endl;
+      theL()<<Logger::Critical<<"Unable to set effective user id to "<<uid<<":  "<<stringerror()<<endl;
       exit(1);
     }
     else
-      theL()<<Logger::Error<<"Set effective user id to "<<uid<<endl;
+      theL()<<Logger::Info<<"Set effective user id to "<<uid<<endl;
   }
 }
 
@@ -137,7 +137,7 @@ int Utility::makeGidNumeric(const string &group)
   if(!(newgid=atoi(group.c_str()))) {
     struct group *gr=getgrnam(group.c_str());
     if(!gr) {
-      theL()<<Logger::Error<<"Unable to look up gid of group '"<<group<<"': "<<strerror(errno)<<endl;
+      theL()<<Logger::Critical<<"Unable to look up gid of group '"<<group<<"': "<<strerror(errno)<<endl;
       exit(1);
     }
     newgid=gr->gr_gid;
@@ -153,7 +153,7 @@ int Utility::makeUidNumeric(const string &username)
   if(!(newuid=atoi(username.c_str()))) {
     struct passwd *pw=getpwnam(username.c_str());
     if(!pw) {
-      theL()<<Logger::Error<<"Unable to look up uid of user '"<<username<<"': "<<strerror(errno)<<endl;
+      theL()<<Logger::Critical<<"Unable to look up uid of user '"<<username<<"': "<<strerror(errno)<<endl;
       exit(1);
     }
     newuid=pw->pw_uid;

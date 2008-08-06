@@ -14,7 +14,6 @@ otherwise, obfuscate the response IP address
 
 #include "statbag.hh"
 #include "dnspcap.hh"
-#include <arpa/nameser.h>
 
 using namespace boost;
 using namespace std;
@@ -47,29 +46,30 @@ private:
 int main(int argc, char** argv)
 try
 {
+  if(argc!=3) {
+    cerr<<"Syntax: dnswasher infile outfile\n";
+    exit(1);
+  }
   PcapPacketReader pr(argv[1]);
   PcapPacketWriter pw(argv[2], pr);
   IPObfuscator ipo;
 
   while(pr.getUDPPacket()) {
-    if(ntohs(pr.d_udp->uh_dport)==53 || ntohs(pr.d_udp->uh_sport)==53 && pr.d_len > sizeof(HEADER)) {
-      HEADER* dh=(HEADER*)pr.d_payload;
+    if(ntohs(pr.d_udp->uh_dport)==53 || ntohs(pr.d_udp->uh_sport)==53 && pr.d_len > sizeof(dnsheader)) {
+      dnsheader* dh=(dnsheader*)pr.d_payload;
 
-      if(dh->rd) {
-        uint32_t *src=(uint32_t*)&pr.d_ip->ip_src;
-        uint32_t *dst=(uint32_t*)&pr.d_ip->ip_dst;
-
-        if(dh->qr)
-          *dst=htonl(ipo.obf(*dst));
-        else
-          *src=htonl(ipo.obf(*src));
-
-        pr.d_ip->ip_sum=0;
-	
-	pw.write();
-      }
+      uint32_t *src=(uint32_t*)&pr.d_ip->ip_src;
+      uint32_t *dst=(uint32_t*)&pr.d_ip->ip_dst;
+      
+      if(dh->qr)
+	*dst=htonl(ipo.obf(*dst));
+      else
+	*src=htonl(ipo.obf(*src));
+      
+      pr.d_ip->ip_sum=0;
+      
+      pw.write();
     }
-    
   }
   cerr<<"Saw "<<pr.d_correctpackets<<" correct packets, "<<pr.d_runts<<" runts, "<< pr.d_oversized<<" oversize, "<<
     pr.d_nonetheripudp<<" unknown encaps"<<endl;

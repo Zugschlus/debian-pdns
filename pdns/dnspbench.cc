@@ -1,49 +1,75 @@
+#include "logger.hh"
+Logger L("dnspbench");
+
 #include "dnsparser.hh"
 #include "sstuff.hh"
 #include "misc.hh"
 #include "dnswriter.hh"
 #include "dnsrecords.hh"
-#include "logger.hh"
+
 #include "statbag.hh"
+#include <stdint.h>
 #include <set>
-#define BOOST_NO_MT
 
-#include <boost/pool/pool.hpp>
-#include <boost/pool/object_pool.hpp>
-
-#include <boost/pool/pool_alloc.hpp>
 using namespace boost;
 
-Logger L("dnspbench");
+
 StatBag S;
+
+#include <bits/atomicity.h>
+// This code is ugly but does speedup the recursor tremendously on multi-processor systems, and even has a large effect (20, 30%) on uniprocessor 
+namespace __gnu_cxx
+{
+  _Atomic_word
+  __attribute__ ((__unused__))
+  __exchange_and_add(volatile _Atomic_word* __mem, int __val)
+  {
+    register _Atomic_word __result=*__mem;
+    *__mem+=__val;
+    return __result;
+  }
+
+  void
+  __attribute__ ((__unused__))
+  __atomic_add(volatile _Atomic_word* __mem, int __val)
+  {
+    *__mem+=__val;
+  }
+}
+
+int xcount;
 
 int main(int argc, char** argv)
 try
 {
-  set<int, std::less<int>, boost::pool_allocator<int> > blah;
-
-  for(unsigned int n=0;n< 1000000;++n)
-    blah.insert(random());
-  cerr<<"Done inserting"<<endl;
-  string line;
-  getline(cin, line);
-  cerr<<"Done!"<<endl;
-
-  exit(0);
-
-  dnsheader dnsheader;
-  dnsheader.qdcount=htons(1);
-  dnsheader.ancount=htons(1);
-  Socket s(InterNetwork, Datagram);
-  string spacket;
-  char* p=(char*)&dnsheader;
-  spacket.assign(p, p+sizeof(dnsheader));
-  IPEndpoint rem("127.0.0.1",5300);
-  s.sendTo(spacket, rem);
-  
-  return 0;
-
   reportAllTypes();
+
+  Socket s(InterNetwork, Datagram);
+  
+  IPEndpoint rem("10.0.1.6", atoi(argv[1])), loc("213.156.2.1", 53);
+  //  s.bind(loc);
+
+  vector<uint8_t> vpacket;
+  string domain="ds9a.nl";
+  uint16_t type=1;
+
+  for(unsigned int n=0; n < 65536; ++n) {
+    DNSPacketWriter pw(vpacket, domain, type);
+    
+    pw.getHeader()->rd=1;
+    pw.getHeader()->qr=0;
+    pw.getHeader()->id=n;
+    //    ARecordContent arc("1.2.3.4");
+    //    pw.startRecord("ds9a.nl", 1, 9999, 1, DNSPacketWriter::ANSWER);
+    //    arc.toPacket(pw);
+    //    pw.commit();
+
+    string spacket((char*)(&*vpacket.begin()), vpacket.size());
+    s.sendTo(spacket, rem);
+  }
+
+  return 0; 
+#if 0
 
   vector<uint8_t> packet;
 
@@ -61,6 +87,7 @@ try
 
   shared_ptr<DNSRecordContent> regen=DNSRecordContent::unserialize(argv[1], type, record);
   cerr<<"Out: "<<argv[1]<<" IN "<<argv[2]<<" "<<regen->getZoneRepresentation()<<endl;
+#endif
 }
 catch(exception& e)
 {

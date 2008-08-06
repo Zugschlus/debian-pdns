@@ -4,10 +4,12 @@
 #include <string>
 #include <vector>
 #include <map>
+#if !defined SOLARIS8 && !defined WIN32
 #include <stdint.h>
-#include <netinet/in.h>
-#include <arpa/nameser.h>
-
+#elif defined WIN32
+#include "utility.hh"
+#endif
+#include "dns.hh"
 using namespace std;
 
 /** this class can be used to write DNS packets. It knows about DNS in the sense that it makes 
@@ -25,9 +27,9 @@ using namespace std;
 
     vector<uint8_t> content;
     DNSPacketWriter dpw(content, const string& qname, uint16_t qtype, uint16_t qclass=1);  // sets the question
-    dpw.startrecord("this.is.an.ip.address", ns_t_a);    // does nothing, except store qname and qtype
+    dpw.startrecord("this.is.an.ip.address.", ns_t_a);    // does nothing, except store qname and qtype
     dpw.xfr32BitInt(0x01020304);                         // adds 4 bytes (0x01020304) to the record buffer
-    dpw.startrecord("this.is.an.ip.address", ns_t_a);    // aha! writes out dnsrecord header containing qname and qtype and length 4, plus the recordbuffer, which gets emptied
+    dpw.startrecord("this.is.an.ip.address.", ns_t_a);    // aha! writes out dnsrecord header containing qname and qtype and length 4, plus the recordbuffer, which gets emptied
                                                          // new qname and qtype are stored
     dpw.xfr32BitInt(0x04030201);                         // adds 4 bytes (0x04030201) to the record buffer
     dpw.commit();                                        // writes out dnsrecord header containing qname and qtype and length 4, plus the recordbuffer
@@ -38,13 +40,13 @@ using namespace std;
 
 class DNSPacketWriter
 {
-public:
-  typedef HEADER dnsheader;
 
+public:
+  typedef vector<pair<string, uint16_t> > lmap_t;
   enum Place {ANSWER=1, AUTHORITY=2, ADDITIONAL=3}; 
 
   //! Start a DNS Packet in the vector passed, with question qname, qtype and qclass
-  DNSPacketWriter(vector<uint8_t>& content, const string& qname, uint16_t  qtype, uint16_t qclass=1);
+  DNSPacketWriter(vector<uint8_t>& content, const string& qname, uint16_t  qtype, uint16_t qclass=1, uint8_t opcode=0);
   
   /** Start a new DNS record within this packet for namq, qtype, ttl, class and in the requested place. Note that packets can only be written in natural order - 
       ANSWER, AUTHORITY, ADDITIONAL */
@@ -81,8 +83,9 @@ public:
   void xfr8BitInt(uint8_t val);
 
   void xfrLabel(const string& label, bool compress=false);
-  void xfrText(const string& text);
+  void xfrText(const string& text, bool multi=false);
   void xfrBlob(const string& blob);
+  void xfrHexBlob(const string& blob);
 
   uint16_t d_pos;
   
@@ -97,7 +100,7 @@ private:
   string d_recordqname;
   uint16_t d_recordqtype, d_recordqclass;
   uint32_t d_recordttl;
-  map<string, uint16_t> d_labelmap;
+  lmap_t d_labelmap;
   uint16_t d_stuff;
   uint16_t d_sor;
   uint16_t d_rollbackmarker; // start of last complete packet, for rollback

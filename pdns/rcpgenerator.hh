@@ -13,7 +13,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 
@@ -22,7 +22,11 @@
 
 #include <string>
 #include <stdexcept>
-#include <stdint.h>
+#if !defined SOLARIS8 && !defined WIN32
+# include <stdint.h>
+#elif defined WIN32
+# include "utility.hh"
+#endif
 
 using namespace std;
 
@@ -46,7 +50,8 @@ public:
   void xfrTime(uint32_t& val);
 
   void xfrLabel(string& val, bool compress=false);
-  void xfrText(string& val);
+  void xfrText(string& val, bool multi=false);
+  void xfrHexBlob(string& val);
   void xfrBlob(string& val);
 
   bool eof();
@@ -70,8 +75,9 @@ public:
 
   void xfrType(const uint16_t& val);
   void xfrLabel(const string& val, bool compress=false);
-  void xfrText(const string& val);
+  void xfrText(const string& val, bool multi=false);
   void xfrBlob(const string& val);
+  void xfrHexBlob(const string& val);
 
 private:
   string& d_string;

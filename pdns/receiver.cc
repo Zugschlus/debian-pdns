@@ -3,8 +3,8 @@
     Copyright (C) 2002 - 2006  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License version 2 as published by
-    the Free Software Foundation
+    it under the terms of the GNU General Public License version 2
+    as published by the Free Software Foundation
 
 
     This program is distributed in the hope that it will be useful,
@@ -14,7 +14,7 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include <cstdio>
@@ -60,6 +60,7 @@
 #include "dnsproxy.hh"
 #include "utility.hh"
 #include "common_startup.hh"
+#include "dnsrecords.hh"
 
 time_t s_starttime;
 
@@ -386,6 +387,8 @@ static void tbhandler(int num)
 //! The main function of pdns, the pdns process
 int main(int argc, char **argv)
 { 
+  reportAllTypes(); // init MOADNSParser
+
   s_programname="pdns";
   s_starttime=time(0);
 
@@ -417,39 +420,11 @@ int main(int argc, char **argv)
     
     arg().laxParse(argc,argv); // reparse so the commandline still wins
     if(!arg()["logging-facility"].empty()) {
-      
-      int facility=arg().asNum("logging-facility");
-      if(!isdigit(arg()["logging-facility"][0]))
-	facility=-1;
-      switch(facility) {
-      case 0:
-	theL().setFacility(LOG_LOCAL0);
-	break;
-      case 1:
-	theL().setFacility(LOG_LOCAL1);
-	break;
-      case 2:
-	theL().setFacility(LOG_LOCAL2);
-	break;
-      case 3:
-	theL().setFacility(LOG_LOCAL3);
-	break;
-      case 4:
-	theL().setFacility(LOG_LOCAL4);
-	break;
-      case 5:
-	theL().setFacility(LOG_LOCAL5);
-	break;
-      case 6:
-	theL().setFacility(LOG_LOCAL6);
-	break;
-      case 7:
-	theL().setFacility(LOG_LOCAL7);
-	break;
-      default:
-	L<<Logger::Error<<"Unknown logging facility level '"<<arg()["logging-facility"]<<"'"<<endl;
-	break;
-      }
+      boost::optional<int> val=logFacilityToLOG(arg().asNum("logging-facility") );
+      if(val)
+	theL().setFacility(*val);
+      else
+	L<<Logger::Error<<"Unknown logging facility "<<arg().asNum("logging-facility") <<endl;
     }
 
     L.setLoglevel((Logger::Urgency)(arg().asNum("loglevel")));

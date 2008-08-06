@@ -48,7 +48,6 @@ What to do with timeouts. We keep around at most 65536 outstanding answers.
 // this is needed because boost multi_index also uses 'L', as do we (which is sad enough)
 #undef L
 
-#include <arpa/nameser.h>
 #include <set>
 #include <deque>
 
@@ -66,35 +65,6 @@ StatBag S;
 bool s_quiet=true;
 
 
-void normalizeTV(struct timeval& tv)
-{
-  if(tv.tv_usec > 1000000) {
-    ++tv.tv_sec;
-    tv.tv_usec-=1000000;
-  }
-  else if(tv.tv_usec < 0) {
-    --tv.tv_sec;
-    tv.tv_usec+=1000000;
-  }
-}
-
-const struct timeval operator+(const struct timeval& lhs, const struct timeval& rhs)
-{
-  struct timeval ret;
-  ret.tv_sec=lhs.tv_sec + rhs.tv_sec;
-  ret.tv_usec=lhs.tv_usec + rhs.tv_usec;
-  normalizeTV(ret);
-  return ret;
-}
-
-const struct timeval operator-(const struct timeval& lhs, const struct timeval& rhs)
-{
-  struct timeval ret;
-  ret.tv_sec=lhs.tv_sec - rhs.tv_sec;
-  ret.tv_usec=lhs.tv_usec - rhs.tv_usec;
-  normalizeTV(ret);
-  return ret;
-}
 
 const struct timeval operator*(int fact, const struct timeval& rhs)
 {
@@ -142,16 +112,22 @@ public:
 
   }
 
-  uint16_t getID()
+  uint16_t peakID()
   {
     uint16_t ret;
     if(!d_available.empty()) {
       ret=d_available.front();
-      d_available.pop_front();
       return ret;
     }
     else
       throw runtime_error("out of ids!"); // XXX FIXME
+  }
+
+  uint16_t getID()
+  {
+    uint16_t ret=peakID();
+    d_available.pop_front();
+    return ret;
   }
 
   void releaseID(uint16_t id)
@@ -199,7 +175,7 @@ unsigned int s_questions, s_origanswers, s_weanswers, s_wetimedout, s_perfect, s
 unsigned int s_wenever, s_orignever;
 unsigned int s_webetter, s_origbetter, s_norecursionavailable;
 unsigned int s_weunmatched, s_origunmatched;
-unsigned int s_wednserrors, s_origdnserrors;
+unsigned int s_wednserrors, s_origdnserrors, s_duplicates;
 
 
 double DiffTime(const struct timeval& first, const struct timeval& second)
@@ -354,7 +330,7 @@ try
       qids_by_id_index_t& idindex=qids.get<AssignedIDTag>();
       qids_by_id_index_t::const_iterator found=idindex.find(ntohs(mdp.d_header.id));
       if(found == idindex.end()) {
-	cout<<"Received an answer ("<<mdp.d_qname<<") from reference nameserver with id "<<mdp.d_header.id<<" which we can't match to a question!"<<endl;
+//	cout<<"Received an answer ("<<mdp.d_qname<<") from reference nameserver with id "<<mdp.d_header.id<<" which we can't match to a question!"<<endl;
 	s_weunmatched++;
 	continue;
       }
@@ -467,7 +443,7 @@ Orig    9           21      29     36         47        57       66    72
   cerr<<"we never: "<<s_wenever<<", orig never: "<<s_orignever<<endl;
   cerr<<"original questions from IP addresses for which recursion was not available: "<<s_norecursionavailable<<endl;
   cerr<<"Unmatched from us: "<<s_weunmatched<<", unmatched from original: "<<s_origunmatched << " ( - decoding err: "<<s_origunmatched-s_origdnserrors<<")"<<endl;
-  cerr<<"DNS decoding errors from us: "<<s_wednserrors<<", from original: "<<s_origdnserrors<<endl<<endl;
+  cerr<<"DNS decoding errors from us: "<<s_wednserrors<<", from original: "<<s_origdnserrors<<", exact duplicates from client: "<<s_duplicates<<endl<<endl;
 
   pruneQids();
 
@@ -477,12 +453,20 @@ void sendPacketFromPR(PcapPacketReader& pr, const IPEndpoint& remote)
 {
   static struct timeval lastsent;
 
-  HEADER* dh=(HEADER*)pr.d_payload;
+  dnsheader* dh=(dnsheader*)pr.d_payload;
   //                                                             non-recursive  
-  if((ntohs(pr.d_udp->uh_dport)!=53 && ntohs(pr.d_udp->uh_sport)!=53) || !dh->rd || (unsigned int)pr.d_len <= sizeof(HEADER))
+  if((ntohs(pr.d_udp->uh_dport)!=53 && ntohs(pr.d_udp->uh_sport)!=53) || !dh->rd || (unsigned int)pr.d_len <= sizeof(dnsheader))
     return;
-  
+  QuestionData qd;
   try {
+    dnsheader* dh=(dnsheader*)pr.d_payload;
+    if(!dh->qr) {
+      qd.d_assignedID = s_idmanager.peakID();
+      uint16_t tmp=dh->id;
+      dh->id=htons(qd.d_assignedID);
+      s_socket->sendTo(string(pr.d_payload, pr.d_payload + pr.d_len), remote);
+      dh->id=tmp;
+    }
     MOADNSParser mdp((const char*)pr.d_payload, pr.d_len);
     QuestionIdentifier qi=QuestionIdentifier::create(pr.d_ip, pr.d_udp, mdp);
     
@@ -491,51 +475,14 @@ void sendPacketFromPR(PcapPacketReader& pr, const IPEndpoint& remote)
       if(qids.count(qi)) {
 	if(!s_quiet)
 	  cout<<"Saw an exact duplicate question, "<<qi<< endl;
+	s_duplicates++;
 	return;
       }
-      
       // new question!
-
-      QuestionData qd;
       qd.d_qi=qi;
       gettimeofday(&qd.d_resentTime,0);
-      
       qd.d_assignedID = s_idmanager.getID();
-      
       qids.insert(qd);
-
-      dh->id=htons(qd.d_assignedID);
-
-#if 0
-      if(lastsent.tv_sec && (!(s_questions%25))) {
-	double seconds=pr.d_pheader.ts.tv_sec - lastsent.tv_sec;
-	double useconds=(pr.d_pheader.ts.tv_usec - lastsent.tv_usec);
-	
-	if(useconds < 0) {
-	  seconds-=1;
-	  useconds+=1000000;
-	}
-	
-	double factor=10;
-	
-	seconds/=factor;
-	useconds/=factor;
-	
-	long long nanoseconds=(long long)(1000000000ULL*seconds + useconds * 1000);
-	
-	struct timespec tosleep;
-	tosleep.tv_sec=nanoseconds/1000000000UL;
-	tosleep.tv_nsec=nanoseconds%1000000000UL;
-	
-	nanosleep(&tosleep, 0);
-	lastsent=pr.d_pheader.ts;
-      }
-      if(!lastsent.tv_sec)
-	lastsent=pr.d_pheader.ts;
-      
-      //	cout<<"sending!"<<endl;
-#endif
-      s_socket->sendTo(string(pr.d_payload, pr.d_payload + pr.d_len), remote);
     }
     else {
       s_origanswers++;
