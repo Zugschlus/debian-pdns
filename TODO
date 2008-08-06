@@ -1,0 +1,53 @@
+pdns_record should have logging family setting
+
+bind2backend should eb documented somewhat
+
+THIS IS NOT UP TO DATE AND CONTAINS RANDOM RAMBLING
+---------------------------------------------------
+
+
+* new zone is AXFRed, written to disk succesfully
+	probably? unsure
+* the old SOA record remains in place
+
+bugs:
+	pdns.conf-dist contains old descriptions
+
+	dynmessenger.cc unused variable warning
+
+
+Things we will not do but hope other people will:
+	- Ports to NetBSD, OpenBSD, AIX
+
+	webserver has problems with 'top-100 queries' instead of top-10.
+
+Projects we will be working on, but would like help for:
+
+Big things:
+	- new plan
+Like in the old days but with a twist - additional processing is done on a
+best-effort basis by a non-rd packet sent to syncres. This means we can stay
+lazy for far longer!
+
+TODO:
+	learn syncres to load its roots from disk too or at completime
+	get a way to nuke the cache/parts of the cache
+
+	- Add support for TSIG
+
+Medium size things:
+	- get PDNS into FreeBSD ports
+	- and other architectures	
+	- test powerdns in a windows environment!
+
+
+Small things, great for coders new to PowerDNS:
+done	- add LOC record
+	- add KEY record
+	- add SIG record
+done	- get the xdb backend building again
+	- 'make distclean' tries to calculate dependencies in
+		modules/pgmysqlbackend, which is not needed
+	- remove 'handle' from UeberBackend and BindBackend
+
+
