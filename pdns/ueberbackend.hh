@@ -114,13 +114,13 @@ public:
 
   void lookup(const QType &, const string &qdomain, DNSPacket *pkt_p=0,  int zoneId=-1);
 
-  bool getSOA(const string &domain, SOAData &sd);
+  bool getSOA(const string &domain, SOAData &sd, DNSPacket *p=0);
   bool list(const string &target, int domain_id);
   bool get(DNSResourceRecord &r);
 
   static DNSBackend *maker(const map<string,string> &);
   static void closeDynListener();
-  static void UeberBackend::setStatus(const string &st);
+  static void setStatus(const string &st);
   void getUnfreshSlaveInfos(vector<DomainInfo>* domains);
   void getUpdatedMasters(vector<DomainInfo>* domains);
   bool getDomainInfo(const string &domain, DomainInfo &di);

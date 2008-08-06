@@ -1,11 +1,10 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002-2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as 
+    published by the Free Software Foundation; 
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -31,8 +30,9 @@
 #include "arguments.hh"
 #include "session.hh"
 #include "packetcache.hh"
+#include <boost/lexical_cast.hpp>
 
-
+using namespace boost;
 
 void CommunicatorClass::addSuckRequest(const string &domain, const string &master, bool priority)
 {
@@ -56,7 +56,7 @@ void CommunicatorClass::addSuckRequest(const string &domain, const string &maste
 
 void CommunicatorClass::suck(const string &domain,const string &remote)
 {
-  u_int32_t domain_id;
+  uint32_t domain_id;
   PacketHandler P;
 
   DomainInfo di;
@@ -89,6 +89,9 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
 	  return;
 	}
 	i->domain_id=domain_id;
+	if(i->qtype.getCode()>=1024)
+	  throw DBException("Database can't store unknown record type "+lexical_cast<string>(i->qtype.getCode()-1024));
+
 	di.backend->feedRecord(*i);
       }
     }
@@ -247,7 +250,7 @@ void CommunicatorClass::slaveRefresh(PacketHandler *P)
     Resolver resolver;   
     resolver.makeUDPSocket();  
     d_slaveschanged=true;
-    u_int32_t ourserial=i->serial,theirserial=0;
+    uint32_t ourserial=i->serial,theirserial=0;
 
     try {
       if(d_havepriosuckrequest) {
@@ -294,14 +297,7 @@ int CommunicatorClass::doNotifications()
   static Resolver d_nresolver;
   // receive incoming notifications on the nonblocking socket and take them off the list
 
-#ifndef WIN32
   while((size=recvfrom(d_nsock,buffer,sizeof(buffer),0,(struct sockaddr *)&from,&fromlen))>0) {
-#else
-  while((size=recvfrom(d_nsock,buffer,sizeof(buffer),0,(struct sockaddr *)&from,&fromlen))>0) {
-#endif
-
-
-
     DNSPacket p;
 
     p.setRemote((struct sockaddr *)&from, fromlen);
@@ -322,13 +318,18 @@ int CommunicatorClass::doNotifications()
 
   // send out possible new notifications
   string domain, ip;
-  u_int16_t id;
+  uint16_t id;
 
   bool purged;
   while(d_nq.getOne(domain, ip, &id, purged)) {
     if(!purged) {
-      d_nresolver.notify(d_nsock,domain,ip,id);
-      drillHole(domain,ip);
+      try {
+	d_nresolver.notify(d_nsock, domain, ip, id);
+	drillHole(domain, ip);
+      }
+      catch(ResolverException &re) {
+	L<<Logger::Error<<"Error trying to resolve '"+ip+"' for notifying '"+domain+"' to server: "+re.reason<<endl;
+      }
     }
     else
       L<<Logger::Error<<Logger::NTLog<<"Notification for "<<domain<<" to "<<ip<<" failed after retries"<<endl;
@@ -403,7 +404,7 @@ void CommunicatorClass::makeNotifySocket()
 
 void CommunicatorClass::notify(const string &domain, const string &ip)
 {
-  d_nq.add(domain,ip);
+  d_nq.add(domain, ip);
 
   d_any_sem.post();
 }

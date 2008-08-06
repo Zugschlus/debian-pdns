@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002-2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -55,7 +55,6 @@ PacketHandler *TCPNameserver::s_P;
 int TCPNameserver::s_timeout;
 NetmaskGroup TCPNameserver::d_ng;
 
-
 int TCPNameserver::sendDelPacket(DNSPacket *p, int outsock)
 {
   const char *buf=p->getData();
@@ -63,7 +62,6 @@ int TCPNameserver::sendDelPacket(DNSPacket *p, int outsock)
   delete p;
   return res;
 }
-
 
 void TCPNameserver::go()
 {
@@ -131,13 +129,17 @@ void TCPNameserver::getQuestion(int fd, char *mesg, int pktlen, const struct soc
 
 void *TCPNameserver::doConnection(void *data)
 {
-  int fd=(int)data; // gotta love C (generates a harmless warning on opteron)
+  // Fix gcc-4.0 error (on AMD64)
+  int fd=(int)(long)data; // gotta love C (generates a harmless warning on opteron)
   pthread_detach(pthread_self());
 
   try {
-    if(!s_P) {
-      L<<Logger::Error<<"TCP server is without backend connections, launching"<<endl;
-      s_P=new PacketHandler;
+    {
+      Lock l(&s_plock);
+      if(!s_P) {
+	L<<Logger::Error<<"TCP server is without backend connections, launching"<<endl;
+	s_P=new PacketHandler;
+      }
     }
     char mesg[512];
     
@@ -160,7 +162,7 @@ void *TCPNameserver::doConnection(void *data)
       DNSPacket *packet=new DNSPacket;
 
       packet->setRemote((struct sockaddr *)&remote,sizeof(remote));
-
+      packet->d_tcp=true;
       if(packet->parse(mesg, pktlen)<0)
 	break;
       
@@ -227,10 +229,17 @@ void *TCPNameserver::doConnection(void *data)
   out:;
   }
   catch(DBException &e) {
-    L<<Logger::Error<<"TCP Connection Thread unable to answer a question because of a backend error"<<endl;
+    Lock l(&s_plock);
+    delete s_P;
+    s_P = 0;
+
+    L<<Logger::Error<<"TCP Connection Thread unable to answer a question because of a backend error, cycling"<<endl;
   }
   catch(AhuException &ae) {
-    L<<Logger::Error<<"TCP nameserver: "<<ae.reason<<endl;
+    Lock l(&s_plock);
+    delete s_P;
+    s_P = 0; // on next call, backend will be recycled
+    L<<Logger::Error<<"TCP nameserver had error, cycling backend:"<<ae.reason<<endl;
   }
   catch(exception &e) {
     L<<Logger::Error<<"TCP Connection Thread died because of STL error: "<<e.what()<<endl;
@@ -292,18 +301,23 @@ int TCPNameserver::doAXFR(const string &target, DNSPacket *q, int outsock)
     DLOG(L<<"Looking for SOA"<<endl);
 
     if(!s_P->getBackend()->getSOA(target,sd)) {
+      L<<Logger::Error<<"AXFR of domain '"<<target<<"' failed: not authoritative"<<endl;
       outpacket->setRcode(9); // 'NOTAUTH'
       sendDelPacket(outpacket,outsock);
       return 0;
     }
+
   }
   PacketHandler P; // now open up a database connection, we'll need it
+
   sd.db=(DNSBackend *)-1; // force uncached answer
   if(!P.getBackend()->getSOA(target,sd)) {
+      L<<Logger::Error<<"AXFR of domain '"<<target<<"' failed: not authoritative in second instance"<<endl;
     outpacket->setRcode(9); // 'NOTAUTH'
     sendDelPacket(outpacket,outsock);
     return 0;
   }
+
   soa.qname=target;
   soa.qtype=QType::SOA;
   soa.content=DNSPacket::serializeSOAData(sd);
@@ -329,7 +343,6 @@ int TCPNameserver::doAXFR(const string &target, DNSPacket *q, int outsock)
     sendDelPacket(outpacket,outsock);
     return 0;
   }
-
   /* write first part of answer */
 
   DLOG(L<<"Sending out SOA"<<endl);
@@ -452,7 +465,7 @@ TCPNameserver::TCPNameserver()
     }
     
     listen(s,128);
-    L<<Logger::Error<<"TCP server bound to "<<*laddr<<":"<<arg()["local-port"]<<endl;
+    L<<Logger::Error<<"TCP server bound to "<<*laddr<<":"<<arg().asNum("local-port")<<endl;
     d_sockets.push_back(s);
     FD_SET(s, &d_rfds);
     d_highfd=max(s,d_highfd);
@@ -498,7 +511,7 @@ TCPNameserver::TCPNameserver()
     }
     
     listen(s,128);
-    L<<Logger::Error<<"TCPv6 server bound to "<<*laddr<<":"<<arg()["local-port"]<<endl;
+    L<<Logger::Error<<"TCPv6 server bound to ["<<*laddr<<"]:"<<arg()["local-port"]<<endl;
     d_sockets.push_back(s);
     FD_SET(s, &d_rfds);
     d_highfd=max(s,d_highfd);
@@ -521,7 +534,10 @@ void TCPNameserver::thread()
 
       fd_set rfds=d_rfds; 
 
-      select(d_highfd+1, &rfds, 0, 0,  0); // blocks
+      int ret=select(d_highfd+1, &rfds, 0, 0,  0); // blocks
+      if(ret <= 0)
+	continue;
+
       int sock=-1;
       for(vector<int>::const_iterator i=d_sockets.begin();i!=d_sockets.end();++i) {
 	if(FD_ISSET(*i, &rfds)) {

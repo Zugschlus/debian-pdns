@@ -69,7 +69,7 @@ int QType::getCode() const
   return code;
 }
 
-string QType::getName() const
+const string QType::getName() const
 {
   vector<namenum>::iterator pos;
   for(pos=names.begin();pos<names.end();++pos)
@@ -120,7 +120,7 @@ QType::QType(int n)
   code=n;
 }
 
-QType::QType(char *p)
+QType::QType(const char *p)
 {
   QType();
   code=chartocode(p);

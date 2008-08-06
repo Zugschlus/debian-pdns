@@ -1,6 +1,6 @@
 // -*- sateh-c -*- 
 // File    : pdnsbackend.cc
-// Version : $Id: pipebackend.cc,v 1.5 2003/08/22 13:33:31 ahu Exp $ 
+// Version : $Id: pipebackend.cc 546 2005-11-11 21:02:51Z ahu $ 
 //
 
 #include <string>
@@ -22,6 +22,9 @@ using namespace std;
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <boost/lexical_cast.hpp>
+
+using namespace boost;
 
 #include "pipebackend.hh"
 
@@ -36,13 +39,20 @@ CoWrapper::CoWrapper(const string &command, int timeout)
    // I think
 }
 
+CoWrapper::~CoWrapper()
+{
+  if(d_cp)
+    delete d_cp;
+}
+
+
 void CoWrapper::launch()
 {
    if(d_cp)
       return;
 
    d_cp=new CoProcess(d_command, d_timeout); 
-   d_cp->send("HELO\t1");
+   d_cp->send("HELO\t"+lexical_cast<string>(arg().asNum("pipebackend-abi-version")));
    string banner;
    d_cp->receive(banner); 
    L<<Logger::Error<<"Backend launched with banner: "<<banner<<endl;
@@ -78,11 +88,11 @@ void CoWrapper::receive(string &line)
 
 PipeBackend::PipeBackend(const string &suffix)
 {
-  setArgPrefix("pipe"+suffix);
+   setArgPrefix("pipe"+suffix);
    try {
-      d_coproc=new CoWrapper(getArg("command"), getArgAsNum("timeout"));
-      d_regex=getArg("regex").empty() ? 0 : new Regex(getArg("regex"));
-      d_regexstr=getArg("regex");
+     d_coproc=shared_ptr<CoWrapper>(new CoWrapper(getArg("command"), getArgAsNum("timeout")));
+     d_regex=getArg("regex").empty() ? 0 : new Regex(getArg("regex"));
+     d_regexstr=getArg("regex");
    }
    catch(const ArgException &A) {
       L<<Logger::Error<<kBackendId<<" Fatal argument error: "<<A.reason<<endl;
@@ -103,8 +113,22 @@ void PipeBackend::lookup(const QType &qtype,const string &qname, DNSPacket *pkt_
          d_disavow=true; // don't pass to backend
       } else {
          ostringstream query;
-         // type    qname           qclass  qtype   id      ip-address
-         query<<"Q\t"<<qname<<"\tIN\t"<<qtype.getName()<<"\t"<<zoneId<<"\t"<<(pkt_p ? pkt_p->getRemote() : "0.0.0.0");
+         string localIP="0.0.0.0";
+         string remoteIP="0.0.0.0";
+         
+         if (pkt_p) {
+            localIP=pkt_p->getLocal();
+	    remoteIP=pkt_p->getRemote();
+         }
+
+         // pipebackend-abi-version = 1
+         // type    qname           qclass  qtype   id      remote-ip-address
+         query<<"Q\t"<<qname<<"\tIN\t"<<qtype.getName()<<"\t"<<zoneId<<"\t"<<remoteIP;
+
+         // add the local-ip-address if pipebackend-abi-version is set to 2
+         if (arg().asNum("pipebackend-abi-version") == 2) 
+            query<<"\t"<<localIP;
+
          if(arg().mustDo("query-logging"))
             L<<Logger::Error<<"Query: '"<<query.str()<<"'"<<endl;
          d_coproc->send(query.str());

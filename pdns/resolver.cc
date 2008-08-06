@@ -1,11 +1,10 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2005 PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as 
+    published by the Free Software Foundation.
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -43,7 +42,7 @@ void Resolver::makeUDPSocket()
 
 void Resolver::makeSocket(int type)
 {
-  static u_int16_t port_counter=5000;
+  static uint16_t port_counter=5000;
   port_counter++; // this makes us use a new port for each query, fixes ticket #2
   if(d_sock>0)
     return;
@@ -56,18 +55,22 @@ void Resolver::makeSocket(int type)
   memset((char *)&sin,0, sizeof(sin));
   
   sin.sin_family = AF_INET;
-  sin.sin_addr.s_addr = INADDR_ANY;
+  if(!IpToU32(arg()["query-local-address"], &sin.sin_addr.s_addr))
+    throw AhuException("Unable to resolve local address '"+ arg()["query-local-address"] +"'"); 
 
   int tries=10;
   while(--tries) {
-    sin.sin_port = htons(10000+(port_counter++)%10000); // should be random!
+    sin.sin_port = htons(10000+(random()%10000));
   
     if (bind(d_sock, (struct sockaddr *)&sin, sizeof(sin)) >= 0) 
       break;
 
   }
-  if(!tries)
+  if(!tries) {
+    Utility::closesocket(d_sock);
+    d_sock=-1;
     throw AhuException("Resolver binding to local socket: "+stringerror());
+  }
 }
 
 Resolver::Resolver()
@@ -103,7 +106,7 @@ void Resolver::timeoutReadn(char *buffer, int bytes)
   }
 }
 
-char* Resolver::sendReceive(const string &ip, u_int16_t remotePort, const char *packet, int length, unsigned int *replen)
+char* Resolver::sendReceive(const string &ip, uint16_t remotePort, const char *packet, int length, unsigned int *replen)
 {
   makeTCPSocket(ip, remotePort);
 
@@ -127,7 +130,7 @@ char* Resolver::sendReceive(const string &ip, u_int16_t remotePort, const char *
   return 0;
 }
 
-int Resolver::notify(int sock, const string &domain, const string &ip, u_int16_t id)
+int Resolver::notify(int sock, const string &domain, const string &ip, uint16_t id)
 {
   DNSPacket p;
   p.setQuestion(Opcode::Notify,domain,QType::SOA);
@@ -135,7 +138,8 @@ int Resolver::notify(int sock, const string &domain, const string &ip, u_int16_t
   p.spoofID(id);
 
   struct in_addr inp;
-  Utility::inet_aton(ip.c_str(),&inp);
+  if(!Utility::inet_aton(ip.c_str(),&inp))
+    throw ResolverException("Unable to convert '"+ip+"' to an IP address");
 
   struct sockaddr_in toaddr;
   toaddr.sin_addr.s_addr=inp.s_addr;
@@ -221,18 +225,17 @@ int Resolver::resolve(const string &ip, const char *domain, int type)
   
 }
 
-void Resolver::makeTCPSocket(const string &ip, u_int16_t port)
+void Resolver::makeTCPSocket(const string &ip, uint16_t port)
 {
   if(d_sock>=0)
     return;
-  struct sockaddr_in toaddr;
+
   struct in_addr inp;
   Utility::inet_aton(ip.c_str(),&inp);
-  toaddr.sin_addr.s_addr=inp.s_addr;
+  d_toaddr.sin_addr.s_addr=inp.s_addr;
 
-  toaddr.sin_port=htons(port);
-  toaddr.sin_family=AF_INET;
-  
+  d_toaddr.sin_port=htons(port);
+  d_toaddr.sin_family=AF_INET;
 
   d_sock=socket(AF_INET,SOCK_STREAM,0);
   if(d_sock<0)
@@ -266,10 +269,12 @@ void Resolver::makeTCPSocket(const string &ip, u_int16_t port)
 
   int err;
 #ifndef WIN32
-  if((err=connect(d_sock,(struct sockaddr*)&toaddr,sizeof(toaddr)))<0 && errno!=EINPROGRESS) {
+  if((err=connect(d_sock,(struct sockaddr*)&d_toaddr,sizeof(d_toaddr)))<0 && errno!=EINPROGRESS) {
 #else
-  if((err=connect(d_sock,(struct sockaddr*)&toaddr,sizeof(toaddr)))<0 && WSAGetLastError() != WSAEWOULDBLOCK ) {
+  if((err=connect(d_sock,(struct sockaddr*)&d_toaddr,sizeof(d_toaddr)))<0 && WSAGetLastError() != WSAEWOULDBLOCK ) {
 #endif // WIN32
+    Utility::closesocket(d_sock);
+    d_sock=-1;
     throw ResolverException("connect: "+stringerror());
   }
 
@@ -321,10 +326,11 @@ int Resolver::axfr(const string &ip, const char *domain)
 
   d_type=QType::AXFR;
   DNSPacket p;
+  p.d_tcp = true;
   p.setQuestion(Opcode::Query,domain,QType::AXFR);
   p.wrapup();
 
-  u_int16_t replen=htons(p.len);
+  uint16_t replen=htons(p.len);
   Utility::iovec iov[2];
   iov[0].iov_base=(char*)&replen;
   iov[0].iov_len=2;
@@ -363,6 +369,7 @@ int Resolver::getLength()
     int ret=waitForData(d_sock, 10);
     if(ret<0) {
       Utility::closesocket(d_sock);
+      d_sock=-1;
       throw ResolverException("Waiting on data from remote TCP client: "+stringerror());
     }
   
@@ -410,7 +417,8 @@ Resolver::res_t Resolver::result()
 {
   try {
     DNSPacket p;
-    
+    p.setRemote((const sockaddr*)&d_toaddr, sizeof(d_toaddr));
+    p.d_tcp = d_inaxfr; // fixes debian bug 330184
     if(p.parse((char *)d_buf, d_len)<0)
       throw ResolverException("resolver: unable to parse packet of "+itoa(d_len)+" bytes");
     
@@ -440,7 +448,7 @@ void Resolver::sendSoaSerialRequest(const string &ip, const string &domain)
   sendResolve(ip,domain.c_str(),QType::SOA);
 }
 
-int Resolver::getSoaSerialAnswer(string &master, string &zone, u_int32_t* serial)
+int Resolver::getSoaSerialAnswer(string &master, string &zone, uint32_t* serial)
 {
   struct sockaddr_in fromaddr;
   Utility::socklen_t addrlen=sizeof(fromaddr);
@@ -463,7 +471,7 @@ int Resolver::getSoaSerialAnswer(string &master, string &zone, u_int32_t* serial
 }
 
 
-int Resolver::getSoaSerial(const string &ip, const string &domain, u_int32_t *serial)
+int Resolver::getSoaSerial(const string &ip, const string &domain, uint32_t *serial)
 {
   resolve(ip,domain.c_str(),QType::SOA);
   res_t res=result();

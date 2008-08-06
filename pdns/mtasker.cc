@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@
     support for waiting on events which can return values.
 
     \section copyright Copyright and License
-    MTasker is (c) 2002 by bert hubert. It is licensed to you under the terms of the GPL version 2.
+    MTasker is (c) 2002 - 2005 by bert hubert. It is licensed to you under the terms of the GPL version 2.
 
     \section overview High level overview
     MTasker is designed to support very simple cooperative multitasking to facilitate writing 
@@ -161,14 +161,23 @@ int main()
 
 template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEvent(const EventKey &key, EventVal *val, unsigned int timeout)
 {
+  if(d_waiters.count(key)) { // there was already an exact same waiter
+    return -1;
+  }
+
   Waiter w;
   w.context=new ucontext_t;
   w.ttd= timeout ? time(0)+timeout : 0;
   w.tid=d_tid;
   
-  d_waiters[key]=w;
+  w.key=key;
+
+  d_waiters.insert(w);
   
-  swapcontext(d_waiters[key].context,&d_kernel); // 'A' will return here when 'key' has arrived, hands over control to kernel first
+  if(swapcontext(d_waiters.find(key)->context,&d_kernel)) { // 'A' will return here when 'key' has arrived, hands over control to kernel first
+    perror("swapcontext");
+    exit(EXIT_FAILURE); // no way we can deal with this 
+  }
   if(val && d_waitstatus==Answer) 
     *val=d_waitval;
   d_tid=w.tid;
@@ -181,7 +190,10 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEven
 template<class Key, class Val>void MTasker<Key,Val>::yield()
 {
   d_runQueue.push(d_tid);
-  swapcontext(d_threads[d_tid],&d_kernel); // give control to the kernel
+  if(swapcontext(d_threads[d_tid].first ,&d_kernel) < 0) { // give control to the kernel
+    perror("swapcontext in  yield");
+    exit(EXIT_FAILURE);
+  }
 }
 
 //! reports that an event took place for which threads may be waiting
@@ -193,6 +205,7 @@ template<class Key, class Val>void MTasker<Key,Val>::yield()
 template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::sendEvent(const EventKey& key, const EventVal* val)
 {
   if(!d_waiters.count(key)) {
+    //    cout<<"Event sent nobody was waiting for!"<<endl;
     return 0;
   }
   
@@ -200,12 +213,14 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::sendEven
   if(val)
     d_waitval=*val;
   
-  ucontext_t *userspace=d_waiters[key].context;
-  d_tid=d_waiters[key].tid;         // set tid 
+  ucontext_t *userspace=d_waiters.find(key)->context;
+  d_tid=d_waiters.find(key)->tid;         // set tid 
   
   d_waiters.erase(key);             // removes the waitpoint 
-  swapcontext(&d_kernel,userspace); // swaps back to the above point 'A'
-  
+  if(swapcontext(&d_kernel,userspace)) { // swaps back to the above point 'A'
+    perror("swapcontext in sendEvent");
+    exit(EXIT_FAILURE);
+  }
   delete userspace;
   return 1;
 }
@@ -215,7 +230,7 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::sendEven
     \param start Pointer to the function which will form the start of the thread
     \param val A void pointer that can be used to pass data to the thread
 */
-template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, void* val)
+template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, void* val, const string& name)
 {
   ucontext_t *uc=new ucontext_t;
   getcontext(uc);
@@ -225,11 +240,12 @@ template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, 
   
   uc->uc_stack.ss_size = d_stacksize;
 #ifdef SOLARIS
-  makecontext (uc, (void (*)(...))threadWrapper, 4, this, start, d_maxtid, val);
+  uc->uc_stack.ss_sp = (void*)(((char*)uc->uc_stack.ss_sp)+d_stacksize);
+  makecontext (uc,(void (*)(...))threadWrapper, 5, this, start, d_maxtid, val);
 #else
   makecontext (uc, (void (*)(void))threadWrapper, 4, this, start, d_maxtid, val);
 #endif
-  d_threads[d_maxtid]=uc;
+  d_threads[d_maxtid]=make_pair(uc, name);
   d_runQueue.push(d_maxtid++); // will run at next schedule invocation
 }
 
@@ -246,29 +262,43 @@ template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, 
 */
 template<class Key, class Val>bool MTasker<Key,Val>::schedule()
 {
-
   if(!d_runQueue.empty()) {
     d_tid=d_runQueue.front();
-    swapcontext(&d_kernel, d_threads[d_tid]);
+    if(swapcontext(&d_kernel, d_threads[d_tid].first)) {
+      perror("swapcontext in schedule");
+      exit(EXIT_FAILURE);
+    }
+      
     d_runQueue.pop();
     return true;
   }
   if(!d_zombiesQueue.empty()) {
-    delete[] (char *)d_threads[d_zombiesQueue.front()]->uc_stack.ss_sp;
-    delete d_threads[d_zombiesQueue.front()];
+    delete[] (char *)d_threads[d_zombiesQueue.front()].first->uc_stack.ss_sp;
+    delete d_threads[d_zombiesQueue.front()].first;
     d_threads.erase(d_zombiesQueue.front());
     d_zombiesQueue.pop();
     return true;
   }
   if(!d_waiters.empty()) {
     time_t now=time(0);
-    for(typename waiters_t::const_iterator i=d_waiters.begin();i!=d_waiters.end();++i) {
-      if(i->second.ttd && i->second.ttd<now) {
+
+    typedef typename waiters_t::template index<KeyTag>::type waiters_by_ttd_index_t;
+    //    waiters_by_ttd_index_t& ttdindex=d_waiters.template get<KeyTag>();
+    waiters_by_ttd_index_t& ttdindex=boost::multi_index::get<KeyTag>(d_waiters);
+
+
+    for(typename waiters_by_ttd_index_t::iterator i=ttdindex.begin(); i != ttdindex.end(); ) {
+      if(i->ttd && i->ttd < now) {
 	d_waitstatus=TimeOut;
-	swapcontext(&d_kernel,i->second.context); // swaps back to the above point 'A'
-	delete i->second.context;              
-	d_waiters.erase(i->first);                  // removes the waitpoint 
+	if(swapcontext(&d_kernel,i->context)) { // swaps back to the above point 'A'
+	  perror("swapcontext in schedule2");
+	  exit(EXIT_FAILURE);
+	}
+	delete i->context;              
+	ttdindex.erase(i++);                  // removes the waitpoint 
       }
+      else if(i->ttd)
+	break;
     }
   }
   return false;

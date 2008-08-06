@@ -1,11 +1,10 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2001 - 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as 
+    published by the Free Software Foundation
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,7 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
-// $Id: dnspacket.cc,v 1.32 2005/01/11 19:59:00 ahu Exp $
+
 #include "utility.hh"
 #include <cstdio>
 
@@ -42,6 +41,7 @@ DNSPacket::DNSPacket()
 {
   d_wrapped=false;
   d_compress=true;
+  d_tcp=false;
 }
 
 
@@ -50,13 +50,22 @@ string DNSPacket::getString()
   return stringbuffer;
 }
 
+string DNSPacket::getLocal() const
+{
+  struct sockaddr_in sa;
+  int addrlen=sizeof(struct sockaddr_in);
+
+  getsockname(d_socket, (struct sockaddr *)&sa, (socklen_t *)&addrlen);
+  return sockAddrToString(&sa, (socklen_t)addrlen);
+}
+
 
 string DNSPacket::getRemote() const
 {
   return sockAddrToString((struct sockaddr_in *)remote, d_socklen);
 }
 
-u_int16_t DNSPacket::getRemotePort() const
+uint16_t DNSPacket::getRemotePort() const
 {
   if(d_socklen==sizeof(sockaddr_in))
     return ((struct sockaddr_in*)remote)->sin_port;
@@ -80,6 +89,7 @@ DNSPacket::DNSPacket(const DNSPacket &orig)
   d_dt=orig.d_dt;
   d_socklen=orig.d_socklen;
   d_compress=orig.d_compress;
+  d_tcp=orig.d_tcp;
   qtype=orig.qtype;
   qclass=orig.qclass;
   qdomain=orig.qdomain;
@@ -189,7 +199,7 @@ void DNSPacket::setA(bool b)
   d.aa=b;
 }
 
-void DNSPacket::setID(u_int16_t id)
+void DNSPacket::setID(uint16_t id)
 {
   d.id=id;
 }
@@ -205,7 +215,7 @@ void DNSPacket::setRD(bool b)
 }
 
 
-void DNSPacket::setOpcode(u_int16_t opcode)
+void DNSPacket::setOpcode(uint16_t opcode)
 {
   d.opcode=opcode;
 }
@@ -230,14 +240,17 @@ void DNSPacket::addRecord(const DNSResourceRecord &rr)
 {
   if(d_compress)
     for(vector<DNSResourceRecord>::const_iterator i=rrs.begin();i!=rrs.end();++i) 
-      if(rr.qname==i->qname && rr.qtype==i->qtype && rr.content==i->content)
-	if(rr.qtype.getCode()!=QType::MX || rr.priority==i->priority)
+      if(rr.qname==i->qname && rr.qtype==i->qtype && rr.content==i->content) {
+	if(rr.qtype.getCode()!=QType::MX && rr.qtype.getCode()!=QType::SRV)
 	  return;
+	if(rr.priority==i->priority)
+	  return;
+      }
 
   rrs.push_back(rr);
 }
 
-void DNSPacket::addARecord(const string &name, u_int32_t ip, u_int32_t ttl, DNSResourceRecord::Place place)
+void DNSPacket::addARecord(const string &name, uint32_t ip, uint32_t ttl, DNSResourceRecord::Place place)
 {
   string piece1;
   toqname(name, &piece1);
@@ -273,7 +286,7 @@ void DNSPacket::addAAAARecord(const DNSResourceRecord &rr)
 
 
 
-void DNSPacket::addAAAARecord(const string &name, unsigned char addr[16], u_int32_t ttl,DNSResourceRecord::Place place)
+void DNSPacket::addAAAARecord(const string &name, unsigned char addr[16], uint32_t ttl,DNSResourceRecord::Place place)
 {
   string piece1;
   toqname(name.c_str(),&piece1);
@@ -300,7 +313,7 @@ void DNSPacket::addMXRecord(const DNSResourceRecord &rr)
   addMXRecord(rr.qname, rr.content, rr.priority, rr.ttl);
 }
 
-void DNSPacket::addMXRecord(const string &domain, const string &mx, int priority, u_int32_t ttl)
+void DNSPacket::addMXRecord(const string &domain, const string &mx, int priority, uint32_t ttl)
 {
   string piece1;
 
@@ -333,7 +346,7 @@ void DNSPacket::addSRVRecord(const DNSResourceRecord &rr)
   addSRVRecord(rr.qname, rr.content, rr.priority, rr.ttl);
 }
 
-void DNSPacket::addSRVRecord(const string &domain, const string &srv, int priority, u_int32_t ttl)
+void DNSPacket::addSRVRecord(const string &domain, const string &srv, int priority, uint32_t ttl)
 {
   string piece1;
   toqname(domain,&piece1);
@@ -420,9 +433,9 @@ void DNSPacket::fillSOAData(const string &content, SOAData &data)
   // fill out data with some plausible defaults:
   // 10800 3600 604800 3600
   data.serial=0;
-  data.refresh=10800;
-  data.retry=3600;
-  data.expire=604800;
+  data.refresh=arg().asNum("soa-refresh-default");
+  data.retry=arg().asNum("soa-retry-default");
+  data.expire=arg().asNum("soa-expire-default");
   data.default_ttl=arg().asNum("soa-minimum-ttl");
 
   vector<string>parts;
@@ -511,7 +524,7 @@ void DNSPacket::addSOARecord(const DNSResourceRecord &rr)
   addSOARecord(rr.qname, rr.content, rr.ttl, rr.d_place);
 }
 
-void DNSPacket::addSOARecord(const string &domain, const string & content, u_int32_t ttl,DNSResourceRecord::Place place)
+void DNSPacket::addSOARecord(const string &domain, const string & content, uint32_t ttl,DNSResourceRecord::Place place)
 {
   SOAData soadata;
   fillSOAData(content, soadata);
@@ -529,9 +542,9 @@ void DNSPacket::addSOARecord(const string &domain, const string & content, u_int
 
   char piece5[20];
   
-  u_int32_t *i_p=(u_int32_t *)piece5;
+  uint32_t *i_p=(uint32_t *)piece5;
   
-  u_int32_t soaoffset;
+  uint32_t soaoffset=0;
   if(soadata.serial && (soaoffset=arg().asNum("soa-serial-offset")))
     if(soadata.serial<soaoffset)
       soadata.serial+=soaoffset; // thank you DENIC
@@ -560,7 +573,7 @@ void DNSPacket::addCNAMERecord(const DNSResourceRecord &rr)
   addCNAMERecord(rr.qname, rr.content, rr.ttl);
 }
 
-void DNSPacket::addCNAMERecord(const string &domain, const string &alias, u_int32_t ttl)
+void DNSPacket::addCNAMERecord(const string &domain, const string &alias, uint32_t ttl)
 {
  string piece1;
 
@@ -595,12 +608,12 @@ void DNSPacket::addRPRecord(const DNSResourceRecord &rr)
   addRPRecord(rr.qname, rr.content, rr.ttl);
 }
 
-void DNSPacket::addRPRecord(const string &domain, const string &content, u_int32_t ttl)
+void DNSPacket::addRPRecord(const string &domain, const string &content, uint32_t ttl)
 {
  string piece1;
 
  toqname(domain.c_str(),&piece1);
- char p[10];
+ char p[11];
  makeHeader(p,17,ttl);
  
  // content contains: mailbox-name more-info-domain (Separated by a space)
@@ -640,7 +653,7 @@ void DNSPacket::addNAPTRRecord(const DNSResourceRecord &rr)
 }
 
 
-void DNSPacket::makeHeader(char *p,u_int16_t qtype, u_int32_t ttl)
+void DNSPacket::makeHeader(char *p,uint16_t qtype, uint32_t ttl)
 {
   p[0]=0;
   p[1]=qtype; 
@@ -651,33 +664,36 @@ void DNSPacket::makeHeader(char *p,u_int16_t qtype, u_int32_t ttl)
   p[9]=0;  // need to fill this in
 }
 
-void DNSPacket::addNAPTRRecord(const string &domain, const string &content, u_int32_t ttl)
+void DNSPacket::addNAPTRRecord(const string &domain, const string &content, uint32_t ttl)
 {
   string piece1;
 
   //xtoqname(domain.c_str(),&piece1);
   toqname(domain.c_str(),&piece1);
-  char p[10];
+  char p[11];
   makeHeader(p,QType::NAPTR,ttl);
  
   // content contains: 100  100  "s"   "http+I2R"   ""    _http._tcp.foo.com.
-
+  //                   100   50  "u"   "e2u+sip"    "" testuser@domain.com
+  
   vector<string> parts;
   stringtok(parts,content);
-  if(parts.size()<2) 
-    return;
+  if(parts.size() < 2) {
+    throw AhuException("Missing data for type NAPTR '"+domain+"'");
+  }
 
   int order=atoi(parts[0].c_str());
   int pref=atoi(parts[1].c_str());
 
-  vector<string::const_iterator>poss;
+  vector<string::const_iterator> poss;
   string::const_iterator i;
   for(i=content.begin();i!=content.end();++i)
     if(*i=='"')
       poss.push_back(i);
 
-  if(poss.size()!=6)
-    return;
+  if(poss.size()!=6) {
+    throw AhuException("Missing content for type NAPTR '"+domain+"'");
+  }
  
   string flags, services, regex;
   insert_iterator<string> flagsi(flags, flags.begin());
@@ -732,7 +748,7 @@ void DNSPacket::addNAPTRRecord(const string &domain, const string &content, u_in
   piece3.append(regex);
 
   string piece4;
-  toqname(replacement,&piece4);
+  toqname(replacement,&piece4, false); // don't compress
  
   p[9]=(piece3.length()+piece4.length())%256;
   p[10]=(piece3.length()+piece4.length())/256;
@@ -751,7 +767,7 @@ void DNSPacket::addPTRRecord(const DNSResourceRecord &rr)
   addPTRRecord(rr.qname, rr.content, rr.ttl);
 }
 
-void DNSPacket::addPTRRecord(const string &domain, const string &alias, u_int32_t ttl)
+void DNSPacket::addPTRRecord(const string &domain, const string &alias, uint32_t ttl)
 {
  string piece1;
 
@@ -771,20 +787,24 @@ void DNSPacket::addPTRRecord(const string &domain, const string &alias, u_int32_
  d.ancount++;
 }
 
-
-
 void DNSPacket::addTXTRecord(const DNSResourceRecord& rr)
 {
-  addTXTRecord(rr.qname, rr.content, rr.ttl);
+  addTXTorSPFRecord(QType::TXT, rr.qname, rr.content, rr.ttl);
 }
 
-void DNSPacket::addTXTRecord(string domain, string txt, u_int32_t ttl)
+void DNSPacket::addSPFRecord(const DNSResourceRecord& rr)
+{
+  addTXTorSPFRecord(QType::SPF, rr.qname, rr.content, rr.ttl);
+}
+
+
+void DNSPacket::addTXTorSPFRecord(uint16_t qtype, string domain, string txt, uint32_t ttl)
 {
  string piece1;
  //xtoqname(domain, &piece1);
  toqname(domain, &piece1);
  char p[10];
- makeHeader(p,QType::TXT,ttl);
+ makeHeader(p, qtype, ttl);
  string piece3;
  piece3.reserve(txt.length()+1);
  piece3.append(1,txt.length());
@@ -805,7 +825,7 @@ void DNSPacket::addHINFORecord(const DNSResourceRecord& rr)
 }
 
 /** First word of content is the CPU */
-void DNSPacket::addHINFORecord(string domain, string content, u_int32_t ttl)
+void DNSPacket::addHINFORecord(string domain, string content, uint32_t ttl)
 {
   string piece1;
   toqname(domain, &piece1);
@@ -847,7 +867,7 @@ void DNSPacket::addNSRecord(const DNSResourceRecord &rr)
   addNSRecord(rr.qname, rr.content, rr.ttl, rr.d_place);
 }
 
-void DNSPacket::addNSRecord(string domain, string server, u_int32_t ttl, DNSResourceRecord::Place place)
+void DNSPacket::addNSRecord(string domain, string server, uint32_t ttl, DNSResourceRecord::Place place)
 {
   string piece1;
   toqname(domain, &piece1);
@@ -951,7 +971,7 @@ void DNSPacket::wrapup(void)
       vector<string>pieces;
       stringtok(pieces,pos->content,"@");
       
-      if(pieces.size()>1) { // INSTANT ADDITIONAL PROCESSING!
+      if(pieces.size() > 1) { // INSTANT ADDITIONAL PROCESSING!
 	rr.qname=pieces[0];
 	rr.qtype=QType::A;
 	rr.ttl=pos->ttl;
@@ -970,29 +990,9 @@ void DNSPacket::wrapup(void)
 
   stable_sort(rrs.begin(),rrs.end(),rrcomp);
 
-  // now shuffle! start out with the ANSWER records  
-  vector<DNSResourceRecord>::iterator first, second;
-  for(first=rrs.begin();first!=rrs.end();++first) 
-    if(first->d_place==DNSResourceRecord::ANSWER && first->qtype.getCode() != QType::CNAME) // CNAME must come first
-      break;
-  for(second=first;second!=rrs.end();++second)
-    if(second->d_place!=DNSResourceRecord::ANSWER)
-      break;
-
-  if(second-first>1)
-    random_shuffle(first,second);
-
-  // now shuffle the additional records
-  for(first=second;first!=rrs.end();++first) 
-    if(first->d_place==DNSResourceRecord::ADDITIONAL && first->qtype.getCode() != QType::CNAME) // CNAME must come first
-      break;
-  for(second=first;second!=rrs.end();++second)
-    if(second->d_place!=DNSResourceRecord::ADDITIONAL)
-      break;
-
-  if(second-first>1)
-    random_shuffle(first,second);
-
+  if(!d_tcp && !arg().mustDo("no-shuffle")) {
+    shuffle(rrs);
+  }
   d_wrapped=true;
 
 
@@ -1029,7 +1029,8 @@ void DNSPacket::wrapup(void)
       addMXRecord(rr);
       break;
 
-    case 16: // TXT
+    case QType::TXT: // TXT
+
       addTXTRecord(rr);
       break;
 
@@ -1052,6 +1053,10 @@ void DNSPacket::wrapup(void)
 
     case QType::NAPTR:
       addNAPTRRecord(rr);
+      break;
+
+    case QType::SPF: // SPF
+      addSPFRecord(rr);
       break;
 
     case 258: // CURL
@@ -1084,7 +1089,6 @@ void DNSPacket::wrapup(void)
   d.arcount=htons(d.arcount);
 
   commitD();
-
 
   len=stringbuffer.length();
 }
@@ -1178,7 +1182,7 @@ void DNSPacket::setQuestion(int op, const string &qd, int newqtype)
   string label=compress(qd);
   stringbuffer.assign((char *)&d,sizeof(d));
   stringbuffer.append(label);
-  u_int16_t tmp=htons(newqtype);
+  uint16_t tmp=htons(newqtype);
   stringbuffer.append((char *)&tmp,2);
   tmp=htons(1);
   stringbuffer.append((char *)&tmp,2);
@@ -1206,7 +1210,7 @@ vector<DNSResourceRecord> DNSPacket::getAnswers()
 
   int numanswers=ntohs(d.ancount) + ntohs(d.nscount) + ntohs(d.arcount);
   int length;
-  u_int16_t pos=0;
+  uint16_t pos=0;
   while(numanswers--) {
     string name;  
     int offset=0;
@@ -1411,6 +1415,7 @@ DNSPacket *DNSPacket::replyPacket() const
   
   r->d_dt=d_dt;
   r->d.qdcount=1;
+  r->d_tcp = d_tcp;
   return r;
 }
 
@@ -1469,8 +1474,8 @@ int DNSPacket::findlabel(string &label)
 
     // Skip the header and data
     
-    u_int16_t dataLength = getShort(p+8);
-    u_int16_t type = getShort(p);  
+    uint16_t dataLength = getShort(p+8);
+    uint16_t type = getShort(p);  
 
     p += 10;
     

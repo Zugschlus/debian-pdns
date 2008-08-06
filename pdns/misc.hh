@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002-2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 
 
 #include "utility.hh"
-
+#include "dns.hh"
 #ifndef WIN32
 # include <sys/time.h>
 # include <sys/types.h>
@@ -38,8 +38,11 @@
 #endif // WIN32
 
 #include <deque>
+#include <stdexcept>
 #include <string>
 #include <ctype.h>
+#include <vector>
+
 using namespace std;
 bool chopOff(string &domain);
 bool endsOn(const string &domain, const string &suffix);
@@ -51,13 +54,13 @@ bool stripDomainSuffix(string *qname, const string &domain);
 void stripLine(string &line);
 string getHostname();
 string urlEncode(const string &text);
-int waitForData(int fd, int seconds);
-u_int16_t getShort(const unsigned char *p);
-u_int16_t getShort(const char *p);
-u_int32_t getLong(const unsigned char *p);
-u_int32_t getLong(const char *p);
+int waitForData(int fd, int seconds, int useconds=0);
+uint16_t getShort(const unsigned char *p);
+uint16_t getShort(const char *p);
+uint32_t getLong(const unsigned char *p);
+uint32_t getLong(const char *p);
 
-inline void putLong(unsigned char* p, u_int32_t val)
+inline void putLong(unsigned char* p, uint32_t val)
 {
   *p++=(val>>24)&0xff;
   *p++=(val>>16)&0xff;
@@ -65,13 +68,13 @@ inline void putLong(unsigned char* p, u_int32_t val)
   *p++=(val   )&0xff;
 
 }
-inline void putLong(char* p, u_int32_t val)
+inline void putLong(char* p, uint32_t val)
 {
   putLong((unsigned char *)p,val);
 }
 
 
-inline u_int32_t getLong(unsigned char *p)
+inline uint32_t getLong(unsigned char *p)
 {
   return (p[0]<<24)+(p[1]<<16)+(p[2]<<8)+p[3];
 }
@@ -80,7 +83,7 @@ inline u_int32_t getLong(unsigned char *p)
 struct ServiceTuple
 {
   string host;
-  u_int16_t port;
+  uint16_t port;
 };
 void parseService(const string &descr, ServiceTuple &st);
 
@@ -113,7 +116,8 @@ stringtok (Container &container, string const &in,
   }
 }
 const string toLower(const string &upper);
-bool IpToU32(const string &str, u_int32_t *ip);
+const string toLowerCanonic(const string &upper);
+bool IpToU32(const string &str, uint32_t *ip);
 string stringerror();
 string itoa(int i);
 string uitoa(unsigned int i);
@@ -139,27 +143,56 @@ private:
 const string sockAddrToString(struct sockaddr_in *remote, Utility::socklen_t socklen);
 int sendData(const char *buffer, int replen, int outsock);
 
-
 inline void DTime::set()
 {
-  Utility::gettimeofday(&d_set,0);
+  // Utility::
+  gettimeofday(&d_set,0);
 }
 
 inline int DTime::udiff()
 {
   struct timeval now;
-  Utility::gettimeofday(&now,0);
+  // Utility::
+  gettimeofday(&now,0);
 
   return 1000000*(now.tv_sec-d_set.tv_sec)+(now.tv_usec-d_set.tv_usec);
+}
+
+inline bool dns_isspace(char c)
+{
+  return c==' ' || c=='\t' || c=='\r' || c=='\n';
+}
+
+inline const char dns_tolower(char c)
+{
+  if(c>='A' && c<='Z')
+    c+='a'-'A';
+  return c;
 }
 
 inline const string toLower(const string &upper)
 {
   string reply(upper);
   for(unsigned int i = 0; i < reply.length(); i++)
-    reply[i] = tolower(reply[i]);
+    reply[i] = dns_tolower(reply[i]);
   return reply;
 }
+
+inline const string toLowerCanonic(const string &upper)
+{
+  string reply(upper);
+  if(!upper.empty()) {
+    unsigned int i;
+    for(i = 0; i < reply.length() ; i++) 
+      reply[i] = dns_tolower(reply[i]);
+   
+    if(reply[i-1]=='.')
+      reply.resize(i-1);
+  }
+      
+  return reply;
+}
+
 
 
 // Make s uppercase:
@@ -191,5 +224,11 @@ inline void chomp( string& line, const string& delim )
 	}
 }
 
+inline void unixDie(const string &why)
+{
+  throw runtime_error(why+": "+strerror(errno));
+}
 
+string makeHexDump(const string& str);
+void shuffle(vector<DNSResourceRecord>& rrs);
 #endif

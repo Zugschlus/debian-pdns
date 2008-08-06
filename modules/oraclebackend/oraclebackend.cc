@@ -1,4 +1,4 @@
-// $Id: oraclebackend.cc,v 1.2 2003/08/22 13:33:31 ahu Exp $
+// $Id: oraclebackend.cc 336 2005-04-08 14:42:13Z ahu $
 
 #include <string>
 #include <map>

@@ -1,11 +1,10 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as 
+    published by the Free Software Foundation
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -16,8 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
-// $Id: ueberbackend.cc,v 1.11 2003/08/22 13:33:31 ahu Exp $ 
-/* (C) Copyright 2002 PowerDNS.COM BV */
+
 #include "utility.hh"
 
 #ifdef HAVE_CONFIG_H
@@ -140,7 +138,7 @@ void UeberBackend::getUpdatedMasters(vector<DomainInfo>* domains)
 }
 
 /** special trick - if sd.db is set to -1, the cache is ignored */
-bool UeberBackend::getSOA(const string &domain, SOAData &sd)
+bool UeberBackend::getSOA(const string &domain, SOAData &sd, DNSPacket *p)
 {
   d_question.qtype=QType::SOA;
   d_question.qname=domain;
@@ -163,7 +161,7 @@ bool UeberBackend::getSOA(const string &domain, SOAData &sd)
     
 
   for(vector<DNSBackend *>::const_iterator i=backends.begin();i!=backends.end();++i)
-    if((*i)->getSOA(domain, sd)) {
+    if((*i)->getSOA(domain, sd, p)) {
       DNSResourceRecord rr;
       rr.qname=domain;
       rr.qtype=QType::SOA;
@@ -233,6 +231,9 @@ void UeberBackend::cleanup()
   for_each(backends.begin(),backends.end(),del);
 }
 
+// silly Solaris fix
+#undef PC
+
 int UeberBackend::cacheHas(const Question &q, DNSResourceRecord &rr)
 {
   extern PacketCache PC;
@@ -241,6 +242,7 @@ int UeberBackend::cacheHas(const Question &q, DNSResourceRecord &rr)
 
   static int negqueryttl=arg().asNum("negquery-cache-ttl");
   static int queryttl=arg().asNum("query-cache-ttl");
+
   if(!negqueryttl && !queryttl) {
     (*qcachemiss)++;
     return -1;
@@ -248,7 +250,10 @@ int UeberBackend::cacheHas(const Question &q, DNSResourceRecord &rr)
 
   string content;
   //  L<<Logger::Warning<<"looking up: "<<q.qname+"|N|"+q.qtype.getName()+"|"+itoa(q.zoneId)<<endl;
-  bool ret=PC.getKey(q.qname+"|Q|"+q.qtype.getName()+"|"+itoa(q.zoneId), content);   // think about lowercasing here
+
+  string key=q.qname+"|Q|"+q.qtype.getName()+"|"+itoa(q.zoneId); // perhaps work around g++ 2.95 bug
+
+  bool ret=PC.getKey(key, content);   // think about lowercasing here
 
   if(!ret) {
     (*qcachemiss)++;

@@ -1,6 +1,6 @@
 //
 // File    : pdnsbackend.hh
-// Version : $Id: pipebackend.hh,v 1.2 2003/08/22 13:33:31 ahu Exp $
+// Version : $Id: pipebackend.hh 525 2005-10-28 22:34:49Z ahu $
 //
 
 #ifndef PIPEBACKEND_HH
@@ -10,6 +10,8 @@
 #include <map>
 #include <sys/types.h>
 #include <regex.h>
+#include <boost/shared_ptr.hpp>
+using namespace boost;
 
 using namespace std;
 
@@ -44,10 +46,11 @@ class CoWrapper
 {
 public:
   CoWrapper(const string &command, int timeout=0);
+  ~CoWrapper();
   void send(const string &line);
   void receive(string &line);
 private:
-  CoProcess *d_cp;
+  CoProcess* d_cp;
   string d_command;
   void launch();
   int d_timeout;
@@ -65,7 +68,7 @@ public:
   static DNSBackend *maker();
   
 private:
-  CoWrapper *d_coproc;
+  shared_ptr<CoWrapper> d_coproc;
   string d_qname;
   QType d_qtype;
   Regex* d_regex;

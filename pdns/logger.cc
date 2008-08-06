@@ -1,11 +1,10 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+    it under the terms of the GNU General Public License version 2 as 
+    published by the Free Software Foundation
 
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -47,7 +46,6 @@ void Logger::log(const string &msg, Urgency u)
     S.ringAccount("logmessages",msg);
     syslog(u,"%s",msg.c_str());
   }
-
 }
 
 void Logger::setLoglevel( Urgency u )
@@ -131,6 +129,25 @@ Logger& Logger::operator<<(unsigned int i)
   return *this;
 }
 
+Logger& Logger::operator<<(unsigned long i)
+{
+  ostringstream tmp;
+  tmp<<i;
+
+  *this<<tmp.str();
+
+  return *this;
+}
+
+Logger& Logger::operator<<(long i)
+{
+  ostringstream tmp;
+  tmp<<i;
+
+  *this<<tmp.str();
+
+  return *this;
+}
 
 Logger& Logger::operator<<(ostream & (&)(ostream &))
 {

@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2005  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -69,6 +69,7 @@ void declareArguments()
   arg().set("recursor","If recursion is desired, IP address of a recursing nameserver")="no"; 
   arg().set("lazy-recursion","Only recurse if question cannot be answered locally")="yes";
   arg().set("allow-recursion","List of subnets that are allowed to recurse")="0.0.0.0/0";
+  arg().set("pipebackend-abi-version","Version of the pipe backend ABI")="1";
   
   arg().set("disable-tcp","Do not listen to TCP queries")="no";
   arg().set("disable-axfr","Do not allow zone transfers")="no";
@@ -86,14 +87,15 @@ void declareArguments()
   arg().setSwitch("guardian","Run within a guardian process")="no";
   arg().setSwitch("skip-cname","Do not perform CNAME indirection for each query")="no";
   arg().setSwitch("strict-rfc-axfrs","Perform strictly rfc compliant axfrs (very slow)")="no";
-  
+  arg().setSwitch("send-root-referral","Send out old-fashioned root-referral instead of ServFail in case of no authority")="no";
+
   arg().setSwitch("webserver","Start a webserver for monitoring")="no"; 
   arg().setSwitch("webserver-print-arguments","If the webserver should print arguments")="no"; 
   arg().set("webserver-address","IP Address of webserver to listen on")="127.0.0.1";
   arg().set("webserver-port","Port of webserver to listen on")="8081";
   arg().set("webserver-password","Password required for accessing the webserver")="";
 
-  arg().setSwitch("out-of-zone-additional-processing","Do out of zone additional processing")="no";
+  arg().setSwitch("out-of-zone-additional-processing","Do out of zone additional processing")="yes";
   arg().setSwitch("do-ipv6-additional-processing", "Do AAAA additional processing")="no";
   arg().setSwitch("query-logging","Hint backends that queries should be logged")="no";
   
@@ -102,8 +104,14 @@ void declareArguments()
   arg().set("negquery-cache-ttl","Seconds to store packets in the PacketCache")="60";
   arg().set("query-cache-ttl","Seconds to store packets in the PacketCache")="20";
   arg().set("soa-minimum-ttl","Default SOA mininum ttl")="3600";
+
+  arg().set("soa-refresh-default","Default SOA refresh")="10800";
+  arg().set("soa-retry-default","Default SOA retry")="3600";
+  arg().set("soa-expire-default","Default SOA expire")="604800";
+
   arg().set("default-ttl","Seconds a result is valid if not set otherwise")="3600";
   arg().set("max-tcp-connections","Maximum number of TCP connections")="10";
+  arg().setSwitch("no-shuffle","Set this to prevent random shuffling of answers - for regression testing")="off";
 
   arg().setSwitch( "use-logfile", "Use a log file" )= "no";
   arg().set( "logfile", "Logfile to use" )= "pdns.log";
@@ -117,6 +125,12 @@ void declareStats(void)
 {
   S.declare("udp-queries","Number of UDP queries received");
   S.declare("udp-answers","Number of answers sent out over UDP");
+
+  S.declare("udp4-answers","Number of IPv4 answers sent out over UDP");
+  S.declare("udp4-queries","Number of IPv4UDP queries received");
+  S.declare("udp6-answers","Number of IPv6 answers sent out over UDP");
+  S.declare("udp6-queries","Number of IPv6 UDP queries received");
+
   S.declare("recursing-answers","Number of recursive answers sent out");
   S.declare("recursing-questions","Number of questions sent to recursor");
   S.declare("corrupt-packets","Number of corrupt packets received");
@@ -161,17 +175,24 @@ int isGuarded(char **argv)
 void sendout(const DNSDistributor::AnswerData &AD)
 {
   static int &numanswered=*S.getPointer("udp-answers");
+  static int &numanswered4=*S.getPointer("udp4-answers");
+  static int &numanswered6=*S.getPointer("udp6-answers");
+
   if(!AD.A)
     return;
   
   N->send(AD.A);
   numanswered++;
+
+  if(AD.A->d_socklen==sizeof(sockaddr_in))
+    numanswered4++;
+  else
+    numanswered6++;
+
   int diff=AD.A->d_dt.udiff();
   avg_latency=(int)(1023*avg_latency/1024+diff/1024);
 
   delete AD.A;  
-
-
 }
 
 
@@ -187,6 +208,12 @@ void *qthread(void *p)
 
   int &numreceived=*S.getPointer("udp-queries");
   int &numanswered=*S.getPointer("udp-answers");
+
+  int &numreceived4=*S.getPointer("udp4-queries");
+  int &numanswered4=*S.getPointer("udp4-answers");
+
+  int &numreceived6=*S.getPointer("udp6-queries");
+  int &numanswered6=*S.getPointer("udp6-answers");
   numreceived=-1;
   int diff;
 
@@ -202,6 +229,10 @@ void *qthread(void *p)
       continue;                    // packet was broken, try again
     }
 
+    if(P->d_socklen==sizeof(sockaddr_in))
+      numreceived4++;
+    else
+      numreceived6++;
 
     S.ringAccount("queries", P->qdomain+"/"+P->qtype.getName());
     S.ringAccount("remotes",P->getRemote());
@@ -218,6 +249,11 @@ void *qthread(void *p)
       avg_latency=(int)(0.999*avg_latency+0.001*diff); // 'EWMA'
       
       numanswered++;
+      if(P->d_socklen==sizeof(sockaddr_in))
+	numanswered4++;
+      else
+	numanswered6++;
+
       continue;
     }
 
