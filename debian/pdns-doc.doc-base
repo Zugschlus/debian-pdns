@@ -1,7 +1,7 @@
 Document: pdns
 Title: PowerDNS manual
 Author: PowerDNS B.V.
-Section: Apps/System
+Section: Network/Communication
 Abstract: PowerDNS manual
  This is the complete manual for PowerDNS, documenting both
  how to install and configure it as well as how to write

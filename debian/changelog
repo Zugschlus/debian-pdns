@@ -1,3 +1,9 @@
+pdns (2.9.21.1-1) unstable; urgency=high
+
+  * New Upstream Version (fixes CVE-2008-3337)
+
+ -- Christoph Haas <haas@debian.org>  Thu, 07 Aug 2008 00:25:01 +0200
+
 pdns (2.9.21-6) unstable; urgency=low
 
   * Use upstream patch for the ldapbackend. (See #462966)
