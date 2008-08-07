@@ -1,7 +1,7 @@
 Source: pdns
 Section: net
 Priority: extra
-Standards-Version: 3.7.3
+Standards-Version: 3.8.0
 Maintainer: Debian PowerDNS Maintainers <powerdns-debian@workaround.org>
 Uploaders: Christoph Haas <haas@debian.org>, Matthijs Mohlmann <matthijs@cacholong.nl>
 Build-Depends: debhelper (>= 5.0.0), po-debconf, dpatch (>= 2.0.0), libtool, flex, bison, docbook-utils, docbook, libmysqlclient15-dev, libpq-dev, libssl-dev, tdb-dev, libgdbm-dev, libldap2-dev, libsqlite0-dev, libsqlite3-dev, dpkg-dev (> 1.10.17), libboost-dev, libboost-serialization-dev, autotools-dev, automake1.9, autoconf
