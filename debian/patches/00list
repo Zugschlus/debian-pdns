@@ -8,3 +8,4 @@ fix-ipv6-handling
 fix-unaligned-access
 auto-soa-calculation-in-ldapbackend
 literal-zone-file.dpatch
+cve-2008-3337.dpatch
