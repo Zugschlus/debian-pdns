@@ -1,8 +1,13 @@
-pdns (2.9.21.1-2) unstable; urgency=low
+pdns (2.9.21.1.0-1) unstable; urgency=low
 
-  * Fixed accidental alteration of upstream tarball.
+  * Fixed glitch in upstream tarball for 2.9.2.21.1.
+    Actually this is the same upstream version as 2.9.21.1 but due to a
+    merging glitch when using git-buildpackage two files were changed.
+    So the orig.tar.gz for 2.9.21.1 in Debian is not entirely correct
+    (although it doesn't hurt either). To replace the wrong orig.tar.gz
+    it needs a higher version number. 2.9.21.1.0-1 it newer than 2.9.21.1-1.
 
- -- Christoph Haas <haas@debian.org>  Fri, 08 Aug 2008 00:14:03 +0200
+ -- Christoph Haas <haas@debian.org>  Fri, 08 Aug 2008 15:38:55 +0200
 
 pdns (2.9.21.1-1) unstable; urgency=high
 
