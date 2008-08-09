@@ -1,4 +1,4 @@
-pdns (2.9.20-9) unstable; urgency=high
+pdns (2.9.20-8+etch1) stable-security; urgency=high
 
   * Fixes security issue CVE-2008-3337 as announced in
     http://mailman.powerdns.com/pipermail/pdns-announce/2008-August/000094.html
