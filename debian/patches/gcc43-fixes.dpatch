@@ -2,7 +2,7 @@
 ## gcc43-fixes.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
 ##
 ## All lines beginning with `## DP:' are a description of the patch.
-## DP: No description.
+## DP: Avoids FTBFS problem when using GCC 4.3
 
 @DPATCH@
 diff -urNad trunk~/modules/ldapbackend/ldapbackend.cc trunk/modules/ldapbackend/ldapbackend.cc
