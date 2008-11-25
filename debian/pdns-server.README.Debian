@@ -18,5 +18,5 @@ specific backends can go into /etc/powerdns/pdns.d/pdns.local
 PowerDNS can run in a chrooted environment but this has some disadvantages.
 It is not easy to connect via a socket to another service like MySQL. And when
 using the sqlite backend you need to move the database in your chroot. If you
-don't have this restrictions you can easily enable the chroot option.
+don't have these restrictions you can easily enable the chroot option.
 

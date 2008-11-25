@@ -1,6 +1,7 @@
 pdns (2.9.21.2-1) unstable; urgency=low
 
   * New Upstream Version
+  * Included typo fixes from Thijs Kinkhorst (closes: #502982)
 
  -- Christoph Haas <haas@debian.org>  Tue, 25 Nov 2008 20:11:46 +0100
 

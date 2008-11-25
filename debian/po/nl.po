@@ -36,10 +36,10 @@ msgid ""
 "can cause the OS to select the wrong IP for outgoing packets, so it is "
 "recommended to bind PowerDNS to a specific IP here."
 msgstr ""
-"Als je meerdere IP adressen hebt, dan is het standaard gedrag om op alle "
-"adressen te luisteren wat als gevolg kan hebben dat het OS het verkeerde IP-"
-"adres kiest voor uitgaande pakketten, daarom is het aan te raden om PowerDNS "
-"op een specifiek IP-adres te laten luisteren."
+"Als u meerdere IP-adressen heeft, dan is het standaard gedrag om op alle "
+"adressen te luisteren. Dat kan als gevolg kan hebben dat het OS het "
+"verkeerde IP-adres kiest voor uitgaande pakketten. Daarom is het aan te "
+"raden om PowerDNS op een specifiek IP-adres te laten luisteren."
 
 #. Type: boolean
 #. Description
@@ -54,7 +54,7 @@ msgid ""
 "If you accept here, an initscript will be used to automatically start the "
 "PowerDNS authoritative nameserver."
 msgstr ""
-"Als u bevestigend antwoord op deze dialoog, dan zal er een opstartscript "
+"Als u bevestigend antwoordt op deze dialoog, dan zal er een opstartscript "
 "gebruikt worden om PowerDNS automatisch te starten."
 
 #. Type: string
@@ -71,7 +71,7 @@ msgid ""
 "Allowed values are 127.0.0.1 for an ip address and 192.168.0.0/24 for a "
 "subnet."
 msgstr ""
-"Voer hier, gescheiden door komma's, de subnetten in die recursief doorlopen "
-"mogen worden. Toegestane waarden zijn 127.0.0.1 voor een IP-adres en "
+"Voer hier, gescheiden door komma's, de subnetten in die recursieve query's "
+"mogen uitvoeren. Toegestane waarden zijn 127.0.0.1 voor een IP-adres en "
 "192.168.0.0/24 voor een subnet."
 
