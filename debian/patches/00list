@@ -4,3 +4,4 @@ clean-docs
 ns-glue-records-out-of-zone
 fix-ldapbackend-openldap.dpatch
 gcc43-fixes
+ldap-subtree

@@ -6,6 +6,8 @@ pdns (2.9.21.2-1) unstable; urgency=low
     broke configurations with multiline definitions. It should not be
     needed anymore anyway after an update from Sarge to Etch.
     (closes: #475141)
+  * Added patch for LDAP requests spanning subdomains due to incorrect
+    LDAP search query (closes: #500137).
 
  -- Christoph Haas <haas@debian.org>  Tue, 25 Nov 2008 20:11:46 +0100
 
