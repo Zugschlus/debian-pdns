@@ -2,7 +2,7 @@
 ## clean-docs.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
 ##
 ## All lines beginning with `## DP:' are a description of the patch.
-## DP: No description.
+## DP: Remove superfluous file pdns-expanded.sgml when cleaning up
 
 @DPATCH@
 diff -urNad trunk~/pdns/docs/Makefile trunk/pdns/docs/Makefile
