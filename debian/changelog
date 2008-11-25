@@ -1,3 +1,9 @@
+pdns (2.9.21.2-1) unstable; urgency=low
+
+  * New Upstream Version
+
+ -- Christoph Haas <haas@debian.org>  Tue, 25 Nov 2008 20:11:46 +0100
+
 pdns (2.9.21.1.0-1) unstable; urgency=low
 
   * Fixed glitch in upstream tarball for 2.9.2.21.1.
