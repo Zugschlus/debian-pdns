@@ -2,6 +2,10 @@ pdns (2.9.21.2-1) unstable; urgency=low
 
   * New Upstream Version
   * Included typo fixes from Thijs Kinkhorst (closes: #502982)
+  * Removed the splitconfig call from debian/pdns-server.postinst as it
+    broke configurations with multiline definitions. It should not be
+    needed anymore anyway after an update from Sarge to Etch.
+    (closes: #475141)
 
  -- Christoph Haas <haas@debian.org>  Tue, 25 Nov 2008 20:11:46 +0100
 
