@@ -82,7 +82,6 @@ public:
   struct QuestionData
   {
     Question *Q;
-    time_t created;
     void (*callback)(const AnswerData &);
     int id;
   };
@@ -139,7 +138,7 @@ template<class Answer, class Question, class Backend>Distributor<Answer,Question
     Utility::usleep(50000); // we've overloaded mysql in the past :-)
   }
 
-  L<<"Done launching threads, ready to distribute questions"<<endl;
+  L<<Logger::Warning<<"Done launching threads, ready to distribute questions"<<endl;
 }
 
 // start of a new thread
@@ -152,7 +151,7 @@ template<class Answer, class Question, class Backend>void *Distributor<Answer,Qu
 
     // this is so gross
 #ifndef SMTPREDIR 
-    int queuetimeout=arg().asNum("queue-limit"); 
+    int queuetimeout=::arg().asNum("queue-limit"); 
 #endif 
     // ick ick ick!
 
@@ -242,7 +241,22 @@ template<class Answer, class Question, class Backend>int Distributor<Answer,Ques
     }
     Answer *a;
 
-    a=b->question(q);
+    try {
+      a=b->question(q); // a can be NULL!
+    }
+    catch(const AhuException &e) {
+      L<<Logger::Error<<"Backend error: "<<e.reason<<endl;
+      delete b;
+      b=0;
+      return 0;
+    }
+    catch(...) {
+      L<<Logger::Error<<Logger::NTLog<<"Caught unknown exception in Distributor thread "<<(unsigned long)pthread_self()<<endl;
+      delete b;
+      b=0;
+      return 0;
+    }
+
 
     AnswerData AD;
     AD.A=a;
@@ -288,8 +302,8 @@ template<class Answer, class Question, class Backend>int Distributor<Answer,Ques
   if(!(nextid%50)) {
     int val;
     numquestions.getValue( &val );
-    if(val>arg().asNum("max-queue-length")) {
-      L<<Logger::Error<<val<<" questions waiting for database attention. Limit is "<<arg().asNum("max-queue-length")<<", respawning"<<endl;
+    if(val>::arg().asNum("max-queue-length")) {
+      L<<Logger::Error<<val<<" questions waiting for database attention. Limit is "<<::arg().asNum("max-queue-length")<<", respawning"<<endl;
       exit(1);
     }
   }

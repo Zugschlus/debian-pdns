@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2006 PowerDNS.COM BV
+    Copyright (C) 2002 - 2008 PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -36,45 +36,47 @@
 #include "dnswriter.hh"
 #include "dnsparser.hh"
 #include "logger.hh"
+#include "dns_random.hh"
+#include <boost/scoped_array.hpp>
+#include <boost/algorithm/string.hpp>
 
-LWRes::LWRes()
+string dns0x20(const std::string& in)
 {
-  d_sock=-1;
-  d_timeout=500000;
-  d_bufsize=1500;
-  d_buf = 0;
-}
-
-LWRes::~LWRes()
-{
-  if(d_sock>=0)
-    Utility::closesocket(d_sock);
-  delete[] d_buf;
+  string ret(in);
+  string::size_type len=ret.size();
+  for(string::size_type pos = 0 ; pos < len; ++pos) {
+    if(isalpha(in[pos]) && dns_random(2))
+      ret[pos]^=0x20;
+  }
+  //  cerr<<"'"<<in<<"' -> '"<<ret<<"'\n";
+  return ret;
 }
 
 //! returns -2 for OS limits error, -1 for permanent error that has to do with remote, 0 for timeout, 1 for success
 /** Never throws! */
-int LWRes::asyncresolve(const ComboAddress& ip, const string& domain, int type, bool doTCP, struct timeval* now)
+int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool doTCP, bool doEDNS0, struct timeval* now, LWResult *lwr)
 {
-  if(!d_buf)
-    d_buf=new unsigned char[d_bufsize];
-
-  d_ip=ip;
+  int len; 
+  int bufsize=1500;
+  scoped_array<unsigned char> buf(new unsigned char[bufsize]);
   vector<uint8_t> vpacket;
+  //  string mapped0x20=dns0x20(domain);
   DNSPacketWriter pw(vpacket, domain, type);
 
   pw.getHeader()->rd=0;
-  pw.getHeader()->id=Utility::random();
-  d_domain=domain;
-  d_type=type;
-  d_inaxfr=false;
-  d_rcode=0;
+  pw.getHeader()->id=dns_random(0xffff);
+
+  if(doEDNS0 && !doTCP) {
+    pw.addOpt(1200, 0, 0); // 1200 bytes answer size
+    pw.commit();
+  }
+  lwr->d_rcode=0;
 
   int ret;
 
   DTime dt;
   dt.setTimeval(*now);
-
+  errno=0;
   if(!doTCP) {
     int queryfd;
     if(ip.sin4.sin_family==AF_INET6)
@@ -87,7 +89,7 @@ int LWRes::asyncresolve(const ComboAddress& ip, const string& domain, int type, 
   
     // sleep until we see an answer to this, interface to mtasker
     
-    ret=arecvfrom(reinterpret_cast<char *>(d_buf), d_bufsize-1,0, ip, &d_len, pw.getHeader()->id, 
+    ret=arecvfrom(reinterpret_cast<char *>(buf.get()), bufsize-1,0, ip, &len, pw.getHeader()->id, 
 		  domain, type, queryfd, now->tv_sec);
   }
   else {
@@ -97,10 +99,16 @@ int LWRes::asyncresolve(const ComboAddress& ip, const string& domain, int type, 
       Socket s(InterNetwork, Stream);
       IPEndpoint ie(U32ToIP(ntohl(ip.sin4.sin_addr.s_addr)), 53);   // WRONG WRONG WRONG XXX FIXME
       s.setNonBlocking();
+      string bindIP=::arg()["query-local-address"];
+      if(!bindIP.empty()) {
+	ComboAddress local(bindIP);
+	s.bind(local.sin4);
+      }
+
       s.connect(ie);
       
-      uint16_t len=htons(vpacket.size());
-      char *lenP=(char*)&len;
+      uint16_t tlen=htons(vpacket.size());
+      char *lenP=(char*)&tlen;
       const char *msgP=(const char*)&*vpacket.begin();
       string packet=string(lenP, lenP+2)+string(msgP, msgP+vpacket.size());
       
@@ -113,21 +121,20 @@ int LWRes::asyncresolve(const ComboAddress& ip, const string& domain, int type, 
       if(!(ret > 0))
 	return ret;
       
-      memcpy(&len, packet.c_str(), 2);
-      len=ntohs(len);
+      memcpy(&tlen, packet.c_str(), 2);
+      len=ntohs(tlen); // switch to the 'len' shared with the rest of the function
       
       ret=arecvtcp(packet, len, &s);
       if(!(ret > 0))
 	return ret;
       
-      if(len > d_bufsize) {
-	//	cerr<<"Reallocating to "<<len<<" bytes ("<<packet.size()<<")\n";
-	d_bufsize=len;
-	delete[] d_buf;
-	d_buf = new unsigned char[d_bufsize];
+      if(len > bufsize) {
+	bufsize=len;
+	scoped_array<unsigned char> narray(new unsigned char[bufsize]);
+	buf.swap(narray);
       }
-      memcpy(d_buf, packet.c_str(), len);
-      d_len=len;
+      memcpy(buf.get(), packet.c_str(), len);
+
       ret=1;
     }
     catch(NetworkError& ne) {
@@ -135,59 +142,59 @@ int LWRes::asyncresolve(const ComboAddress& ip, const string& domain, int type, 
     }
   }
 
-  d_usec=dt.udiff();
+  lwr->d_usec=dt.udiff();
   *now=dt.getTimeval();
-  return ret;
-}
 
+  if(ret <= 0) // includes 'timeout'
+    return ret;
 
-LWRes::res_t LWRes::result()
-{
+  lwr->d_result.clear();
   try {
-    MOADNSParser mdp((const char*)d_buf, d_len);
-    //    if(p.parse((char *)d_buf, d_len)<0)
-    //      throw LWResException("resolver: unable to parse packet of "+itoa(d_len)+" bytes");
-    d_aabit=mdp.d_header.aa;
-    d_tcbit=mdp.d_header.tc;
-    d_rcode=mdp.d_header.rcode;
-
-    if(Utility::strcasecmp(d_domain.c_str(), mdp.d_qname.c_str())) { 
-      if(d_domain.find((char)0)==string::npos) {// embedded nulls are too noisy
-	L<<Logger::Notice<<"Packet purporting to come from remote server "<<d_ip.toString()<<" contained wrong answer: '" << d_domain << "' != '" << mdp.d_qname << "'" << endl;
+    MOADNSParser mdp((const char*)buf.get(), len);
+    lwr->d_aabit=mdp.d_header.aa;
+    lwr->d_tcbit=mdp.d_header.tc;
+    lwr->d_rcode=mdp.d_header.rcode;
+    
+    if(Utility::strcasecmp(domain.c_str(), mdp.d_qname.c_str())) { 
+      if(domain.find((char)0)==string::npos) {// embedded nulls are too noisy
+	L<<Logger::Notice<<"Packet purporting to come from remote server "<<ip.toString()<<" contained wrong answer: '" << domain << "' != '" << mdp.d_qname << "'" << endl;
 	g_stats.unexpectedCount++;
       }
       goto out;
     }
 
-    LWRes::res_t ret;
     for(MOADNSParser::answers_t::const_iterator i=mdp.d_answers.begin(); i!=mdp.d_answers.end(); ++i) {          
-      //      cout<<i->first.d_place<<"\t"<<i->first.d_label<<"\tIN\t"<<DNSRecordContent::NumberToType(i->first.d_type);
-      //      cout<<"\t"<<i->first.d_ttl<<"\t"<< i->first.d_content->getZoneRepresentation()<<endl;
       DNSResourceRecord rr;
       rr.qtype=i->first.d_type;
       rr.qname=i->first.d_label;
+      /* 
+      if(i->first.d_label == mapped0x20)
+	rr.qname=domain;
+      else
+	rr.qname=i->first.d_label;
+      */
       rr.ttl=i->first.d_ttl;
       rr.content=i->first.d_content->getZoneRepresentation();  // this should be the serialised form
       rr.d_place=(DNSResourceRecord::Place) i->first.d_place;
-      ret.push_back(rr);
+      lwr->d_result.push_back(rr);
     }
-
-    return ret;
-    //    return p.getAnswers();
+    
+    return 1;
   }
-  catch(exception &mde) {
+  catch(std::exception &mde) {
     if(::arg().mustDo("log-common-errors"))
-      L<<Logger::Notice<<"Unable to parse packet from remote server "<<d_ip.toString()<<": "<<mde.what()<<endl;
+      L<<Logger::Notice<<"Unable to parse packet from remote server "<<ip.toString()<<": "<<mde.what()<<endl;
   }
   catch(...) {
     L<<Logger::Notice<<"Unknown error parsing packet from remote server"<<endl;
   }
-
+  
   g_stats.serverParseError++; 
-
+  
  out:
-  d_rcode=RCode::ServFail;
-  LWRes::res_t empty;
-  return empty;
+  lwr->d_rcode=RCode::ServFail;
+
+  return -1;
 }
+
 

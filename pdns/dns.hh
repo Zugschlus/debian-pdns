@@ -16,11 +16,15 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-// $Id: dns.hh 965 2007-03-07 18:12:14Z ahu $ 
+// $Id: dns.hh 1273 2008-11-15 20:05:42Z ahu $ 
 /* (C) 2002 POWERDNS.COM BV */
 #ifndef DNS_HH
 #define DNS_HH
-
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/tuple/tuple_comparison.hpp>
+#include <boost/multi_index/key_extractors.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
 #include "utility.hh"
 #include "qtype.hh"
 #include <time.h>
@@ -115,7 +119,7 @@ struct EDNS0Record
 #pragma pack (pop)
 #endif 
 
-typedef enum  {
+enum  {
         ns_t_invalid = 0,       /* Cookie. */
         ns_t_a = 1,             /* Host address. */
         ns_t_ns = 2,            /* Authoritative server. */
@@ -137,7 +141,7 @@ typedef enum  {
         ns_t_afsdb = 18,        /* AFS cell database. */
         ns_t_x25 = 19,          /* X_25 calling address. */
         ns_t_isdn = 20,         /* ISDN calling address. */
-	ns_t_rt = 21,           /* Router. */
+        ns_t_rt = 21,           /* Router. */
         ns_t_nsap = 22,         /* NSAP address. */
         ns_t_nsap_ptr = 23,     /* Reverse NSAP lookup (deprecated). */
         ns_t_sig = 24,          /* Security signature. */
@@ -169,7 +173,7 @@ typedef enum  {
 #ifdef WIN32
 #define BYTE_ORDER 1
 #define LITTLE_ENDIAN 1
-#elif __FreeBSD__
+#elif __FreeBSD__ || __APPLE__
 #include <machine/endian.h>
 #elif __linux__
 # include <endian.h>

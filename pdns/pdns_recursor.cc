@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2003 - 2006  PowerDNS.COM BV
+    Copyright (C) 2003 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 
@@ -25,6 +25,7 @@
 #endif // WIN32
 
 #include "utility.hh" 
+#include "dns_random.hh"
 #include <iostream>
 #include <errno.h>
 #include <map>
@@ -56,6 +57,7 @@
 #include "iputils.hh"
 #include "mplexer.hh"
 #include "config.h"
+#include "lua-pdns-recursor.hh"
 
 #ifndef RECURSOR
 #include "statbag.hh"
@@ -65,6 +67,7 @@ StatBag S;
 FDMultiplexer* g_fdm;
 unsigned int g_maxTCPPerClient;
 bool g_logCommonErrors;
+shared_ptr<PowerDNSLua> g_pdl;
 using namespace boost;
 
 #ifdef __FreeBSD__           // see cvstrac ticket #26
@@ -81,7 +84,7 @@ string s_programname="pdns_recursor";
 typedef vector<int> g_tcpListenSockets_t;
 g_tcpListenSockets_t g_tcpListenSockets;
 int g_tcpTimeout;
-
+map<int, ComboAddress> g_listenSocketsAddresses;
 struct DNSComboWriter {
   DNSComboWriter(const char* data, uint16_t len, const struct timeval& now) : d_mdp(data, len), d_now(now), d_tcp(false), d_socket(-1)
   {}
@@ -136,7 +139,7 @@ typedef vector<int> tcpserversocks_t;
 
 MT_t* MT; // the big MTasker
 
-void handleTCPClientWritable(int fd, boost::any& var);
+void handleTCPClientWritable(int fd, FDMultiplexer::funcparam_t& var);
 
 // -1 is error, 0 is timeout, 1 is success
 int asendtcp(const string& data, Socket* sock) 
@@ -144,11 +147,12 @@ int asendtcp(const string& data, Socket* sock)
   PacketID pident;
   pident.sock=sock;
   pident.outMSG=data;
-
+  
   g_fdm->addWriteFD(sock->getHandle(), handleTCPClientWritable, pident);
   string packet;
 
-  int ret=MT->waitEvent(pident,&packet,1);
+  int ret=MT->waitEvent(pident, &packet, 1);
+
   if(!ret || ret==-1) { // timeout
     g_fdm->removeWriteFD(sock->getHandle());
   }
@@ -158,7 +162,7 @@ int asendtcp(const string& data, Socket* sock)
   return ret;
 }
 
-void handleTCPClientReadable(int fd, boost::any& var);
+void handleTCPClientReadable(int fd, FDMultiplexer::funcparam_t& var);
 
 // -1 is error, 0 is timeout, 1 is success
 int arecvtcp(string& data, int len, Socket* sock) 
@@ -180,53 +184,8 @@ int arecvtcp(string& data, int len, Socket* sock)
   return ret;
 }
 
-// returns -1 for errors which might go away, throws for ones that won't
-int makeClientSocket(int family)
-{
-  int ret=(int)socket(family, SOCK_DGRAM, 0);
-  if(ret < 0 && errno==EMFILE) // this is not a catastrophic error
-    return ret;
 
-  if(ret<0) 
-    throw AhuException("Making a socket for resolver: "+stringerror());
-
-  static optional<ComboAddress> sin4;
-  if(!sin4) {
-    sin4=ComboAddress(::arg()["query-local-address"]);
-  }
-  static optional<ComboAddress> sin6;
-  if(!sin6) {
-    if(!::arg()["query-local-address6"].empty())
-    sin6=ComboAddress(::arg()["query-local-address6"]);
-  }
-
-  int tries=10;
-  while(--tries) {
-    uint16_t port=1025+Utility::random()%64510;
-    if(tries==1)  // fall back to kernel 'random'
-	port=0;
-
-    if(family==AF_INET) {
-      sin4->sin4.sin_port = htons(port); 
-      
-      if (::bind(ret, (struct sockaddr *)&*sin4, sin4->getSocklen()) >= 0) 
-	break;
-    }
-    else {
-      sin6->sin6.sin6_port = htons(port); 
-      
-      if (::bind(ret, (struct sockaddr *)&*sin6, sin6->getSocklen()) >= 0) 
-	break;
-    }
-  }
-  if(!tries)
-    throw AhuException("Resolver binding to local query client socket: "+stringerror());
-
-  Utility::setNonBlocking(ret);
-  return ret;
-}
-
-void handleUDPServerResponse(int fd, boost::any&);
+void handleUDPServerResponse(int fd, FDMultiplexer::funcparam_t&);
 
 // you can ask this class for a UDP socket to send a query from
 // this socket is not yours, don't even think about deleting it
@@ -244,16 +203,25 @@ public:
   typedef set<int> socks_t;
   socks_t d_socks;
 
-  // returning -1 means: temporary OS error (ie, out of files)
-  int getSocket(uint16_t family)
+  // returning -1 means: temporary OS error (ie, out of files), -2 means OS error
+  int getSocket(const ComboAddress& toaddr, int* fd)
   {
-    int fd=makeClientSocket(family);
-    if(fd < 0) // temporary error - receive exception otherwise
+    *fd=makeClientSocket(toaddr.sin4.sin_family);
+    if(*fd < 0) // temporary error - receive exception otherwise
       return -1;
 
-    d_socks.insert(fd);
+    if(connect(*fd, (struct sockaddr*)(&toaddr), toaddr.getSocklen()) < 0) {
+      int err = errno;
+      //      returnSocket(*fd);
+      Utility::closesocket(*fd);
+      if(err==ENETUNREACH) // Seth "My Interfaces Are Like A Yo Yo" Arnold special
+	return -2;
+      return -1;
+    }
+
+    d_socks.insert(*fd);
     d_numsocks++;
-    return fd;
+    return 0;
   }
 
   void returnSocket(int fd)
@@ -282,6 +250,54 @@ public:
     d_socks.erase(i++);
     --d_numsocks;
   }
+
+  // returns -1 for errors which might go away, throws for ones that won't
+  int makeClientSocket(int family)
+  {
+    int ret=(int)socket(family, SOCK_DGRAM, 0);
+    if(ret < 0 && errno==EMFILE) // this is not a catastrophic error
+      return ret;
+    
+    if(ret<0) 
+      throw AhuException("Making a socket for resolver: "+stringerror());
+    
+    static optional<ComboAddress> sin4;
+    if(!sin4) {
+      sin4=ComboAddress(::arg()["query-local-address"]);
+    }
+    static optional<ComboAddress> sin6;
+    if(!sin6) {
+      if(!::arg()["query-local-address6"].empty())
+	sin6=ComboAddress(::arg()["query-local-address6"]);
+    }
+    
+    int tries=10;
+    while(--tries) {
+      uint16_t port=1025+dns_random(64510);
+      if(tries==1)  // fall back to kernel 'random'
+	port=0;
+      
+      if(family==AF_INET) {
+	sin4->sin4.sin_port = htons(port); 
+	
+	if (::bind(ret, (struct sockaddr *)&*sin4, sin4->getSocklen()) >= 0) 
+	  break;
+      }
+      else {
+	sin6->sin6.sin6_port = htons(port); 
+	
+	if (::bind(ret, (struct sockaddr *)&*sin6, sin6->getSocklen()) >= 0) 
+	  break;
+      }
+    }
+    if(!tries)
+      throw AhuException("Resolver binding to local query client socket: "+stringerror());
+    
+    Utility::setNonBlocking(ret);
+    return ret;
+  }
+
+
 } g_udpclientsocks;
 
 
@@ -301,31 +317,24 @@ int asendto(const char *data, int len, int flags,
 
   for(; chain.first != chain.second; chain.first++) {
     if(chain.first->key.fd > -1) { // don't chain onto existing chained waiter!
-      //      cerr<<"Orig: "<<pident.domain<<", "<<pident.remote.toString()<<", id="<<id<<endl;
-      // cerr<<"Had hit: "<< chain.first->key.domain<<", "<<chain.first->key.remote.toString()<<", id="<<chain.first->key.id
-      // <<", count="<<chain.first->key.chain.size()<<", origfd: "<<chain.first->key.fd<<endl;
-      
+      /*
+      cerr<<"Orig: "<<pident.domain<<", "<<pident.remote.toString()<<", id="<<id<<endl;
+      cerr<<"Had hit: "<< chain.first->key.domain<<", "<<chain.first->key.remote.toString()<<", id="<<chain.first->key.id
+	  <<", count="<<chain.first->key.chain.size()<<", origfd: "<<chain.first->key.fd<<endl;
+      */
       chain.first->key.chain.insert(id); // we can chain
       *fd=-1;                            // gets used in waitEvent / sendEvent later on
       return 1;
     }
   }
 
-  *fd=g_udpclientsocks.getSocket(toaddr.sin4.sin_family);
-  if(*fd < 0)
-    return -2;
+  int ret=g_udpclientsocks.getSocket(toaddr, fd);
+  if(ret < 0)
+    return ret;
 
   pident.fd=*fd;
   pident.id=id;
   
-  int ret=connect(*fd, (struct sockaddr*)(&toaddr), toaddr.getSocklen());
-  if(ret < 0) {
-    g_udpclientsocks.returnSocket(*fd);
-    if(errno==ENETUNREACH) // Seth "My Interfaces Are Like A Yo Yo" Arnold special
-      return -2;
-    return ret;
-  }
-
   g_fdm->addReadFD(*fd, handleUDPServerResponse, pident);
   ret=send(*fd, data, len, 0);
   if(ret < 0)
@@ -398,8 +407,7 @@ static void setSendBuffer(int fd, uint32_t size)
 string s_pidfname;
 static void writePid(void)
 {
-  s_pidfname=::arg()["socket-dir"]+"/"+s_programname+".pid";
-  ofstream of(s_pidfname.c_str());
+  ofstream of(s_pidfname.c_str(), ios_base::app);
   if(of)
     of<< Utility::getpid() <<endl;
   else
@@ -412,23 +420,36 @@ void primeHints(void)
   set<DNSResourceRecord>nsset;
 
   if(::arg()["hint-file"].empty()) {
-    static char*ips[]={"198.41.0.4", "192.228.79.201", "192.33.4.12", "128.8.10.90", "192.203.230.10", "192.5.5.241", "192.112.36.4", "128.63.2.53", 
-		       "192.36.148.17","192.58.128.30", "193.0.14.129", "198.32.64.12", "202.12.27.33"};
-    DNSResourceRecord arr, nsrr;
+    static const char*ips[]={"198.41.0.4", "192.228.79.201", "192.33.4.12", "128.8.10.90", "192.203.230.10", "192.5.5.241", 
+			     "192.112.36.4", "128.63.2.53",
+			     "192.36.148.17","192.58.128.30", "193.0.14.129", "199.7.83.42", "202.12.27.33"};
+    static const char *ip6s[]={
+      "2001:503:ba3e::2:30", NULL, NULL, NULL, NULL,
+      "2001:500:2f::f", NULL, "2001:500:1::803f:235", NULL,
+      "2001:503:c27::2:30", NULL, NULL, NULL
+    };
+    DNSResourceRecord arr, aaaarr, nsrr;
     arr.qtype=QType::A;
-    arr.ttl=time(0)+3600000;
+    aaaarr.qtype=QType::AAAA;
     nsrr.qtype=QType::NS;
-    nsrr.ttl=time(0)+3600000;
+    arr.ttl=aaaarr.ttl=nsrr.ttl=time(0)+3600000;
     
     for(char c='a';c<='m';++c) {
       static char templ[40];
       strncpy(templ,"a.root-servers.net.", sizeof(templ) - 1);
       *templ=c;
-      arr.qname=nsrr.content=templ;
+      aaaarr.qname=arr.qname=nsrr.content=templ;
       arr.content=ips[c-'a'];
       set<DNSResourceRecord> aset;
       aset.insert(arr);
       RC.replace(time(0), string(templ), QType(QType::A), aset, true); // auth, nuke it all
+      if (ip6s[c-'a'] != NULL) {
+        aaaarr.content=ip6s[c-'a'];
+
+        set<DNSResourceRecord> aaaaset;
+        aaaaset.insert(aaaarr);
+        RC.replace(time(0), string(templ), QType(QType::AAAA), aaaaset, true);
+      }
       
       nsset.insert(nsrr);
     }
@@ -436,7 +457,6 @@ void primeHints(void)
   else {
     ZoneParserTNG zpt(::arg()["hint-file"]);
     DNSResourceRecord rr;
-    set<DNSResourceRecord> aset;
 
     while(zpt.get(rr)) {
       rr.ttl+=time(0);
@@ -444,8 +464,11 @@ void primeHints(void)
 	set<DNSResourceRecord> aset;
 	aset.insert(rr);
 	RC.replace(time(0), rr.qname, QType(QType::A), aset, true); // auth, etc see above
-      }
-      if(rr.qtype.getCode()==QType::NS) {
+      } else if(rr.qtype.getCode()==QType::AAAA) {
+	set<DNSResourceRecord> aaaaset;
+	aaaaset.insert(rr);
+	RC.replace(time(0), rr.qname, QType(QType::AAAA), aaaaset, true);
+      } else if(rr.qtype.getCode()==QType::NS) {
 	rr.content=toLower(rr.content);
 	nsset.insert(rr);
       }
@@ -481,7 +504,7 @@ struct TCPConnection
 };
 
 unsigned int TCPConnection::s_currentConnections; 
-void handleRunningTCPQuestion(int fd, boost::any& var);
+void handleRunningTCPQuestion(int fd, FDMultiplexer::funcparam_t& var);
 
 void startDoResolve(void *p)
 {
@@ -489,9 +512,9 @@ void startDoResolve(void *p)
 
   try {
     uint16_t maxudpsize=512;
-    MOADNSParser::EDNSOpts edo;
-    if(dc->d_mdp.getEDNSOpts(&edo)) {
-      maxudpsize=edo.d_packetsize;
+    EDNSOpts edo;
+    if(getEDNSOpts(dc->d_mdp, &edo)) {
+      maxudpsize=max(edo.d_packetsize, (uint16_t)1280);
     }
     
     vector<DNSResourceRecord> ret;
@@ -514,7 +537,16 @@ void startDoResolve(void *p)
     if(!dc->d_mdp.d_header.rd)
       sr.setCacheOnly();
 
-    int res=sr.beginResolve(dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), dc->d_mdp.d_qclass, ret);
+    int res;
+
+    if(!g_pdl.get() || !g_pdl->preresolve(dc->d_remote, g_listenSocketsAddresses[dc->d_socket], dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), ret, res)) {
+       res = sr.beginResolve(dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), dc->d_mdp.d_qclass, ret);
+
+       if(g_pdl.get()) {
+	 if(res == RCode::NXDomain)
+	   g_pdl->nxdomain(dc->d_remote, g_listenSocketsAddresses[dc->d_socket], dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), ret, res);
+       }
+    }
 
     if(res<0) {
       pw.getHeader()->rcode=RCode::ServFail;
@@ -537,7 +569,7 @@ void startDoResolve(void *p)
       
       if(ret.size()) {
 	shuffle(ret);
-
+	
 	for(vector<DNSResourceRecord>::const_iterator i=ret.begin(); i!=ret.end(); ++i) {
 	  pw.startRecord(i->qname, i->qtype.getCode(), i->ttl, i->qclass, (DNSPacketWriter::Place)i->d_place); 
 	  
@@ -635,7 +667,7 @@ void startDoResolve(void *p)
   catch(MOADNSException& e) {
     L<<Logger::Error<<"DNS parser error: "<<dc->d_mdp.d_qname<<", "<<e.what()<<endl;
   }
-  catch(exception& e) {
+  catch(std::exception& e) {
     L<<Logger::Error<<"STL error: "<<e.what()<<endl;
   }
   catch(...) {
@@ -655,7 +687,7 @@ void makeControlChannelSocket()
   s_rcc.listen(sockname);
 }
 
-void handleRunningTCPQuestion(int fd, boost::any& var)
+void handleRunningTCPQuestion(int fd, FDMultiplexer::funcparam_t& var)
 {
   TCPConnection* conn=any_cast<TCPConnection>(&var);
 
@@ -738,7 +770,7 @@ void handleRunningTCPQuestion(int fd, boost::any& var)
 }
 
 //! Handle new incoming TCP connection
-void handleNewTCPQuestion(int fd, boost::any& )
+void handleNewTCPQuestion(int fd, FDMultiplexer::funcparam_t& )
 {
   ComboAddress addr;
   socklen_t addrlen=sizeof(addr);
@@ -813,8 +845,10 @@ string questionExpand(const char* packet, uint16_t len, uint16_t& type)
   return tmp;
 }
 
-void handleNewUDPQuestion(int fd, boost::any& var)
+void handleNewUDPQuestion(int fd, FDMultiplexer::funcparam_t& var)
 {
+  //  static HTimer s_timer("udp new question processing");
+  //  HTimerSentinel hts=s_timer.getSentinel();
   int len;
   char data[1500];
   ComboAddress fromaddr;
@@ -847,7 +881,7 @@ void handleNewUDPQuestion(int fd, boost::any& var)
         try {
 	   questionExpand(data, len, qname, sizeof(qname), type);  
         }
-        catch(exception &e)
+        catch(std::exception &e)
         {
            throw MOADNSException(e.what());
         }
@@ -1013,9 +1047,9 @@ void makeUDPServerSockets()
       throw AhuException("Resolver binding to server socket on port "+ lexical_cast<string>(st.port) +" for "+ st.host+": "+stringerror());
     
     Utility::setNonBlocking(fd);
-    //    g_fdm->addReadFD(fd, handleNewUDPQuestion);
-    deferredAdd.push_back(make_pair(fd, handleNewUDPQuestion));
 
+    deferredAdd.push_back(make_pair(fd, handleNewUDPQuestion));
+    g_listenSocketsAddresses[fd]=sin;
     if(sin.sin4.sin_family == AF_INET) 
       L<<Logger::Error<<"Listening for UDP queries on "<< sin.toString() <<":"<<st.port<<endl;
     else
@@ -1078,6 +1112,8 @@ void doStats(void)
   else if(statsWanted) 
     L<<Logger::Warning<<"stats: no stats yet!"<<endl;
 
+  //  HTimer::listAll();
+
   statsWanted=false;
 }
 
@@ -1116,6 +1152,7 @@ try
   }
   if(now.tv_sec - last_rootupdate > 7200) {
     SyncRes sr(now);
+    sr.setDoEDNS0(true);
     vector<DNSResourceRecord> ret;
 
     sr.setNoCache();
@@ -1136,7 +1173,7 @@ catch(AhuException& ae)
 ;
 
 
-void handleRCC(int fd, boost::any& var)
+void handleRCC(int fd, FDMultiplexer::funcparam_t& var)
 {
   string remote;
   string msg=s_rcc.recv(&remote);
@@ -1147,7 +1184,7 @@ void handleRCC(int fd, boost::any& var)
     s_rcc.send(answer, &remote);
     command();
   }
-  catch(exception& e) {
+  catch(std::exception& e) {
     L<<Logger::Error<<"Error dealing with control socket request: "<<e.what()<<endl;
   }
   catch(AhuException& ae) {
@@ -1155,7 +1192,7 @@ void handleRCC(int fd, boost::any& var)
   }
 }
 
-void handleTCPClientReadable(int fd, boost::any& var)
+void handleTCPClientReadable(int fd, FDMultiplexer::funcparam_t& var)
 {
   PacketID* pident=any_cast<PacketID>(&var);
   //  cerr<<"handleTCPClientReadable called for fd "<<fd<<", pident->inNeeded: "<<pident->inNeeded<<", "<<pident->sock->getHandle()<<endl;
@@ -1186,10 +1223,9 @@ void handleTCPClientReadable(int fd, boost::any& var)
   }
 }
 
-void handleTCPClientWritable(int fd, boost::any& var)
+void handleTCPClientWritable(int fd, FDMultiplexer::funcparam_t& var)
 {
   PacketID* pid=any_cast<PacketID>(&var);
-  
   int ret=send(fd, pid->outMSG.c_str() + pid->outPos, pid->outMSG.size() - pid->outPos,0);
   if(ret > 0) {
     pid->outPos+=ret;
@@ -1212,18 +1248,21 @@ void doResends(MT_t::waiters_t::iterator& iter, PacketID resend, const string& c
 {
   if(iter->key.chain.empty())
     return;
-
+  //  cerr<<"doResends called!\n";
   for(PacketID::chain_t::iterator i=iter->key.chain.begin(); i != iter->key.chain.end() ; ++i) {
     resend.fd=-1;
     resend.id=*i;
+    //    cerr<<"\tResending "<<content.size()<<" bytes for fd="<<resend.fd<<" and id="<<resend.id<<endl;
+
     MT->sendEvent(resend, &content);
     g_stats.chainResends++;
-    //    cerr<<"\tResending "<<content.size()<<" bytes for fd="<<resend.fd<<" and id="<<resend.id<<": "<< res <<endl;
   }
 }
 
-void handleUDPServerResponse(int fd, boost::any& var)
+void handleUDPServerResponse(int fd, FDMultiplexer::funcparam_t& var)
 {
+  //  static HTimer s_timer("udp server response processing");
+
   PacketID pid=any_cast<PacketID>(var);
   int len;
   char data[1500];
@@ -1231,7 +1270,7 @@ void handleUDPServerResponse(int fd, boost::any& var)
   socklen_t addrlen=sizeof(fromaddr);
 
   len=recvfrom(fd, data, sizeof(data), 0, (sockaddr *)&fromaddr, &addrlen);
-
+  //  HTimerSentinel hts=s_timer.getSentinel();
   if(len < (int)sizeof(dnsheader)) {
     if(len < 0)
       ; //      cerr<<"Error on fd "<<fd<<": "<<stringerror()<<"\n";
@@ -1273,7 +1312,9 @@ void handleUDPServerResponse(int fd, boost::any& var)
       doResends(iter, pident, packet);
     }
 
+    //    s_timer.stop();
     if(!MT->sendEvent(pident, &packet)) {
+      //      s_timer.start();
 //      if(g_logCommonErrors)
 //        L<<Logger::Warning<<"Discarding unexpected packet from "<<fromaddr.toString()<<": "<<pident.type<<endl;
       g_stats.unexpectedCount++;
@@ -1285,8 +1326,10 @@ void handleUDPServerResponse(int fd, boost::any& var)
 	}
       }
     }
-    else if(fd >= 0)
+    else if(fd >= 0) {
+      //      s_timer.start();
       g_udpclientsocks.returnSocket(fd);
+    }
   }
   else
     L<<Logger::Warning<<"Ignoring question on outgoing socket from "<< sockAddrToString((struct sockaddr_in*) &fromaddr)  <<endl;
@@ -1390,6 +1433,24 @@ static void makeIPToNamesZone(const vector<string>& parts)
 
 void parseAuthAndForwards();
 
+void convertServersForAD(const std::string& input, SyncRes::AuthDomain& ad, const char* sepa, bool verbose=true)
+{
+  vector<string> servers;
+  stringtok(servers, input, sepa);
+  ad.d_servers.clear();
+  for(vector<string>::const_iterator iter = servers.begin(); iter != servers.end(); ++iter) {
+    if(verbose && iter != servers.begin()) 
+      L<<", ";
+    pair<string,string> ipport=splitField(*iter, ':');
+    ComboAddress addr(ipport.first, ipport.second.empty() ? 53 : lexical_cast<uint16_t>(ipport.second));
+    if(verbose)
+      L<<addr.toStringWithPort();
+    ad.d_servers.push_back(addr);
+  }
+  if(verbose)
+    L<<endl;
+}
+
 string reloadAuthAndForwards()
 {
   SyncRes::domainmap_t original=SyncRes::s_domainmap;
@@ -1424,7 +1485,7 @@ string reloadAuthAndForwards()
     SyncRes::s_negcache.clear(); 
     return "ok\n";
   }
-  catch(exception& e) {
+  catch(std::exception& e) {
     L<<Logger::Error<<"Had error reloading zones, keeping original data: "<<e.what()<<endl;
   }
   catch(AhuException& ae) {
@@ -1442,6 +1503,7 @@ void parseAuthAndForwards()
   SyncRes::s_domainmap.clear(); // this makes us idempotent
 
   TXTRecordContent::report();
+  OPTRecordContent::report();
 
   typedef vector<string> parts_t;
   parts_t parts;  
@@ -1461,9 +1523,9 @@ void parseAuthAndForwards()
 	while(zpt.get(rr)) {
 	  try {
 	    string tmp=DNSRR2String(rr);
-	    rr=String2DNSRR(rr.qname, rr.qtype, tmp, 3600);
+	    rr=String2DNSRR(rr.qname, rr.qtype, tmp, rr.ttl);
 	  }
-	  catch(exception &e) {
+	  catch(std::exception &e) {
 	    throw AhuException("Error parsing record '"+rr.qname+"' of type "+rr.qtype.getName()+" in zone '"+headers.first+"' from file '"+headers.second+"': "+e.what());
 	  }
 	  catch(...) {
@@ -1475,8 +1537,8 @@ void parseAuthAndForwards()
 	}
       }
       else {
-	L<<Logger::Error<<"Redirecting queries for zone '"<<headers.first<<"' to IP '"<<headers.second<<"'"<<endl;
-	ad.d_server=headers.second;
+	L<<Logger::Error<<"Redirecting queries for zone '"<<headers.first<<"' to: ";
+	convertServersForAD(headers.second, ad, ";");
       }
       
       SyncRes::s_domainmap[headers.first]=ad;
@@ -1494,24 +1556,27 @@ void parseAuthAndForwards()
     shared_ptr<FILE> fp=shared_ptr<FILE>(rfp, fclose);
     
     char line[1024];
-    vector<string> parts;
     int linenum=0;
     uint64_t before = SyncRes::s_domainmap.size();
     while(linenum++, fgets(line, sizeof(line)-1, fp.get())) {
-      parts.clear();
-      stringtok(parts,line,"=, ");
-      if(parts.empty())
-	continue;
-      if(parts.size()<2) 
+      string domain, instructions;
+      tie(domain, instructions)=splitField(line, '=');
+      trim(domain);
+      trim(instructions);
+
+      if(domain.empty()) 
 	throw AhuException("Error parsing line "+lexical_cast<string>(linenum)+" of " +::arg()["forward-zones-file"]);
-      trim(parts[0]);
-      trim(parts[1]);
-      parts[0]=toCanonic("", parts[0]);
-      ad.d_server=parts[1];
-      //      cerr<<"Inserting '"<<domain<<"' to '"<<ad.d_server<<"'\n";
-      SyncRes::s_domainmap[parts[0]]=ad;
+
+      try {
+	convertServersForAD(instructions, ad, ",; ", false);
+      }
+      catch(...) {
+	throw AhuException("Conversion error parsing line "+lexical_cast<string>(linenum)+" of " +::arg()["forward-zones-file"]);
+      }
+
+      SyncRes::s_domainmap[toCanonic("", domain)]=ad;
     }
-    L<<Logger::Warning<<"Done parsing " << SyncRes::s_domainmap.size() - before<<" forwarding instructions"<<endl;
+    L<<Logger::Warning<<"Done parsing " << SyncRes::s_domainmap.size() - before<<" forwarding instructions from file '"<<::arg()["forward-zones-file"]<<"'"<<endl;
   }
 
   if(::arg().mustDo("export-etc-hosts")) {
@@ -1559,6 +1624,39 @@ void parseAuthAndForwards()
   }
 }
 
+string doReloadLuaScript(vector<string>::const_iterator begin, vector<string>::const_iterator end)
+{
+  string fname=::arg()["lua-dns-script"];
+  try {
+    if(begin==end) {
+      if(!fname.empty()) 
+	g_pdl = shared_ptr<PowerDNSLua>(new PowerDNSLua(fname));
+      else
+	throw runtime_error("Asked to reload lua scripts, but no name passed and no default ('lua-dns-script') defined");
+    }
+    else {
+      fname=*begin;
+      if(fname.empty()) {
+	g_pdl.reset();
+	L<<Logger::Error<<"Unloaded current lua script"<<endl;
+	return "unloaded current lua script\n";
+      }
+      else {
+	g_pdl = shared_ptr<PowerDNSLua>(new PowerDNSLua(fname));
+	::arg().set("lua-dns-script")=fname;
+      }
+    }
+  }
+  catch(std::exception& e) {
+    L<<Logger::Error<<"Retaining current script, error from '"<<fname<<"': "<< e.what() <<endl;
+    return string("Retaining current script, error from '"+fname+"': "+string(e.what())+"\n");
+  }
+  L<<Logger::Warning<<"(Re)loaded lua script from '"<<fname<<"'"<<endl;
+  return "ok - loaded script from '"+fname+"'\n";
+}
+
+
+
 int serviceMain(int argc, char*argv[])
 {
   L.setName("pdns_recursor");
@@ -1573,7 +1671,7 @@ int serviceMain(int argc, char*argv[])
       L<<Logger::Error<<"Unknown logging facility "<<::arg().asNum("logging-facility") <<endl;
   }
 
-  L<<Logger::Warning<<"PowerDNS recursor "<<VERSION<<" (C) 2001-2006 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
+  L<<Logger::Warning<<"PowerDNS recursor "<<VERSION<<" (C) 2001-2008 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
 #ifdef __GNUC__
   L<<", gcc "__VERSION__;
 #endif // add other compilers here
@@ -1588,7 +1686,30 @@ int serviceMain(int argc, char*argv[])
   
   L<<Logger::Warning<<"Operating in "<<(sizeof(unsigned long)*8) <<" bits mode"<<endl;
   
-  if(!::arg()["allow-from"].empty()) {
+  seedRandom(::arg()["entropy-source"]);
+
+  if(!::arg()["allow-from-file"].empty()) {
+    string line;
+    g_allowFrom=new NetmaskGroup;
+    ifstream ifs(::arg()["allow-from-file"].c_str());
+    if(!ifs) {
+	throw AhuException("Could not open '"+::arg()["allow-from-file"]+"': "+stringerror());
+    }
+
+    string::size_type pos;
+    while(getline(ifs,line)) {
+      pos=line.find('#');
+      if(pos!=string::npos)
+        line.resize(pos);
+      trim(line);
+      if(line.empty())
+        continue;
+
+      g_allowFrom->addMask(line);
+    }
+    L<<Logger::Warning<<"Done parsing " << g_allowFrom->size() <<" allow-from ranges from file '"<<::arg()["allow-from-file"]<<"' - overriding 'allow-from' setting"<<endl;
+  }
+  else if(!::arg()["allow-from"].empty()) {
     g_allowFrom=new NetmaskGroup;
     vector<string> ips;
     stringtok(ips, ::arg()["allow-from"], ", ");
@@ -1604,6 +1725,7 @@ int serviceMain(int argc, char*argv[])
   else if(::arg()["local-address"]!="127.0.0.1" && ::arg().asNum("local-port")==53)
     L<<Logger::Error<<"WARNING: Allowing queries from all IP addresses - this can be a security risk!"<<endl;
   
+
   if(!::arg()["dont-query"].empty()) {
     g_dontQuery=new NetmaskGroup;
     vector<string> ips;
@@ -1641,6 +1763,19 @@ int serviceMain(int argc, char*argv[])
   }
   
   parseAuthAndForwards();
+
+  try {
+    if(!::arg()["lua-dns-script"].empty()) {
+      g_pdl = shared_ptr<PowerDNSLua>(new PowerDNSLua(::arg()["lua-dns-script"]));
+      L<<Logger::Warning<<"Loaded 'lua' script from '"<<::arg()["lua-dns-script"]<<"'"<<endl;
+    }
+    
+  }
+  catch(std::exception &e) {
+    L<<Logger::Error<<"Failed to load 'lua' script from '"<<::arg()["lua-dns-script"]<<"': "<<e.what()<<endl;
+    exit(99);
+  }
+
   
   g_stats.remotes.resize(::arg().asNum("remotes-ringbuffer-entries"));
   if(!g_stats.remotes.empty())
@@ -1649,6 +1784,10 @@ int serviceMain(int argc, char*argv[])
   
   makeUDPServerSockets();
   makeTCPServerSockets();
+
+  s_pidfname=::arg()["socket-dir"]+"/"+s_programname+".pid";
+  if(!s_pidfname.empty())
+    unlink(s_pidfname.c_str()); // remove possible old pid file 
   
 #ifndef WIN32
   if(::arg().mustDo("fork")) {
@@ -1658,7 +1797,6 @@ int serviceMain(int argc, char*argv[])
 #endif
   
   MT=new MTasker<PacketID,string>(::arg().asNum("stack-size"));
-  makeControlChannelSocket();        
   PacketID pident;
   primeHints();    
   L<<Logger::Warning<<"Done priming cache with root hints"<<endl;
@@ -1673,6 +1811,7 @@ int serviceMain(int argc, char*argv[])
   signal(SIGPIPE,SIG_IGN);
   writePid();
 #endif
+  makeControlChannelSocket();        
   g_fdm=getMultiplexer();
   
   for(deferredAdd_t::const_iterator i=deferredAdd.begin(); i!=deferredAdd.end(); ++i) 
@@ -1714,7 +1853,7 @@ int serviceMain(int argc, char*argv[])
     }
 
     if(!(counter%55)) {
-      typedef vector<pair<int, boost::any> > expired_t;
+      typedef vector<pair<int, FDMultiplexer::funcparam_t> > expired_t;
       expired_t expired=g_fdm->getTimeouts(g_now);
 	
       for(expired_t::iterator i=expired.begin() ; i != expired.end(); ++i) {
@@ -1734,6 +1873,7 @@ int serviceMain(int argc, char*argv[])
 
     Utility::gettimeofday(&g_now, 0);
     g_fdm->run(&g_now);
+    Utility::gettimeofday(&g_now, 0);
 
     if(listenOnTCP) {
       if(TCPConnection::s_currentConnections > maxTcpClients) {  // shutdown
@@ -1770,8 +1910,13 @@ void doWindowsServiceArguments(RecursorService& recursor)
 }
 #endif
 
+
 int main(int argc, char **argv) 
 {
+  //  HTimer mtimer("main");
+  //  mtimer.start();
+
+
   g_stats.startupTime=time(0);
   reportBasicTypes();
 
@@ -1786,7 +1931,6 @@ int main(int argc, char **argv)
 #endif // WIN32
 
   try {
-    Utility::srandom(time(0));
     ::arg().set("stack-size","stack size per mthread")="200000";
     ::arg().set("soa-minimum-ttl","Don't change")="0";
     ::arg().set("soa-serial-offset","Don't change")="0";
@@ -1813,6 +1957,12 @@ int main(int argc, char **argv)
     ::arg().set("logging-facility","Facility to log messages as. 0 corresponds to local0")="";
 #endif
     ::arg().set("config-dir","Location of configuration directory (recursor.conf)")=SYSCONFDIR;
+#ifndef WIN32
+    ::arg().set("socket-owner","Owner of socket")="";
+    ::arg().set("socket-group","Group of socket")="";
+    ::arg().set("socket-mode", "Permissions for socket")="";
+#endif
+    
     ::arg().set("socket-dir","Where the controlsocket will live")=LOCALSTATEDIR;
     ::arg().set("delegation-only","Which domains we only accept delegations from")="";
     ::arg().set("query-local-address","Source IP address for sending queries")="0.0.0.0";
@@ -1822,10 +1972,12 @@ int main(int argc, char **argv)
     ::arg().set("hint-file", "If set, load root hints from this file")="";
     ::arg().set("max-cache-entries", "If set, maximum number of entries in the main cache")="0";
     ::arg().set("max-negative-ttl", "maximum number of seconds to keep a negative cached entry in memory")="3600";
-    ::arg().set("server-id", "Returned when queried for 'server.id' TXT, defaults to hostname")="";
+    ::arg().set("server-id", "Returned when queried for 'server.id' TXT or NSID, defaults to hostname")="";
     ::arg().set("remotes-ringbuffer-entries", "maximum number of packets to store statistics for")="0";
-    ::arg().set("version-string", "string reported on version.pdns or version.bind")="PowerDNS Recursor "VERSION" $Id: pdns_recursor.cc 1028 2007-04-14 12:53:28Z ahu $";
+    ::arg().set("version-string", "string reported on version.pdns or version.bind")="PowerDNS Recursor "VERSION" $Id: pdns_recursor.cc 1319 2008-11-29 23:05:00Z ahu $";
     ::arg().set("allow-from", "If set, only allow these comma separated netmasks to recurse")="127.0.0.0/8, 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, ::1/128, fe80::/10";
+    ::arg().set("allow-from-file", "If set, load allowed netmasks from this file")="";
+    ::arg().set("entropy-source", "If set, read entropy from this file")="/dev/urandom";
     ::arg().set("dont-query", "If set, do not query these netmasks for DNS data")="127.0.0.0/8, 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, ::1/128, fe80::/10";
     ::arg().set("max-tcp-per-client", "If set, maximum number of TCP sessions per client (IP address)")="0";
     ::arg().set("fork", "If set, fork the daemon for possible double performance")="no";
@@ -1837,6 +1989,7 @@ int main(int argc, char **argv)
     ::arg().set("export-etc-hosts", "If we should serve up contents from /etc/hosts")="off";
     ::arg().set("serve-rfc1918", "If we should be authoritative for RFC 1918 private IP space")="";
     ::arg().set("auth-can-lower-ttl", "If we follow RFC 2181 to the letter, an authoritative server can lower the TTL of NS records")="off";
+    ::arg().set("lua-dns-script", "Filename containing an optional 'lua' script that will be used to modify dns answers")="";
     ::arg().setSwitch( "ignore-rd-bit", "Assume each packet requires recursion, for compatability" )= "off"; 
 
     ::arg().setCmd("help","Provide a helpful message");
@@ -1870,6 +2023,7 @@ int main(int argc, char **argv)
       exit(0);
     }
 
+
 #ifndef WIN32
     serviceMain(argc, argv);
 #else
@@ -1883,7 +2037,7 @@ int main(int argc, char **argv)
     L<<Logger::Error<<"Exception: "<<ae.reason<<endl;
     ret=EXIT_FAILURE;
   }
-  catch(exception &e) {
+  catch(std::exception &e) {
     L<<Logger::Error<<"STL Exception: "<<e.what()<<endl;
     ret=EXIT_FAILURE;
   }

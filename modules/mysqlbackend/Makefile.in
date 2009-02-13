@@ -124,7 +124,9 @@ LEX = @LEX@
 LEXLIB = @LEXLIB@
 LEX_OUTPUT_ROOT = @LEX_OUTPUT_ROOT@
 LIBDL = @LIBDL@
+LIBLDAP = @LIBLDAP@
 LIBOBJS = @LIBOBJS@
+LIBOPENDBX = @LIBOPENDBX@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LN_S = @LN_S@
@@ -217,7 +219,7 @@ INCLUDES = -I@MYSQL_incdir@
 lib_LTLIBRARIES = libmysqlbackend.la 
 EXTRA_DIST = OBJECTFILES OBJECTLIBS
 libmysqlbackend_la_SOURCES = mysqlcbackend.cc mysqlcbackend.hh 
-libmysqlbackend_la_LDFLAGS = @MYSQL_lib@ -lmysqlclient
+libmysqlbackend_la_LDFLAGS = -module -avoid-version @MYSQL_lib@ -lmysqlclient
 all: all-am
 
 .SUFFIXES:

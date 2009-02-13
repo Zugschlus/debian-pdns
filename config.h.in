@@ -27,8 +27,29 @@
 /* If the host operating system understands IPv6 */
 #undef HAVE_IPV6
 
+/* Define to 1 if you have the <lber.h> header file. */
+#undef HAVE_LBER_H
+
+/* Define to 1 if you have the <ldap.h> header file. */
+#undef HAVE_LDAP_H
+
+/* Define to 1 if you have ldap_initialize */
+#undef HAVE_LDAP_INITIALIZE
+
+/* Define to 1 if you have ldap_sasl_bind */
+#undef HAVE_LDAP_SASL_BIND
+
 /* Define to 1 if you have the `dl' library (-ldl). */
 #undef HAVE_LIBDL
+
+/* Have -lldap */
+#undef HAVE_LIBLDAP
+
+/* Have -lldap_r */
+#undef HAVE_LIBLDAP_R
+
+/* Have -lopendbx */
+#undef HAVE_LIBOPENDBX
 
 /* Define to 1 if you have the <limits.h> header file. */
 #undef HAVE_LIMITS_H
@@ -41,6 +62,9 @@
 
 /* Define to 1 if you have the `mktime' function. */
 #undef HAVE_MKTIME
+
+/* Define to 1 if you have the <odbx.h> header file. */
+#undef HAVE_ODBX_H
 
 /* Define to 1 if you have the `select' function. */
 #undef HAVE_SELECT

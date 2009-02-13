@@ -1,41 +1,59 @@
 #include "powerldap.hh"
+#include <pdns/misc.hh>
+#include <sys/time.h>
 
 
 
 PowerLDAP::PowerLDAP( const string& hosts, uint16_t port, bool tls )
 {
-	int protocol = LDAP_VERSION3;
+	int err;
 
-
-	if( ldap_initialize( &d_ld, hosts.c_str() ) != LDAP_SUCCESS )
+#ifdef HAVE_LDAP_INITIALIZE
+	if( ( err = ldap_initialize( &d_ld, hosts.c_str() ) ) != LDAP_SUCCESS )
 	{
-		if( ( d_ld = ldap_init( hosts.c_str(), port ) ) == NULL )
+		string ldapuris;
+		vector<string> uris;
+		stringtok( uris, hosts );
+
+		for( size_t i = 0; i < uris.size(); i++ )
 		{
-			throw LDAPException( "Error initializing LDAP connection: " + string( strerror( errno ) ) );
+			ldapuris += " ldap://" + uris[i];
 		}
 
-		if( tls && ldap_start_tls_s( d_ld, NULL, NULL ) != LDAP_SUCCESS )
+		if( ( err = ldap_initialize( &d_ld, ldapuris.c_str() ) ) != LDAP_SUCCESS )
 		{
-			ldap_unbind( d_ld );
-			throw( LDAPException( "Couldn't perform STARTTLS" ) );
+				throw LDAPException( "Error initializing LDAP connection to '" + ldapuris + ": " + getError( err ) );
 		}
 	}
+#else
+	if( ( d_ld = ldap_init( hosts.c_str(), port ) ) == NULL )
+	{
+		throw LDAPException( "Error initializing LDAP connection to '" + hosts + "': " + string( strerror( errno ) ) );
+	}
+#endif
 
+	int protocol = LDAP_VERSION3;
 	if( ldap_set_option( d_ld, LDAP_OPT_PROTOCOL_VERSION, &protocol ) != LDAP_OPT_SUCCESS )
 	{
 		protocol = LDAP_VERSION2;
 		if( ldap_set_option( d_ld, LDAP_OPT_PROTOCOL_VERSION, &protocol ) != LDAP_OPT_SUCCESS )
 		{
-			ldap_unbind( d_ld );
+			ldap_unbind_ext( d_ld, NULL, NULL );
 			throw LDAPException( "Couldn't set protocol version to LDAPv3 or LDAPv2" );
 		}
+	}
+
+	if( tls && ( err = ldap_start_tls_s( d_ld, NULL, NULL ) ) != LDAP_SUCCESS )
+	{
+		ldap_unbind_ext( d_ld, NULL, NULL );
+		throw LDAPException( "Couldn't perform STARTTLS: " + getError( err ) );
 	}
 }
 
 
 PowerLDAP::~PowerLDAP()
 {
-	ldap_unbind( d_ld );
+	ldap_unbind_ext( d_ld, NULL, NULL );
 }
 
 
@@ -57,22 +75,49 @@ void PowerLDAP::getOption( int option, int *value )
 }
 
 
+void PowerLDAP::bind( const string& ldapbinddn, const string& ldapsecret, int method, int timeout )
+{
+	int msgid;
+
+#ifdef HAVE_LDAP_SASL_BIND
+	int rc;
+	struct berval passwd;
+
+	passwd.bv_val = (char *)ldapsecret.c_str();
+	passwd.bv_len = strlen( passwd.bv_val );
+
+	if( ( rc = ldap_sasl_bind( d_ld, ldapbinddn.c_str(), LDAP_SASL_SIMPLE, &passwd, NULL, NULL, &msgid ) ) != LDAP_SUCCESS )
+	{
+		throw LDAPException( "Failed to bind to LDAP server: " + getError( rc ) );
+	}
+#else
+	if( ( msgid = ldap_bind( d_ld, ldapbinddn.c_str(), ldapsecret.c_str(), method ) ) == -1 )
+	{
+		throw LDAPException( "Failed to bind to LDAP server: " + getError( msgid ) );
+	}
+#endif
+
+	waitResult( msgid, timeout, NULL );
+}
+
+
+/**
+ * Depricated, use PowerLDAP::bind() instead
+ */
+
 void PowerLDAP::simpleBind( const string& ldapbinddn, const string& ldapsecret )
 {
-	int err;
-	if( ( err = ldap_simple_bind_s( d_ld, ldapbinddn.c_str(), ldapsecret.c_str() ) ) != LDAP_SUCCESS )
-	{
-		throw LDAPException( "Failed to bind to LDAP server: " + getError( err ) );
-	}
+	this->bind( ldapbinddn, ldapsecret, LDAP_AUTH_SIMPLE, 30 );
 }
 
 
 int PowerLDAP::search( const string& base, int scope, const string& filter, const char** attr )
 {
-	int msgid;
-	if( ( msgid = ldap_search( d_ld, base.c_str(), scope, filter.c_str(), const_cast<char**> (attr), 0 ) ) == -1 )
+	int msgid, rc;
+
+	if( ( rc = ldap_search_ext( d_ld, base.c_str(), scope, filter.c_str(), const_cast<char**> (attr), 0, NULL, NULL, NULL, LDAP_NO_LIMIT, &msgid ) ) != LDAP_SUCCESS )
 	{
-		throw LDAPException( "Starting LDAP search: " + getError() );
+		throw LDAPException( "Starting LDAP search: " + getError( rc ) );
 	}
 
 	return msgid;
@@ -87,7 +132,6 @@ int PowerLDAP::search( const string& base, int scope, const string& filter, cons
 
 int PowerLDAP::waitResult( int msgid, int timeout, LDAPMessage** result )
 {
-	int rc;
 	struct timeval tv;
 	LDAPMessage* res;
 
@@ -95,13 +139,14 @@ int PowerLDAP::waitResult( int msgid, int timeout, LDAPMessage** result )
 	tv.tv_sec = timeout;
 	tv.tv_usec = 0;
 
-	if( ( rc = ldap_result( d_ld, msgid, LDAP_MSG_ONE, &tv, &res ) ) == -1 )
+	int rc = ldap_result( d_ld, msgid, LDAP_MSG_ONE, &tv, &res );
+
+	switch( rc )
 	{
-		throw LDAPException( "Error waiting for LDAP result: " + getError() );
-	}
-	else if( rc == 0 )
-	{
-		throw LDAPTimeout();
+		case -1:
+			throw LDAPException( "Error waiting for LDAP result: " + getError() );
+		case 0:
+			throw LDAPTimeout();
 	}
 
 	if( result == NULL )
@@ -195,14 +240,9 @@ void PowerLDAP::getSearchResults( int msgid, sresult_t& result, bool dn, int tim
 
 const string PowerLDAP::getError( int rc )
 {
-	int ld_errno = rc;
+	if( rc == -1 ) { getOption( LDAP_OPT_ERROR_NUMBER, &rc ); }
 
-	if( ld_errno == -1 )
-	{
-		getOption( LDAP_OPT_ERROR_NUMBER, &ld_errno );
-	}
-
-	return ldap_err2string( ld_errno );
+	return string( ldap_err2string( rc ) );;
 }
 
 

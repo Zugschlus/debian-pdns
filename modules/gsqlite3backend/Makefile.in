@@ -124,7 +124,9 @@ LEX = @LEX@
 LEXLIB = @LEXLIB@
 LEX_OUTPUT_ROOT = @LEX_OUTPUT_ROOT@
 LIBDL = @LIBDL@
+LIBLDAP = @LIBLDAP@
 LIBOBJS = @LIBOBJS@
+LIBOPENDBX = @LIBOPENDBX@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LN_S = @LN_S@
@@ -219,7 +221,7 @@ INCLUDES = -I@SQLITE3_incdir@
 libgsqlite3backend_la_SOURCES = gsqlite3backend.cc gsqlite3backend.hh \
                 ssqlite3.hh ssqlite3.cc
 
-libgsqlite3backend_la_LDFLAGS = -module -lsqlite3
+libgsqlite3backend_la_LDFLAGS = -module -avoid-version -lsqlite3
 all: all-am
 
 .SUFFIXES:

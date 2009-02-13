@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2007 PowerDNS.COM BV
+    Copyright (C) 2002 - 2008 PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -15,6 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
+#include "packetcache.hh"
 #include "utility.hh"
 #include "resolver.hh"
 #include <pthread.h>
@@ -37,6 +38,7 @@
 #include "dnswriter.hh"
 #include "dnsparser.hh"
 #include <boost/shared_ptr.hpp>
+#include "dns_random.hh"
 
 using namespace boost;
 
@@ -60,14 +62,14 @@ void Resolver::makeSocket(int type)
   memset((char *)&sin,0, sizeof(sin));
   
   sin.sin_family = AF_INET;
-  if(!IpToU32(arg()["query-local-address"], &sin.sin_addr.s_addr))
-    throw AhuException("Unable to resolve local address '"+ arg()["query-local-address"] +"'"); 
+  if(!IpToU32(::arg()["query-local-address"], &sin.sin_addr.s_addr))
+    throw AhuException("Unable to resolve local address '"+ ::arg()["query-local-address"] +"'"); 
 
   int tries=10;
   while(--tries) {
-    sin.sin_port = htons(10000+(random()%10000));
+    sin.sin_port = htons(10000+(dns_random(10000)));
   
-    if (bind(d_sock, (struct sockaddr *)&sin, sizeof(sin)) >= 0) 
+    if (::bind(d_sock, (struct sockaddr *)&sin, sizeof(sin)) >= 0) 
       break;
 
   }
@@ -153,7 +155,7 @@ void Resolver::sendResolve(const string &ip, const char *domain, int type)
 {
   vector<uint8_t> packet;
   DNSPacketWriter pw(packet, domain, type);
-  pw.getHeader()->id = d_randomid = random();
+  pw.getHeader()->id = d_randomid = dns_random(0xffff);
 
   d_domain=domain;
   d_type=type;
@@ -182,8 +184,8 @@ int Resolver::receiveResolve(struct sockaddr* fromaddr, Utility::socklen_t addrl
   FD_SET(d_sock, &rd);
 
   struct timeval timeout;
-  timeout.tv_sec=1;
-  timeout.tv_usec=500000;
+  timeout.tv_sec=0;
+  timeout.tv_usec=750000;
 
   int res=select(d_sock+1,&rd,0,0,&timeout);
 
@@ -227,11 +229,11 @@ void Resolver::makeTCPSocket(const string &ip, uint16_t port)
     throw ResolverException("Unable to make a TCP socket for resolver: "+stringerror());
 
   // Use query-local-address as source IP for queries, if specified.
-  string querylocaladdress(arg()["query-local-address"]);
+  string querylocaladdress(::arg()["query-local-address"]);
   if (!querylocaladdress.empty()) {
     ComboAddress fromaddr(querylocaladdress, 0);
 
-    if (bind(d_sock, (struct sockaddr *)&fromaddr, fromaddr.getSocklen()) < 0) {
+    if (::bind(d_sock, (struct sockaddr *)&fromaddr, fromaddr.getSocklen()) < 0) {
       Utility::closesocket(d_sock);
       d_sock=-1;
       throw ResolverException("Binding to query-local-address: "+stringerror());
@@ -300,7 +302,7 @@ int Resolver::axfr(const string &ip, const char *domain)
   
   vector<uint8_t> packet;
   DNSPacketWriter pw(packet, domain, QType::AXFR);
-  pw.getHeader()->id = d_randomid = random();
+  pw.getHeader()->id = d_randomid = dns_random(0xffff);
 
   uint16_t replen=htons(packet.size());
   Utility::iovec iov[2];
@@ -397,12 +399,12 @@ Resolver::res_t Resolver::result()
   if(mdp->d_header.id != d_randomid) {
     throw ResolverException("Remote nameserver replied with wrong id");
   }
-  if(mdp->d_header.rcode)
+  if(mdp->d_header.rcode) {
     if(d_inaxfr)
       throw ResolverException("Remote nameserver unable/unwilling to AXFR with us: RCODE="+itoa(mdp->d_header.rcode));
     else
       throw ResolverException("Remote nameserver reported error: RCODE="+itoa(mdp->d_header.rcode));
-  
+  }
     if(!d_inaxfr) {
       if(mdp->d_header.qdcount!=1)
 	throw ResolverException("resolver: received answer with wrong number of questions ("+itoa(mdp->d_header.qdcount)+")");

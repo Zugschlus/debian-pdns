@@ -1,4 +1,4 @@
-# $Id: Makefile 745 2006-04-19 19:47:38Z ahu $ 
+# $Id: Makefile 1132 2008-02-05 19:46:15Z ahu $ 
 
 all: pdns.txt pdns.pdf html/index.html html.tar.gz
 
@@ -36,3 +36,7 @@ publish:
 	exit.powerdns.com:/opt/websites/downloads.powerdns.com/www/documentation/
 	ssh exit.powerdns.com ln -s /opt/websites/downloads.powerdns.com/www/documentation/images \
 	/opt/websites/downloads.powerdns.com/www/documentation/html/
+
+publish2:
+	rsync --copy-links --delete -avrze ssh ./html pdns.txt pdns.pdf \
+	ds9a.nl:/var/www/ds9a.nl/tmp/pdns-docs/

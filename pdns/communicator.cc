@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002-2007  PowerDNS.COM BV
+    Copyright (C) 2002-2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -15,7 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-
+#include "packetcache.hh"
 #include "utility.hh"
 #include <errno.h>
 #include "communicator.hh"
@@ -44,7 +44,7 @@ void CommunicatorClass::addSuckRequest(const string &domain, const string &maste
 
   if(priority) {
     d_suckdomains.push_front(sr);
-    d_havepriosuckrequest=true;
+    //  d_havepriosuckrequest=true;
   }
   else 
     d_suckdomains.push_back(sr);
@@ -55,6 +55,7 @@ void CommunicatorClass::addSuckRequest(const string &domain, const string &maste
 
 void CommunicatorClass::suck(const string &domain,const string &remote)
 {
+  L<<Logger::Error<<"Initiating transfer of '"<<domain<<"' from remote '"<<remote<<"'"<<endl;
   uint32_t domain_id;
   PacketHandler P;
 
@@ -83,9 +84,8 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
       }
       for(Resolver::res_t::iterator i=recs.begin();i!=recs.end();++i) {
 	if(!endsOn(i->qname, domain)) { 
-	  L<<Logger::Error<<"Remote "<<remote<<" sneaked in out-of-zone data '"<<i->qname<<"' during AXFR of zone '"<<domain<<"'"<<endl;
-	  di.backend->abortTransaction();
-	  return;
+	  L<<Logger::Error<<"Remote "<<remote<<" tried to sneak in out-of-zone data '"<<i->qname<<"' during AXFR of zone '"<<domain<<"', ignoring"<<endl;
+	  continue;
 	}
 	i->domain_id=domain_id;
 	if(i->qtype.getCode()>=1024)
@@ -106,7 +106,7 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
     }
   }
   catch(ResolverException &re) {
-    L<<Logger::Error<<"Unable to AXFR zone '"+domain+"': "<<re.reason<<endl;
+    L<<Logger::Error<<"Unable to AXFR zone '"+domain+"' from remote '"<<remote<<"': "<<re.reason<<endl;
     if(di.backend && !first) {
       L<<Logger::Error<<"Aborting possible open transaction for domain '"<<domain<<"' AXFR"<<endl;
       di.backend->abortTransaction();
@@ -197,7 +197,7 @@ bool CommunicatorClass::notifyDomain(const string &domain)
 
 void CommunicatorClass::masterUpdateCheck(PacketHandler *P)
 {
-  if(!arg().mustDo("master"))
+  if(!::arg().mustDo("master"))
     return; 
 
   UeberBackend *B=dynamic_cast<UeberBackend *>(P->getBackend());
@@ -221,7 +221,9 @@ void CommunicatorClass::masterUpdateCheck(PacketHandler *P)
   
   for(vector<DomainInfo>::const_iterator i=cmdomains.begin();i!=cmdomains.end();++i) {
     extern PacketCache PC;
-    PC.purge(i->zone); // fixes cvstrac ticket #30
+    vector<string> topurge;
+    topurge.push_back(i->zone);
+    PC.purge(topurge); // fixes cvstrac ticket #30
     queueNotifyDomain(i->zone,P->getBackend());
     i->backend->setNotified(i->id,i->serial); 
   }
@@ -244,7 +246,7 @@ void CommunicatorClass::slaveRefresh(PacketHandler *P)
     L<<Logger::Warning<<sdomains.size()<<" slave domain"<<(sdomains.size()>1 ? "s" : "")<<" need"<<
       (sdomains.size()>1 ? "" : "s")<<
       " checking"<<endl;
-
+  map<string, int> skipMasters;
   for(vector<DomainInfo>::iterator i=sdomains.begin();i!=sdomains.end();++i) {
     Resolver resolver;   
     resolver.makeUDPSocket();  
@@ -259,8 +261,11 @@ void CommunicatorClass::slaveRefresh(PacketHandler *P)
     random_shuffle(i->masters.begin(), i->masters.end());
     for(vector<string>::const_iterator iter = i->masters.begin(); iter != i->masters.end(); ++iter) {
       try {
-	resolver.getSoaSerial(*iter, i->zone, &theirserial);
+	if(skipMasters[*iter] > 5)
+	  throw AhuException("Skipping query to '"+*iter+"' because of previous timeouts in this cycle");
 	
+	resolver.getSoaSerial(*iter, i->zone, &theirserial);
+	skipMasters[*iter]=0;	
 	if(theirserial<i->serial) {
 	  L<<Logger::Error<<"Domain "<<i->zone<<" more recent than master, our serial "<<ourserial<<" > their serial "<<theirserial<<endl;
 	  i->backend->setFresh(i->id);
@@ -276,6 +281,9 @@ void CommunicatorClass::slaveRefresh(PacketHandler *P)
 	break;
       }
       catch(ResolverException &re) {
+	if(re.reason.find("Timeout") != string::npos)
+	  skipMasters[*iter]++;
+
 	L<<Logger::Error<<"Error trying to retrieve/refresh '"+i->zone+"': "+re.reason<<endl;
 	if(next(iter) != i->masters.end()) 
 	  L<<Logger::Error<<"Trying next master '"<<*next(iter)<<"' for '"+i->zone+"'"<<endl;
@@ -289,7 +297,7 @@ void CommunicatorClass::slaveRefresh(PacketHandler *P)
   }
 }  
 
-int CommunicatorClass::doNotifications()
+time_t CommunicatorClass::doNotifications()
 {
   ComboAddress from;
   Utility::socklen_t fromlen=sizeof(from);
@@ -369,7 +377,7 @@ void CommunicatorClass::makeNotifySocket()
   sin.sin_family = AF_INET;
 
   // Bind to a specific IP (query-local-address) if specified
-  string querylocaladdress(arg()["query-local-address"]);
+  string querylocaladdress(::arg()["query-local-address"]);
   if (querylocaladdress=="") {
     sin.sin_addr.s_addr = INADDR_ANY;
   }
@@ -390,7 +398,7 @@ void CommunicatorClass::makeNotifySocket()
   for(;n<10;n++) {
     sin.sin_port = htons(10000+(Utility::random()%50000));
     
-    if(bind(d_nsock, (struct sockaddr *)&sin, sizeof(sin)) >= 0) 
+    if(::bind(d_nsock, (struct sockaddr *)&sin, sizeof(sin)) >= 0) 
       break;
   }
   if(n==10) {
@@ -418,13 +426,13 @@ void CommunicatorClass::mainloop(void)
 #endif // WIN32
     L<<Logger::Error<<"Master/slave communicator launching"<<endl;
     PacketHandler P;
-    d_tickinterval=arg().asNum("slave-cycle-interval");
+    d_tickinterval=::arg().asNum("slave-cycle-interval");
     makeNotifySocket();
 
     int rc;
     time_t next;
 
-    int tick;
+    time_t tick;
 
     for(;;) {
       slaveRefresh(&P);
@@ -433,9 +441,10 @@ void CommunicatorClass::mainloop(void)
       tick=min(doNotifications(),
 	       d_tickinterval);
 
+      //      L<<Logger::Error<<"tick = "<<tick<<", d_tickinterval = "<<d_tickinterval<<endl;
       next=time(0)+tick;
 
-      while(time(0)<next) {
+      while(time(0) < next) {
 	rc=d_any_sem.tryWait();
 
 	if(rc)
@@ -461,7 +470,7 @@ void CommunicatorClass::mainloop(void)
     Utility::sleep(1);
     exit(0);
   }
-  catch(exception &e) {
+  catch(std::exception &e) {
     L<<Logger::Error<<"Communicator thread died because of STL error: "<<e.what()<<endl;
     exit(0);
   }

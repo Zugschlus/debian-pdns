@@ -70,6 +70,8 @@ public:
   uint32_t get32BitInt();
   uint16_t get16BitInt();
   uint8_t get8BitInt();
+  
+  void xfr48BitInt(uint64_t& val);
 
   void xfr32BitInt(uint32_t& val)
   {
@@ -115,6 +117,7 @@ public:
   }
 
   void xfrBlob(string& blob);
+  void xfrBlob(string& blob, int length);
   void xfrHexBlob(string& blob);
 
   static uint16_t get16BitInt(const vector<unsigned char>&content, uint16_t& pos);
@@ -149,7 +152,8 @@ public:
   virtual string serialize(const string& qname)
   {
     vector<uint8_t> packet;
-    DNSPacketWriter pw(packet, "", 1);
+    string empty;
+    DNSPacketWriter pw(packet, empty, 1);
     
     pw.startRecord(qname, d_qtype);
     this->toPacket(pw);
@@ -294,23 +298,14 @@ public:
     return pr;
   }
 
-  struct EDNSOpts
-  {
-    uint16_t d_packetsize;
-    uint8_t d_extRCode, d_version;
-    uint16_t d_Z;
-  };
-
-  //! Convenience function that fills out EDNS0 options, and returns true if there are any
-  bool getEDNSOpts(EDNSOpts* eo);
-
+  
 private:
   void getDnsrecordheader(struct dnsrecordheader &ah);
   void init(const char *packet, unsigned int len);
   vector<uint8_t> d_content;
 };
 
-string simpleCompress(const string& label);
+string simpleCompress(const string& label, const string& root="");
 void simpleExpandTo(const string& label, unsigned int frompos, string& ret);
 
 #endif

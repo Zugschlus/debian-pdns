@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005 - 2007  PowerDNS.COM BV
+    Copyright (C) 2005 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -20,6 +20,11 @@
 #include "dnsrecords.hh"
 
 boilerplate_conv(A, ns_t_a, conv.xfrIP(d_ip));
+
+ARecordContent::ARecordContent(uint32_t ip) : DNSRecordContent(ns_t_a)
+{
+  d_ip = ip;
+}
 
 uint32_t ARecordContent::getIP() const
 {
@@ -187,8 +192,40 @@ boilerplate_conv(RP, ns_t_rp,
 		 );
 
 
-boilerplate_conv(OPT, ns_t_opt,
-		 conv.xfrText(d_data)
+boilerplate_conv(OPT, ns_t_opt, 
+		   conv.xfrBlob(d_data)
+		 );
+
+void OPTRecordContent::getData(vector<pair<uint16_t, string> >& options)
+{
+  string::size_type pos=0;
+  uint16_t code, len;
+  while(d_data.size() >= 4 + pos) {
+    code = 0xff * d_data[pos] + d_data[pos+1];
+    len = 0xff * d_data[pos+2] + d_data[pos+3];
+    pos+=4;
+
+    if(pos + len > d_data.size())
+      break;
+
+    string field(d_data.c_str() + pos, len);
+    pos+=len;
+    options.push_back(make_pair(code, field));
+  }
+}
+
+boilerplate_conv(TSIG, ns_t_tsig, 
+		 conv.xfrLabel(d_algoName);
+		 conv.xfr48BitInt(d_time);
+		 conv.xfr16BitInt(d_fudge);
+		 uint16_t size=d_mac.size();
+		 conv.xfr16BitInt(size);
+		 conv.xfrBlob(d_mac, size);
+		 conv.xfr16BitInt(d_origID);
+		 conv.xfr16BitInt(d_eRcode);
+		 size=d_otherData.size();
+		 conv.xfr16BitInt(size);
+		 conv.xfrBlob(d_otherData, size);
 		 );
 
 MXRecordContent::MXRecordContent(uint16_t preference, const string& mxname) : DNSRecordContent(ns_t_mx), d_preference(preference), d_mxname(mxname)
@@ -199,6 +236,24 @@ boilerplate_conv(MX, ns_t_mx,
 		 conv.xfr16BitInt(d_preference);
 		 conv.xfrLabel(d_mxname, true);
 		 )
+
+boilerplate_conv(KX, ns_t_kx, 
+		 conv.xfr16BitInt(d_preference);
+		 conv.xfrLabel(d_exchanger, false);
+		 )
+
+boilerplate_conv(IPSECKEY, 45,  /* ns_t_ipsec */
+		 conv.xfr8BitInt(d_preference);
+		 conv.xfr8BitInt(d_gatewaytype);
+		 conv.xfr8BitInt(d_algorithm);
+		 conv.xfrLabel(d_gateway, false);
+		 conv.xfrBlob(d_publickey);
+		 )
+
+boilerplate_conv(DHCID, 49, 
+		 conv.xfrBlob(d_content);
+		 )
+
 
 boilerplate_conv(AFSDB, ns_t_afsdb, 
 		 conv.xfr16BitInt(d_subtype);
@@ -287,6 +342,41 @@ boilerplate_conv(DNSKEY, 48,
 		 conv.xfrBlob(d_key);
 		 )
 
+// "fancy records" 
+boilerplate_conv(URL, QType::URL, 
+		 conv.xfrLabel(d_url);
+		 )
+
+boilerplate_conv(MBOXFW, QType::MBOXFW, 
+		 conv.xfrLabel(d_mboxfw);
+		 )
+
+bool getEDNSOpts(const MOADNSParser& mdp, EDNSOpts* eo)
+{
+  if(mdp.d_header.arcount && !mdp.d_answers.empty() && 
+     mdp.d_answers.back().first.d_type == QType::OPT) {
+    eo->d_packetsize=mdp.d_answers.back().first.d_class;
+    
+    EDNS0Record stuff;
+    uint32_t ttl=ntohl(mdp.d_answers.back().first.d_ttl);
+    memcpy(&stuff, &ttl, sizeof(stuff));
+
+    eo->d_extRCode=stuff.extRCode;
+    eo->d_version=stuff.version;
+    eo->d_Z=stuff.Z;
+    OPTRecordContent* orc = 
+      dynamic_cast<OPTRecordContent*>(mdp.d_answers.back().first.d_content.get());
+    if(!orc)
+      return false;
+    orc->getData(eo->d_options);
+
+    return true;
+  }
+  else
+    return false;
+}
+
+
 void reportBasicTypes()
 {
   ARecordContent::report();
@@ -317,7 +407,14 @@ void reportOtherTypes()
    SSHFPRecordContent::report();
    CERTRecordContent::report();
    NSECRecordContent::report();
+   TSIGRecordContent::report();
    OPTRecordContent::report();
+}
+
+void reportFancyTypes()
+{
+  URLRecordContent::report();
+  MBOXFWRecordContent::report();
 }
 
 void reportAllTypes()

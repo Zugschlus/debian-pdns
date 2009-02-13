@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005 - 2006  PowerDNS.COM BV
+    Copyright (C) 2005 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -19,6 +19,7 @@
 #include "dnsparser.hh"
 #include "dnswriter.hh"
 #include <boost/lexical_cast.hpp>
+#include <boost/algorithm/string.hpp>
 
 using namespace boost;
 
@@ -53,9 +54,9 @@ public:
     string tmp((char*)&*d_record.begin(), d_record.size());
     vector<string> parts;
     stringtok(parts, tmp);
-    if(parts.size()!=3)
+    if(parts.size()!=3 && !(parts.size()==2 && equals(parts[1],"0")) )
       throw MOADNSException("Unknown record was stored incorrectly, need 3 fields, got "+lexical_cast<string>(parts.size())+": "+tmp );
-    const string& relevant=parts[2];
+    const string& relevant=(parts.size() > 2) ? parts[2] : "";
     unsigned int total=atoi(parts[1].c_str());
     if(relevant.size()!=2*total)
       throw runtime_error("invalid unknown record");
@@ -131,7 +132,9 @@ shared_ptr<DNSRecordContent> DNSRecordContent::unserialize(const string& qname, 
 DNSRecordContent* DNSRecordContent::mastermake(const DNSRecord &dr, 
 					       PacketReader& pr)
 {
-  typemap_t::const_iterator i=getTypemap().find(make_pair(dr.d_class, dr.d_type));
+  uint16_t searchclass = (dr.d_type == QType::OPT) ? 1 : dr.d_class; // class is invalid for OPT
+
+  typemap_t::const_iterator i=getTypemap().find(make_pair(searchclass, dr.d_type));
   if(i==getTypemap().end() || !i->second) {
     return new UnknownRecordContent(dr, pr);
   }
@@ -205,7 +208,7 @@ void MOADNSParser::init(const char *packet, unsigned int len)
     struct dnsrecordheader ah;
     vector<unsigned char> record;
     validPacket=true;
-    for(n=0;n < d_header.ancount + d_header.nscount + d_header.arcount; ++n) {
+    for(n=0;n < (unsigned int)(d_header.ancount + d_header.nscount + d_header.arcount); ++n) {
       DNSRecord dr;
       
       if(n < d_header.ancount)
@@ -256,24 +259,6 @@ void MOADNSParser::init(const char *packet, unsigned int len)
   }
 }
 
-bool MOADNSParser::getEDNSOpts(EDNSOpts* eo)
-{
-  if(d_header.arcount && !d_answers.empty()) {
-    eo->d_packetsize=d_answers.back().first.d_class;
-
-    EDNS0Record stuff;
-    uint32_t ttl=ntohl(d_answers.back().first.d_ttl);
-    memcpy(&stuff, &ttl, sizeof(stuff));
-
-    eo->d_extRCode=stuff.extRCode;
-    eo->d_version=stuff.version;
-    eo->d_Z=stuff.Z;
-
-    return true;
-  }
-  else
-    return false;
-}
 
 void PacketReader::getDnsrecordheader(struct dnsrecordheader &ah)
 {
@@ -313,6 +298,21 @@ void PacketReader::copyRecord(unsigned char* dest, uint16_t len)
   d_pos+=len;
 }
 
+void PacketReader::xfr48BitInt(uint64_t& ret)
+{
+  ret=0;
+  ret+=d_content.at(d_pos++);
+  ret<<=8;
+  ret+=d_content.at(d_pos++);
+  ret<<=8;
+  ret+=d_content.at(d_pos++);
+  ret<<=8;
+  ret+=d_content.at(d_pos++);
+  ret<<=8;
+  ret+=d_content.at(d_pos++);
+  ret<<=8;
+  ret+=d_content.at(d_pos++);
+}
 
 uint32_t PacketReader::get32BitInt()
 {
@@ -384,9 +384,10 @@ string PacketReader::getText(bool multi)
     unsigned char labellen=d_content.at(d_pos++);
     
     ret.append(1,'"');
-    string val(&d_content.at(d_pos), &d_content.at(d_pos+labellen-1)+1);
-    
-    ret.append(txtEscape(val)); // the end is one beyond the packet
+    if(labellen) { // no need to do anything for an empty string
+      string val(&d_content.at(d_pos), &d_content.at(d_pos+labellen-1)+1);
+      ret.append(txtEscape(val)); // the end is one beyond the packet
+    }
     ret.append(1,'"');
     d_pos+=labellen;
     if(!multi)
@@ -430,17 +431,28 @@ void PacketReader::getLabelFromContent(const vector<uint8_t>& content, uint16_t&
 
 void PacketReader::xfrBlob(string& blob)
 {
-  blob.assign(&d_content.at(d_pos), &d_content.at(d_startrecordpos + d_recordlen - 1 ) + 1);
+  if(d_recordlen)
+    blob.assign(&d_content.at(d_pos), &d_content.at(d_startrecordpos + d_recordlen - 1 ) + 1);
+  else
+    blob.clear();
 
   d_pos = d_startrecordpos + d_recordlen;
 }
+
+void PacketReader::xfrBlob(string& blob, int length)
+{
+  blob.assign(&d_content.at(d_pos), &d_content.at(d_pos + length ) );
+
+  d_pos += length;
+}
+
 
 void PacketReader::xfrHexBlob(string& blob)
 {
   xfrBlob(blob);
 }
 
-string simpleCompress(const string& label)
+string simpleCompress(const string& label, const string& root)
 {
   typedef vector<pair<unsigned int, unsigned int> > parts_t;
   parts_t parts;
@@ -448,12 +460,18 @@ string simpleCompress(const string& label)
   string ret;
   ret.reserve(label.size()+4);
   for(parts_t::const_iterator i=parts.begin(); i!=parts.end(); ++i) {
+    if(!root.empty() && !strncasecmp(root.c_str(), label.c_str() + i->first, 1 + label.length() - i->first)) { // also match trailing 0, hence '1 +'
+      const char rootptr[2]={0xc0,0x11};
+      ret.append(rootptr, 2);
+      return ret;
+    }
     ret.append(1, (char)(i->second - i->first));
     ret.append(label.c_str() + i->first, i->second - i->first);
   }
   ret.append(1, (char)0);
   return ret;
 }
+
 
 void simpleExpandTo(const string& label, unsigned int frompos, string& ret)
 {

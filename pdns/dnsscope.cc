@@ -35,6 +35,10 @@ statmap_t statmap;
 int main(int argc, char** argv)
 try
 {
+  if(argc!=2) {
+    cerr<<"Syntax: dnsscope filename.pcap"<<endl;
+    exit(1);
+  }
   PcapPacketReader pr(argv[1]);
   PcapPacketWriter* pw=0;
 
@@ -110,7 +114,7 @@ try
 	dnserrors++;
 	continue;
       }
-      catch(exception& e) {
+      catch(std::exception& e) {
 	if(pw)
 	  pw->write();
 	bogus++;
@@ -207,7 +211,7 @@ try
   if(totpackets)
     cerr<<"Average response time: "<<tottime/totpackets<<" usec"<<endl;
 }
-catch(exception& e)
+catch(std::exception& e)
 {
   cerr<<"Fatal: "<<e.what()<<endl;
 }

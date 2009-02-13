@@ -137,6 +137,18 @@ public:
   }
 
   //! Bind the socket to a specified endpoint
+  void bind(const struct sockaddr_in &local)
+  {
+    int tmp=1;
+    if(setsockopt(d_socket,SOL_SOCKET,SO_REUSEADDR,(char*)&tmp,sizeof tmp)<0)
+      throw NetworkError(string("Setsockopt failed: ")+strerror(errno));
+
+    if(::bind(d_socket,(struct sockaddr *)&local,sizeof(local))<0)
+      throw NetworkError(strerror(errno));
+  }
+
+
+  //! Bind the socket to a specified endpoint
   void bind(const IPEndpoint &ep)
   {
     struct sockaddr_in local;
@@ -145,12 +157,7 @@ public:
     local.sin_addr.s_addr=ep.address.byte;
     local.sin_port=htons(ep.port);
     
-    int tmp=1;
-    if(setsockopt(d_socket,SOL_SOCKET,SO_REUSEADDR,(char*)&tmp,sizeof tmp)<0)
-      throw NetworkError(string("Setsockopt failed: ")+strerror(errno));
-
-    if(::bind(d_socket,(struct sockaddr *)&local,sizeof(local))<0)
-      throw NetworkError(strerror(errno));
+    bind(local);
   }
 
   //! Connect the socket to a specified endpoint
@@ -189,12 +196,14 @@ public:
     struct sockaddr_in remote;
     socklen_t remlen=sizeof(remote);
     int bytes;
-    if((bytes=recvfrom(d_socket, d_buffer, d_buflen, 0, (sockaddr *)&remote, &remlen))<0)
-      if(errno!=EAGAIN)
+    if((bytes=recvfrom(d_socket, d_buffer, d_buflen, 0, (sockaddr *)&remote, &remlen))<0) {
+      if(errno!=EAGAIN) {
 	throw NetworkError(strerror(errno));
-      else
+      }
+      else {
 	return false;
-    
+      }
+    }
     dgram.assign(d_buffer,bytes);
     ep.address.byte=remote.sin_addr.s_addr;
     ep.port=ntohs(remote.sin_port);

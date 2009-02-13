@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002-2007  PowerDNS.COM BV
+    Copyright (C) 2002 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -225,10 +225,9 @@ bool Bind2Backend::feedRecord(const DNSResourceRecord &r)
 void Bind2Backend::getUpdatedMasters(vector<DomainInfo> *changedDomains)
 {
   SOAData soadata;
+  shared_ptr<State> state = s_state;
 
-  //  Lock l(&s_state_lock); // we don't really change the zone map, just flip a bit
-
-  for(id_zone_map_t::iterator i = s_state->id_zone_map.begin(); i != s_state->id_zone_map.end() ; ++i) {
+  for(id_zone_map_t::const_iterator i = state->id_zone_map.begin(); i != state->id_zone_map.end() ; ++i) {
     if(!i->second.d_masters.empty())
       continue;
     soadata.serial=0;
@@ -243,8 +242,10 @@ void Bind2Backend::getUpdatedMasters(vector<DomainInfo> *changedDomains)
     di.last_check=i->second.d_lastcheck;
     di.backend=this;
     di.kind=DomainInfo::Master;
-    if(!i->second.d_lastnotified)            // don't do notification storm on startup 
-      i->second.d_lastnotified=soadata.serial;
+    if(!i->second.d_lastnotified)  {          // don't do notification storm on startup 
+      Lock l(&s_state_lock);
+      s_state->id_zone_map[i->first].d_lastnotified=soadata.serial;
+    }
     else
       if(soadata.serial!=i->second.d_lastnotified)
 	changedDomains->push_back(di);
@@ -336,12 +337,14 @@ void Bind2Backend::insert(shared_ptr<State> stage, int id, const string &qnameu,
   vector<Bind2DNSRecord>& records=*bb2.d_records; 
 
   bdr.qname=toLower(canonic(qnameu));
-  if(bdr.qname==toLower(bb2.d_name))
+  if(bb2.d_name.empty())
+    ;
+  else if(bdr.qname==toLower(bb2.d_name))
     bdr.qname.clear();
   else if(bdr.qname.length() > bb2.d_name.length())
     bdr.qname.resize(bdr.qname.length() - (bb2.d_name.length() + 1));
   else
-    throw AhuException("Trying to insert non-zone data, name='"+bdr.qname+"', zone='" + s_state->id_zone_map[id].d_name+"'");
+    throw AhuException("Trying to insert non-zone data, name='"+bdr.qname+"', qtype="+qtype.getName()+", zone='"+bb2.d_name+"'");
 
   bdr.qname.swap(bdr.qname);
 
@@ -600,7 +603,7 @@ void Bind2Backend::loadConfig(string* status)
 	    L<<Logger::Warning<<d_logprefix<<msg.str()<<endl;
 	    rejected++;
 	  }
-	  catch(exception &ae) {
+	  catch(std::exception &ae) {
 	    ostringstream msg;
 	    msg<<" error at "+nowTime()+" parsing '"<<i->name<<"' from file '"<<i->filename<<"': "<<ae.what();
 
@@ -715,22 +718,13 @@ void Bind2Backend::queueReload(BB2DomainInfo *bbd)
     msg<<" error at "+nowTime()+" parsing '"<<bbd->d_name<<"' from file '"<<bbd->d_filename<<"': "<<ae.reason;
     bbd->d_status=msg.str();
   }
-  catch(exception &ae) {
+  catch(std::exception &ae) {
     ostringstream msg;
     msg<<" error at "+nowTime()+" parsing '"<<bbd->d_name<<"' from file '"<<bbd->d_filename<<"': "<<ae.what();
     bbd->d_status=msg.str();
   }
 }
 
-bool operator<(const Bind2DNSRecord &a, const string &b)
-{
-  return a.qname < b;
-}
-
-bool operator<(const string &a, const Bind2DNSRecord &b)
-{
-  return a < b.qname;
-}
 
 
 void Bind2Backend::lookup(const QType &qtype, const string &qname, DNSPacket *pkt_p, int zoneId )
@@ -739,15 +733,16 @@ void Bind2Backend::lookup(const QType &qtype, const string &qname, DNSPacket *pk
 
   string domain=toLower(qname);
 
-  bool mustlog=::arg().mustDo("query-logging");
+  static bool mustlog=::arg().mustDo("query-logging");
   if(mustlog) 
     L<<Logger::Warning<<"Lookup for '"<<qtype.getName()<<"' of '"<<domain<<"'"<<endl;
 
   shared_ptr<State> state = s_state;
 
-  while(!state->name_id_map.count(domain) && chopOff(domain));
+  name_id_map_t::const_iterator iditer;
+  while((iditer=state->name_id_map.find(domain)) == state->name_id_map.end() && chopOff(domain))
+    ;
 
-  name_id_map_t::const_iterator iditer=state->name_id_map.find(domain);
 
   if(iditer==state->name_id_map.end()) {
     if(mustlog)
@@ -757,14 +752,16 @@ void Bind2Backend::lookup(const QType &qtype, const string &qname, DNSPacket *pk
   }
   //  unsigned int id=*iditer;
   if(mustlog)
-    L<<Logger::Warning<<"Found data in zone '"<<domain<<"' with id "<<iditer->second<<endl;
+    L<<Logger::Warning<<"Found a zone '"<<domain<<"' (with id " << iditer->second<<") that might contain data "<<endl;
     
   d_handle.id=iditer->second;
   
   DLOG(L<<"Bind2Backend constructing handle for search for "<<qtype.getName()<<" for "<<
        qname<<endl);
   
-  if(strcasecmp(qname.c_str(),domain.c_str()))
+  if(domain.empty())
+    d_handle.qname=qname;
+  else if(strcasecmp(qname.c_str(),domain.c_str()))
     d_handle.qname=qname.substr(0,qname.size()-domain.length()-1); // strip domain name
 
   d_handle.qtype=qtype;
@@ -782,7 +779,7 @@ void Bind2Backend::lookup(const QType &qtype, const string &qname, DNSPacket *pk
     state = s_state;
   }
 
-  d_handle.d_records = state->id_zone_map[iditer->second].d_records; // give it a reference counted copy
+  d_handle.d_records = bbd.d_records; // give it a reference counted copy
   
   if(d_handle.d_records->empty())
     DLOG(L<<"Query with no results"<<endl);
@@ -793,6 +790,7 @@ void Bind2Backend::lookup(const QType &qtype, const string &qname, DNSPacket *pk
   
   string lname=toLower(d_handle.qname);
   range=equal_range(d_handle.d_records->begin(), d_handle.d_records->end(), lname);
+  d_handle.mustlog = mustlog;
   
   if(range.first==range.second) {
     d_handle.d_list=false;
@@ -801,8 +799,6 @@ void Bind2Backend::lookup(const QType &qtype, const string &qname, DNSPacket *pk
   else {
     d_handle.d_iter=range.first;
     d_handle.d_end_iter=range.second;
-    d_handle.mustlog = mustlog;
-
   }
 
   d_handle.d_list=false;
@@ -815,14 +811,17 @@ Bind2Backend::handle::handle()
 
 bool Bind2Backend::get(DNSResourceRecord &r)
 {
-  if(!d_handle.d_records)
+  if(!d_handle.d_records) {
+    if(d_handle.mustlog)
+      L<<Logger::Warning<<"There were no answers"<<endl;
     return false;
+  }
 
   if(!d_handle.get(r)) {
-    d_handle.reset();
+    if(d_handle.mustlog)
+      L<<Logger::Warning<<"End of answers"<<endl;
 
-    if(::arg().mustDo("query-logging"))
-      L<<"End of answers"<<endl;
+    d_handle.reset();
 
     return false;
   }
@@ -841,8 +840,8 @@ bool Bind2Backend::handle::get(DNSResourceRecord &r)
 
 bool Bind2Backend::handle::get_normal(DNSResourceRecord &r)
 {
-  DLOG(L << "Bind2Backend get() was called for "<<qtype.getName() << " record  for "<<
-       qname<<"- "<<d_records->size()<<" available!"<<endl);
+  DLOG(L << "Bind2Backend get() was called for "<<qtype.getName() << " record for '"<<
+       qname<<"' - "<<d_records->size()<<" available in total!"<<endl);
   
   if(d_iter==d_end_iter) {
     return false;

@@ -28,6 +28,26 @@ RecordTextReader::RecordTextReader(const string& str, const string& zone) : d_st
 {
 }
 
+void RecordTextReader::xfr48BitInt(uint64_t &val)
+{
+  xfr64BitInt(val);
+}
+
+void RecordTextReader::xfr64BitInt(uint64_t &val)
+{
+  skipSpaces();
+
+  if(!isdigit(d_string.at(d_pos)))
+    throw RecordTextException("expected digits at position "+lexical_cast<string>(d_pos)+" in '"+d_string+"'");
+
+  char *endptr;
+  unsigned long ret=strtoull(d_string.c_str() + d_pos, &endptr, 10);
+  val=ret;
+  
+  d_pos = endptr - d_string.c_str();
+}
+
+
 void RecordTextReader::xfr32BitInt(uint32_t &val)
 {
   skipSpaces();
@@ -88,9 +108,9 @@ void RecordTextReader::xfrIP(uint32_t &val)
     }
     else if(dns_isspace(d_string.at(d_pos))) 
       break;
-    else
-      throw RecordTextException("unable to parse IP address, strange character: "+d_string.at(d_pos));
-
+    else {
+      throw RecordTextException(string("unable to parse IP address, strange character: ")+d_string.at(d_pos));
+    }
     d_pos++;
     if(d_pos == d_string.length())
       break;
@@ -134,7 +154,7 @@ void RecordTextReader::xfrLabel(string& val, bool)
 
   const char* strptr=d_string.c_str();
   while(d_pos < d_end) {
-    if(dns_isspace(strptr[d_pos]))
+    if(strptr[d_pos]!='\r' && dns_isspace(strptr[d_pos]))
       break;
 
     if(strptr[d_pos]=='\\' && d_pos < d_end - 1 && strptr[d_pos+1]!='.')  // leave the \. escape around
@@ -156,7 +176,7 @@ void RecordTextReader::xfrLabel(string& val, bool)
   }
 }
 
-void RecordTextReader::xfrBlob(string& val)
+void RecordTextReader::xfrBlob(string& val, int)
 {
   skipSpaces();
   int pos=(int)d_pos;
@@ -264,7 +284,7 @@ RecordTextWriter::RecordTextWriter(string& str) : d_string(str)
   d_string.clear();
 }
 
-void RecordTextWriter::xfr32BitInt(const uint32_t& val)
+void RecordTextWriter::xfr48BitInt(const uint64_t& val)
 {
   if(!d_string.empty())
     d_string.append(1,' ');
@@ -272,6 +292,12 @@ void RecordTextWriter::xfr32BitInt(const uint32_t& val)
 }
 
 
+void RecordTextWriter::xfr32BitInt(const uint32_t& val)
+{
+  if(!d_string.empty())
+    d_string.append(1,' ');
+  d_string+=lexical_cast<string>(val);
+}
 
 void RecordTextWriter::xfrType(const uint16_t& val)
 {
@@ -370,7 +396,7 @@ void RecordTextWriter::xfrLabel(const string& val, bool)
   //  d_string.append(1,'.');
 }
 
-void RecordTextWriter::xfrBlob(const string& val)
+void RecordTextWriter::xfrBlob(const string& val, int)
 {
   if(!d_string.empty())
     d_string.append(1,' ');
@@ -434,7 +460,7 @@ try
   cout<<"Regenerated: '"<<out<<"'\n";
   
 }
-catch(exception& e)
+catch(std::exception& e)
 {
   cerr<<"Fatal: "<<e.what()<<endl;
 }

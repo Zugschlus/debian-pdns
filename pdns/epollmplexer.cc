@@ -23,7 +23,7 @@ public:
 
   virtual int run(struct timeval* tv);
 
-  virtual void addFD(callbackmap_t& cbmap, int fd, callbackfunc_t toDo, const boost::any& parameter);
+  virtual void addFD(callbackmap_t& cbmap, int fd, callbackfunc_t toDo, const funcparam_t& parameter);
   virtual void removeFD(callbackmap_t& cbmap, int fd);
   string getName()
   {
@@ -72,7 +72,7 @@ EpollFDMultiplexer::EpollFDMultiplexer() : d_eevents(new epoll_event[s_maxevents
     
 }
 
-void EpollFDMultiplexer::addFD(callbackmap_t& cbmap, int fd, callbackfunc_t toDo, const boost::any& parameter)
+void EpollFDMultiplexer::addFD(callbackmap_t& cbmap, int fd, callbackfunc_t toDo, const funcparam_t& parameter)
 {
   accountingAddFD(cbmap, fd, toDo, parameter);
 
@@ -112,36 +112,34 @@ int EpollFDMultiplexer::run(struct timeval* now)
   gettimeofday(now,0);
   
   if(ret < 0 && errno!=EINTR)
-    throw FDMultiplexerException("select returned error: "+stringerror());
+    throw FDMultiplexerException("epoll returned error: "+stringerror());
 
-  if(ret==0) // nothing
+  if(ret < 1) // thanks AB!
     return 0;
 
   d_inrun=true;
-
   for(int n=0; n < ret; ++n) {
     d_iter=d_readCallbacks.find(d_eevents[n].data.fd);
     
     if(d_iter != d_readCallbacks.end()) {
       d_iter->second.d_callback(d_iter->first, d_iter->second.d_parameter);
+      continue; // so we don't refind ourselves as writable!
     }
-
     d_iter=d_writeCallbacks.find(d_eevents[n].data.fd);
     
     if(d_iter != d_writeCallbacks.end()) {
       d_iter->second.d_callback(d_iter->first, d_iter->second.d_parameter);
     }
   }
-
   d_inrun=false;
   return 0;
 }
 
 #if 0
-void acceptData(int fd, boost::any& parameter)
+void acceptData(int fd, funcparam_t& parameter)
 {
   cout<<"Have data on fd "<<fd<<endl;
-  Socket* sock=boost::any_cast<Socket*>(parameter);
+  Socket* sock=funcparam_t_cast<Socket*>(parameter);
   string packet;
   IPEndpoint rem;
   sock->recvFrom(packet, rem);

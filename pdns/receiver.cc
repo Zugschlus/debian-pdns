@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2006  PowerDNS.COM BV
+    Copyright (C) 2002 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -16,6 +16,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
+#include "packetcache.hh"
 
 #include <cstdio>
 #include <signal.h>
@@ -38,6 +39,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <fstream>
+#include <boost/algorithm/string.hpp>
 
 #include "config.h"
 #include "dns.hh"
@@ -51,7 +53,6 @@
 #include "packethandler.hh"
 #include "statbag.hh"
 #include "tcpreceiver.hh"
-#include "packetcache.hh"
 #include "ws.hh"
 #include "misc.hh"
 #include "dynlistener.hh"
@@ -62,11 +63,12 @@
 #include "common_startup.hh"
 #include "dnsrecords.hh"
 
+
 time_t s_starttime;
 
 string s_programname="pdns"; // used in packethandler.cc
 
-char *funnytext=
+const char *funnytext=
 "*****************************************************************************\n"\
 "Ok, you just ran pdns_server through 'strings' hoping to find funny messages.\n"\
 "Well, you found one. \n"\
@@ -109,9 +111,7 @@ void daemonize(void)
   }
 }
 
-
 static int cpid;
-
 static void takedown(int i)
 {
   if(cpid) {
@@ -123,7 +123,7 @@ static void takedown(int i)
 
 static void writePid(void)
 {
-  string fname=arg()["socket-dir"]+"/"+s_programname+".pid";
+  string fname=::arg()["socket-dir"]+"/"+s_programname+".pid";
   ofstream of(fname.c_str());
   if(of)
     of<<getpid()<<endl;
@@ -131,8 +131,9 @@ static void writePid(void)
     L<<Logger::Error<<"Requested to write pid for "<<getpid()<<" to "<<fname<<" failed: "<<strerror(errno)<<endl;
 }
 
-int d_fd1[2], d_fd2[2];
-FILE *d_fp;
+int g_fd1[2], g_fd2[2];
+FILE *g_fp;
+pthread_mutex_t g_guardian_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static string DLRestHandler(const vector<string>&parts, pid_t ppid)
 {
@@ -145,23 +146,29 @@ static string DLRestHandler(const vector<string>&parts, pid_t ppid)
   }
   line.append(1,'\n');
   
-  write(d_fd1[1],line.c_str(),line.size()+1);
+  Lock l(&g_guardian_lock);
+
+  try {
+    writen2(g_fd1[1],line.c_str(),line.size()+1);
+  }
+  catch(AhuException &ae) {
+    return "Error communicating with instance: "+ae.reason;
+  }
   char mesg[512];
   string response;
-  while(fgets(mesg,sizeof(mesg),d_fp)) {
+  while(fgets(mesg,sizeof(mesg),g_fp)) {
     if(*mesg=='\n')
       break;
     response+=mesg;
   }
-  chomp(response,"\n");
+  boost::trim_right(response);
   return response;
 }
 
 static string DLCycleHandler(const vector<string>&parts, pid_t ppid)
 {
-  kill(cpid,SIGKILL); // why?
-  kill(cpid,SIGKILL); // why?
-  
+  kill(cpid, SIGKILL); // why?
+  kill(cpid, SIGKILL); // why?
   sleep(1);
   return "ok";
 }
@@ -185,14 +192,22 @@ static int guardian(int argc, char **argv)
   bool first=true;
   cpid=0;
 
+  pthread_mutex_lock(&g_guardian_lock);
+
   for(;;) {
     int pid;
     setStatus("Launching child");
-
-    if(pipe(d_fd1)<0 || pipe(d_fd2)<0) {
+    
+    if(pipe(g_fd1)<0 || pipe(g_fd2)<0) {
       L<<Logger::Critical<<"Unable to open pipe for coprocess: "<<strerror(errno)<<endl;
       exit(1);
     }
+
+    if(!(g_fp=fdopen(g_fd2[0],"r"))) {
+      L<<Logger::Critical<<"Unable to associate a file pointer with pipe: "<<stringerror()<<endl;
+      exit(1);
+    }
+    setbuf(g_fp,0); // no buffering please, confuses select
 
     if(!(pid=fork())) { // child
       signal(SIGTERM, SIG_DFL);
@@ -204,9 +219,9 @@ static int guardian(int argc, char **argv)
       char **const newargv=new char*[argc+2];
       int n;
 
-      if(arg()["config-name"]!="") {
-	progname+="-"+arg()["config-name"];
-	L<<Logger::Error<<"Virtual configuration name: "<<arg()["config-name"]<<endl;
+      if(::arg()["config-name"]!="") {
+	progname+="-"+::arg()["config-name"];
+	L<<Logger::Error<<"Virtual configuration name: "<<::arg()["config-name"]<<endl;
       }
 
       newargv[0]=strdup(const_cast<char *>((progname+"-instance").c_str()));
@@ -216,17 +231,17 @@ static int guardian(int argc, char **argv)
       newargv[n]=0;
       
       L<<Logger::Error<<"Guardian is launching an instance"<<endl;
-      close(d_fd1[1]);
-      close(d_fd2[0]);
+      close(g_fd1[1]);
+      fclose(g_fp); // this closes g_fd2[0] for us
 
-      if(d_fd1[0]!= infd) {
-	dup2(d_fd1[0], infd);
-	close(d_fd1[0]);
+      if(g_fd1[0]!= infd) {
+	dup2(g_fd1[0], infd);
+	close(g_fd1[0]);
       }
 
-      if(d_fd2[1]!= outfd) {
-	dup2(d_fd2[1], outfd);
-	close(d_fd2[1]);
+      if(g_fd2[1]!= outfd) {
+	dup2(g_fd2[1], outfd);
+	close(g_fd2[1]);
       }
       if(execvp(argv[0], newargv)<0) {
 	L<<Logger::Error<<"Unable to execvp '"<<argv[0]<<"': "<<strerror(errno)<<endl;
@@ -240,13 +255,8 @@ static int guardian(int argc, char **argv)
       // never reached
     }
     else if(pid>0) { // parent
-      close(d_fd1[0]);
-      close(d_fd2[1]);
-      if(!(d_fp=fdopen(d_fd2[0],"r"))) {
-	L<<Logger::Critical<<"Unable to associate a file pointer with pipe: "<<stringerror()<<endl;
-	exit(1);
-      }
-      setbuf(d_fp,0); // no buffering please, confuses select
+      close(g_fd1[0]);
+      close(g_fd2[1]);
 
       if(first) {
 	first=false;
@@ -258,7 +268,7 @@ static int guardian(int argc, char **argv)
 
 	writePid();
       }
-
+      pthread_mutex_unlock(&g_guardian_lock);  
       int status;
       cpid=pid;
       for(;;) {
@@ -274,13 +284,16 @@ static int guardian(int argc, char **argv)
 	else { // child is alive
 	  // execute some kind of ping here 
 	  if(DLQuitPlease())
-	    takedown(1);
+	    takedown(1); // needs a parameter..
 	  setStatus("Child running on pid "+itoa(pid));
 	  sleep(1);
 	}
       }
-      close(d_fd1[1]);
-      fclose(d_fp);
+
+      pthread_mutex_lock(&g_guardian_lock);
+      close(g_fd1[1]);
+      fclose(g_fp);
+      g_fp=0;
 
       if(WIFEXITED(status)) {
 	int ret=WEXITSTATUS(status);
@@ -321,35 +334,35 @@ static int guardian(int argc, char **argv)
 static void UNIX_declareArguments()
 {
   static char pietje[128]="!@@SYSCONFDIR@@:";
-  arg().set("config-dir","Location of configuration directory (pdns.conf)")=
+  ::arg().set("config-dir","Location of configuration directory (pdns.conf)")=
     strcmp(pietje+1,"@@SYSCONFDIR@@:") ? pietje+strlen("@@SYSCONFDIR@@:")+1 : SYSCONFDIR;
   
-  arg().set("config-name","Name of this virtual configuration - will rename the binary image")="";
-  arg().set("socket-dir","Where the controlsocket will live")=LOCALSTATEDIR;
-  arg().set("module-dir","Default directory for modules")=LIBDIR;
-  arg().set("chroot","If set, chroot to this directory for more security")="";
-  arg().set("logging-facility","Log under a specific facility")="";
-  arg().set("daemon","Operate as a daemon")="no";
+  ::arg().set("config-name","Name of this virtual configuration - will rename the binary image")="";
+  ::arg().set("socket-dir","Where the controlsocket will live")=LOCALSTATEDIR;
+  ::arg().set("module-dir","Default directory for modules")=LIBDIR;
+  ::arg().set("chroot","If set, chroot to this directory for more security")="";
+  ::arg().set("logging-facility","Log under a specific facility")="";
+  ::arg().set("daemon","Operate as a daemon")="no";
 
 }
 
 static void loadModules()
 {
-  if(!arg()["load-modules"].empty()) { 
+  if(!::arg()["load-modules"].empty()) { 
     vector<string>modules;
     
-    stringtok(modules,arg()["load-modules"],",");
+    stringtok(modules,::arg()["load-modules"],",");
     
     for(vector<string>::const_iterator i=modules.begin();i!=modules.end();++i) {
       bool res;
       const string &module=*i;
       
       if(module.find(".")==string::npos)
-	res=UeberBackend::loadmodule(arg()["module-dir"]+"/lib"+module+"backend.so");
+	res=UeberBackend::loadmodule(::arg()["module-dir"]+"/lib"+module+"backend.so");
       else if(module[0]=='/' || (module[0]=='.' && module[1]=='/') || (module[0]=='.' && module[1]=='.'))    // absolute or current path
 	res=UeberBackend::loadmodule(module);
       else
-	res=UeberBackend::loadmodule(arg()["module-dir"]+"/"+module);
+	res=UeberBackend::loadmodule(::arg()["module-dir"]+"/"+module);
       
       if(res==false) {
 	L<<Logger::Error<<"receiver unable to load module "<<module<<endl;
@@ -405,38 +418,38 @@ int main(int argc, char **argv)
     declareArguments();
     UNIX_declareArguments();
       
-    arg().laxParse(argc,argv); // do a lax parse
+    ::arg().laxParse(argc,argv); // do a lax parse
     
-    if(arg()["config-name"]!="") 
-      s_programname+="-"+arg()["config-name"];
+    if(::arg()["config-name"]!="") 
+      s_programname+="-"+::arg()["config-name"];
     
     (void)theL(s_programname);
     
-    string configname=arg()["config-dir"]+"/"+s_programname+".conf";
+    string configname=::arg()["config-dir"]+"/"+s_programname+".conf";
     cleanSlashes(configname);
 
-    if(!arg().mustDo("config") && !arg().mustDo("no-config")) // "config" == print a configuration file
-      arg().laxFile(configname.c_str());
+    if(!::arg().mustDo("config") && !::arg().mustDo("no-config")) // "config" == print a configuration file
+      ::arg().laxFile(configname.c_str());
     
-    arg().laxParse(argc,argv); // reparse so the commandline still wins
-    if(!arg()["logging-facility"].empty()) {
-      boost::optional<int> val=logFacilityToLOG(arg().asNum("logging-facility") );
+    ::arg().laxParse(argc,argv); // reparse so the commandline still wins
+    if(!::arg()["logging-facility"].empty()) {
+      boost::optional<int> val=logFacilityToLOG(::arg().asNum("logging-facility") );
       if(val)
 	theL().setFacility(*val);
       else
-	L<<Logger::Error<<"Unknown logging facility "<<arg().asNum("logging-facility") <<endl;
+	L<<Logger::Error<<"Unknown logging facility "<<::arg().asNum("logging-facility") <<endl;
     }
 
-    L.setLoglevel((Logger::Urgency)(arg().asNum("loglevel")));
-    L.toConsole((Logger::Urgency)(arg().asNum("loglevel")));  
+    L.setLoglevel((Logger::Urgency)(::arg().asNum("loglevel")));
+    L.toConsole((Logger::Urgency)(::arg().asNum("loglevel")));  
 
-    if(arg().mustDo("help") || arg().mustDo("config")) {
-      arg().set("daemon")="no";
-      arg().set("guardian")="no";
+    if(::arg().mustDo("help") || ::arg().mustDo("config")) {
+      ::arg().set("daemon")="no";
+      ::arg().set("guardian")="no";
     }
 
-    if(arg().mustDo("guardian") && !isGuarded(argv)) {
-      if(arg().mustDo("daemon")) {
+    if(::arg().mustDo("guardian") && !isGuarded(argv)) {
+      if(::arg().mustDo("daemon")) {
 	L.toConsole(Logger::Critical);
 	daemonize();
       }
@@ -445,7 +458,7 @@ int main(int argc, char **argv)
       cerr<<"Um, we did get here!"<<endl;
     }
 
-    if(arg().mustDo("version")) {
+    if(::arg().mustDo("version")) {
       cerr<<"Version: "VERSION", compiled on "<<__DATE__", "__TIME__;
 #ifdef __GNUC__ 
       cerr<<" with gcc version "<<__VERSION__;
@@ -456,28 +469,28 @@ int main(int argc, char **argv)
     
     // we really need to do work - either standalone or as an instance
     
+    seedRandom(::arg()["entropy-source"]);
+    
     loadModules();
-    BackendMakers().launch(arg()["launch"]); // vrooooom!
+    BackendMakers().launch(::arg()["launch"]); // vrooooom!
 
-    if(!arg().getCommands().empty()) {
+    if(!::arg().getCommands().empty()) {
       cerr<<"Fatal: non-option on the command line, perhaps a '--setting=123' statement missed the '='?"<<endl;
       exit(99);
     }
-
-
     
-    if(arg().mustDo("help")) {
+    if(::arg().mustDo("help")) {
       cerr<<"syntax:"<<endl<<endl;
-      cerr<<arg().helpstring(arg()["help"])<<endl;
+      cerr<<::arg().helpstring(::arg()["help"])<<endl;
       exit(99);
     }
     
-    if(arg().mustDo("config")) {
-      cout<<arg().configstring()<<endl;
+    if(::arg().mustDo("config")) {
+      cout<<::arg().configstring()<<endl;
       exit(99);
     }
 
-    if(arg().mustDo("list-modules")) {
+    if(::arg().mustDo("list-modules")) {
       vector<string>modules=BackendMakers().getModules();
       cerr<<"Modules available:"<<endl;
       for(vector<string>::const_iterator i=modules.begin();i!=modules.end();++i)
@@ -486,7 +499,7 @@ int main(int argc, char **argv)
       exit(99);
     }
 
-    if(!arg().asNum("local-port")) {
+    if(!::arg().asNum("local-port")) {
       L<<Logger::Error<<"Unable to launch, binding to no port or port 0 makes no sense"<<endl;
       exit(99); // this isn't going to fix itself either
     }
@@ -494,10 +507,16 @@ int main(int argc, char **argv)
       L<<Logger::Error<<"Unable to launch, no backends configured for querying"<<endl;
       exit(99); // this isn't going to fix itself either
     }    
-    if(arg().mustDo("daemon")) {
+    if(::arg().mustDo("daemon")) {
       L.toConsole(Logger::None);
       if(!isGuarded(argv))
 	daemonize();
+    }
+
+    if(::arg()["server-id"].empty()) {
+      char tmp[128];
+      gethostname(tmp, sizeof(tmp)-1);
+      ::arg().set("server-id")=tmp;
     }
 
     if(isGuarded(argv)) {
@@ -507,36 +526,40 @@ int main(int argc, char **argv)
     else {
       L<<Logger::Warning<<"This is a standalone pdns"<<endl; 
       
-      if(arg().mustDo("control-console"))
+      if(::arg().mustDo("control-console"))
 	dl=new DynListener();
       else
 	dl=new DynListener(s_programname);
       
       writePid();
     }
-    dl->registerFunc("SHOW",&DLShowHandler);
-    dl->registerFunc("RPING",&DLPingHandler);
-    dl->registerFunc("QUIT",&DLRQuitHandler);
-    dl->registerFunc("UPTIME",&DLUptimeHandler);
-    dl->registerFunc("NOTIFY-HOST",&DLNotifyHostHandler);
-    dl->registerFunc("NOTIFY",&DLNotifyHandler);
-    dl->registerFunc("RELOAD",&DLReloadHandler);
-    dl->registerFunc("REDISCOVER",&DLRediscoverHandler);
-    dl->registerFunc("VERSION",&DLVersionHandler);
-    dl->registerFunc("PURGE",&DLPurgeHandler);
-    dl->registerFunc("CCOUNTS",&DLCCHandler);
-    dl->registerFunc("SET",&DLSettingsHandler);
-    dl->registerFunc("RETRIEVE",&DLNotifyRetrieveHandler);
+    DynListener::registerFunc("SHOW",&DLShowHandler);
+    DynListener::registerFunc("RPING",&DLPingHandler);
+    DynListener::registerFunc("QUIT",&DLRQuitHandler);
+    DynListener::registerFunc("UPTIME",&DLUptimeHandler);
+    DynListener::registerFunc("NOTIFY-HOST",&DLNotifyHostHandler);
+    DynListener::registerFunc("NOTIFY",&DLNotifyHandler);
+    DynListener::registerFunc("RELOAD",&DLReloadHandler);
+    DynListener::registerFunc("REDISCOVER",&DLRediscoverHandler);
+    DynListener::registerFunc("VERSION",&DLVersionHandler);
+    DynListener::registerFunc("PURGE",&DLPurgeHandler);
+    DynListener::registerFunc("CCOUNTS",&DLCCHandler);
+    DynListener::registerFunc("SET",&DLSettingsHandler);
+    DynListener::registerFunc("RETRIEVE",&DLNotifyRetrieveHandler);
 
-    
+    if(!::arg()["tcp-control-address"].empty()) {
+      DynListener* dlTCP=new DynListener(ComboAddress(::arg()["tcp-control-address"], ::arg().asNum("tcp-control-port")));
+      dlTCP->go();
+    }
+
     // reparse, with error checking
-    if(!arg().mustDo("no-config"))
-      arg().file(configname.c_str());
-    arg().parse(argc,argv);
+    if(!::arg().mustDo("no-config"))
+      ::arg().file(configname.c_str());
+    ::arg().parse(argc,argv);
     UeberBackend::go();
     N=new UDPNameserver; // this fails when we are not root, throws exception
     
-    if(!arg().mustDo("disable-tcp"))
+    if(!::arg().mustDo("disable-tcp"))
       TN=new TCPNameserver; 
   }
   catch(const ArgException &A) {
@@ -547,7 +570,7 @@ int main(int argc, char **argv)
   declareStats();
   DLOG(L<<Logger::Warning<<"Verbose logging in effect"<<endl);
   
-  L<<Logger::Warning<<"PowerDNS "<<VERSION<<" (C) 2001-2008 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
+  L<<Logger::Warning<<"PowerDNS "<<VERSION<<" (C) 2001-2009 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
 #ifdef __GNUC__
   L<<", gcc "__VERSION__;
 #endif // add other compilers here
@@ -563,12 +586,12 @@ int main(int argc, char **argv)
     mainthread();
   }
   catch(AhuException &AE) {
-    if(!arg().mustDo("daemon"))
+    if(!::arg().mustDo("daemon"))
       cerr<<"Exiting because: "<<AE.reason<<endl;
     L<<Logger::Error<<"Exiting because: "<<AE.reason<<endl;
   }      
-  catch(exception &e) {
-    if(!arg().mustDo("daemon"))
+  catch(std::exception &e) {
+    if(!::arg().mustDo("daemon"))
       cerr<<"Exiting because of STL error: "<<e.what()<<endl;
     L<<Logger::Error<<"Exiting because of STL error: "<<e.what()<<endl;
   }

@@ -39,15 +39,25 @@ private:
   bool getLine();
   bool getTemplateLine();
   void stackFile(const std::string& fname);
-  stack<FILE *> d_fps;
+  unsigned makeTTLFromZone(const std::string& str);
+  string getLineOfFile();
   string d_reldir;
   string d_line;
   string d_prevqname;
   string d_zonename;
   int d_defaultttl;
+  bool d_havedollarttl;
   uint32_t d_templatecounter, d_templatestop, d_templatestep;
   string d_templateline;
   parts_t d_templateparts;
+
+  struct filestate {
+    filestate(FILE* fp, string filename) : d_fp(fp), d_filename(filename), d_lineno(0){}
+    FILE *d_fp;
+    string d_filename;
+    int d_lineno;
+  };
+  stack<filestate> d_filestates;
 };
 
 #endif

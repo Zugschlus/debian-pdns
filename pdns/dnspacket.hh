@@ -82,6 +82,7 @@ public:
   DNSPacket();
   DNSPacket(const DNSPacket &orig);
 
+  int noparse(const char *mesg, int len); //!< parse a raw UDP or TCP packet and suck the data inward
   int parse(const char *mesg, int len); //!< parse a raw UDP or TCP packet and suck the data inward
   string getString(); //!< for serialization - just passes the whole packet
 
@@ -138,6 +139,10 @@ public:
   DNSPacket *replyPacket() const; //!< convenience function that creates a virgin answer packet to this question
 
   void commitD(); //!< copies 'd' into the stringbuffer
+  int getMaxReplyLen(); //!< retrieve the maximum length of the packet we should send in response
+  void setMaxReplyLen(int bytes); //!< set the max reply len (used when retrieving from the packet cache, and this changed)
+
+  bool couldBeCached(); //!< returns 0 if this query should bypass the packet cache
 
   //////// DATA !
 
@@ -161,7 +166,9 @@ private:
   int d_socket; // 4
 
   string stringbuffer; // this is where everything lives 4
-
+  int d_maxreplylen;
+  string d_ednsping;
+  bool d_wantsnsid;
   vector<DNSResourceRecord> rrs; // 4
 };
 

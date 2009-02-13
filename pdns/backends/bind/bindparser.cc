@@ -536,10 +536,10 @@ static const yytype_int8 yyrhs[] =
 static const yytype_uint8 yyrline[] =
 {
        0,   108,   108,   110,   113,   113,   113,   113,   116,   118,
-     122,   126,   135,   146,   148,   152,   152,   155,   158,   160,
-     164,   167,   169,   172,   172,   175,   183,   185,   188,   188,
-     188,   191,   195,   198,   200,   203,   203,   203,   203,   206,
-     209,   211,   214,   222,   231,   240,   246
+     122,   126,   134,   145,   147,   151,   151,   154,   157,   159,
+     163,   166,   168,   171,   171,   174,   182,   184,   187,   187,
+     187,   190,   194,   197,   199,   202,   202,   202,   202,   205,
+     208,   210,   213,   221,   230,   239,   245
 };
 #endif
 
@@ -1491,16 +1491,15 @@ yyreduce:
     {
 		s_di.name=stripDot((yyvsp[(2) - (3)]));
 		free((yyvsp[(2) - (3)]));
-		
 		parent->commit(s_di);
 		s_di.clear();
 	}
     break;
 
   case 12:
-#line 136 "bindparser.yy"
+#line 135 "bindparser.yy"
     {
-	        s_di.name=(yyvsp[(2) - (4)]);
+	        s_di.name=stripDot((yyvsp[(2) - (4)]));
 		free((yyvsp[(2) - (4)]));
 		parent->commit(s_di);
 		s_di.clear();
@@ -1508,7 +1507,7 @@ yyreduce:
     break;
 
   case 25:
-#line 176 "bindparser.yy"
+#line 175 "bindparser.yy"
     {
 		parent->setDirectory((yyvsp[(2) - (2)]));
 		free((yyvsp[(2) - (2)]));
@@ -1516,7 +1515,7 @@ yyreduce:
     break;
 
   case 42:
-#line 215 "bindparser.yy"
+#line 214 "bindparser.yy"
     {
 		s_di.masters.push_back((yyvsp[(1) - (1)]));
 		free((yyvsp[(1) - (1)]));
@@ -1524,7 +1523,7 @@ yyreduce:
     break;
 
   case 43:
-#line 223 "bindparser.yy"
+#line 222 "bindparser.yy"
     {
 	  //		printf("Found a filename: '%s'\n",$2);
 		s_di.filename=(yyvsp[(2) - (2)]);
@@ -1533,7 +1532,7 @@ yyreduce:
     break;
 
   case 44:
-#line 232 "bindparser.yy"
+#line 231 "bindparser.yy"
     {
 		s_di.type=(yyvsp[(2) - (2)]);
 		free((yyvsp[(2) - (2)]));
@@ -1541,7 +1540,7 @@ yyreduce:
     break;
 
   case 45:
-#line 241 "bindparser.yy"
+#line 240 "bindparser.yy"
     {
 		(yyval)=(yyvsp[(1) - (1)]);
 	}
@@ -1549,7 +1548,7 @@ yyreduce:
 
 
 /* Line 1267 of yacc.c.  */
-#line 1553 "bindparser.cc"
+#line 1552 "bindparser.cc"
       default: break;
     }
   YY_SYMBOL_PRINT ("-> $$ =", yyr1[yyn], &yyval, &yyloc);

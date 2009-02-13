@@ -67,7 +67,7 @@ void DNSPacketWriter::startRecord(const string& name, uint16_t qtype, uint32_t t
   d_stuff = 0; 
   d_rollbackmarker=d_content.size();
 
-  if(d_qname == d_recordqname) {  // don't do the whole label compression thing if we *know* we can get away with "see question"
+  if(!strcasecmp(d_qname.c_str(), d_recordqname.c_str())) {  // don't do the whole label compression thing if we *know* we can get away with "see question"
     static char marker[2]={0xc0, 0x0c};
     d_content.insert(d_content.end(), &marker[0], &marker[2]);
   }
@@ -81,7 +81,7 @@ void DNSPacketWriter::startRecord(const string& name, uint16_t qtype, uint32_t t
   d_sor=d_content.size() + d_stuff; // start of real record 
 }
 
-void DNSPacketWriter::addOpt(int udpsize, int extRCode, int Z)
+void DNSPacketWriter::addOpt(int udpsize, int extRCode, int Z, const vector<pair<uint16_t,string> >& options)
 {
   uint32_t ttl=0;
 
@@ -90,13 +90,32 @@ void DNSPacketWriter::addOpt(int udpsize, int extRCode, int Z)
   stuff.extRCode=extRCode;
   stuff.version=0;
   stuff.Z=htons(Z);
-  
+
   memcpy(&ttl, &stuff, sizeof(stuff));
 
   ttl=ntohl(ttl); // will be reversed later on
   
   startRecord("", ns_t_opt, ttl, udpsize, ADDITIONAL);
+  for(optvect_t::const_iterator iter = options.begin(); iter != options.end(); ++iter) {
+    xfr16BitInt(iter->first);
+    xfr16BitInt(iter->second.length());
+    xfrBlob(iter->second);
+  } 
 }
+
+void DNSPacketWriter::xfr48BitInt(uint64_t val)
+{
+  unsigned char bytes[6];
+  bytes[5] = val % 0xff; val /= 0xff;  // untested code! XXX FIXME
+  bytes[4] = val % 0xff; val /= 0xff;
+  bytes[3] = val % 0xff; val /= 0xff;
+  bytes[2] = val % 0xff; val /= 0xff;
+  bytes[1] = val % 0xff; val /= 0xff;
+  bytes[0] = val % 0xff; val /= 0xff;
+
+  d_record.insert(d_record.end(), bytes, bytes + 6);
+}
+
 
 void DNSPacketWriter::xfr32BitInt(uint32_t val)
 {
@@ -139,7 +158,7 @@ DNSPacketWriter::lmap_t::iterator find(DNSPacketWriter::lmap_t& lmap, const stri
 {
   DNSPacketWriter::lmap_t::iterator ret;
   for(ret=lmap.begin(); ret != lmap.end(); ++ret)
-    if(ret->first == label)
+    if(!strcasecmp(ret->first.c_str() ,label.c_str()))
       break;
   return ret;
 }
@@ -224,7 +243,7 @@ void DNSPacketWriter::xfrLabel(const string& label, bool compress)
  out:;
 }
 
-void DNSPacketWriter::xfrBlob(const string& blob)
+void DNSPacketWriter::xfrBlob(const string& blob, int  )
 {
   const uint8_t* ptr=reinterpret_cast<const uint8_t*>(blob.c_str());
 
@@ -271,7 +290,7 @@ void DNSPacketWriter::commit()
 
   d_stuff=0;
 
-  // write out d_record
+  // write out pending d_record
   d_content.insert(d_content.end(), d_record.begin(), d_record.end());
 
   dnsheader* dh=reinterpret_cast<dnsheader*>( &*d_content.begin());

@@ -34,7 +34,7 @@
 #include <iostream>
 #include <algorithm>
 #include <boost/optional.hpp>
-
+#include <poll.h>
 #include <iomanip>
 #include <string.h>
 #include <stdlib.h>
@@ -42,12 +42,37 @@
 #include "ahuexception.hh"
 #include <sys/types.h>
 #include "utility.hh"
+#include <boost/algorithm/string.hpp>
+
+int writen2(int fd, const void *buf, size_t count)
+{
+  const char *ptr = (char*)buf;
+  const char *eptr = ptr + count;
+  
+  int res;
+  while(ptr != eptr) {
+    res = ::write(fd, ptr, eptr - ptr);
+    if(res < 0) {
+      if (errno == EAGAIN)
+	throw std::runtime_error("used writen2 on non-blocking socket, got EAGAIN");
+      else
+	unixDie("failed in writen2");
+    }
+    else if (res == 0)
+      throw std::runtime_error("could not write all bytes, got eof in writen2");
+    
+    ptr += res;
+  }
+  
+  return count;
+}
+
 
 string nowTime()
 {
   time_t now=time(0);
   string t=ctime(&now);
-  chomp(t,"\n");
+  boost::trim_right(t);
   return t;
 }
 
@@ -277,21 +302,18 @@ int waitForData(int fd, int seconds, int useconds)
 
 int waitForRWData(int fd, bool waitForRead, int seconds, int useconds)
 {
-  struct timeval tv;
   int ret;
 
-  tv.tv_sec   = seconds;
-  tv.tv_usec  = useconds;
-
-  fd_set readfds, writefds;
-  FD_ZERO( &readfds );
-  FD_ZERO( &writefds );
+  struct pollfd pfd;
+  memset(&pfd, 0, sizeof(pfd));
+  pfd.fd = fd;
+  
   if(waitForRead)
-    FD_SET( fd, &readfds );
+    pfd.events=POLLIN;
   else
-    FD_SET( fd, &writefds );
+    pfd.events=POLLOUT;
 
-  ret = select( fd + 1, &readfds, &writefds, NULL, &tv );
+  ret = poll(&pfd, 1, seconds * 1000 + useconds/1000);
   if ( ret == -1 )
     errno = ETIMEDOUT;
 

@@ -55,6 +55,8 @@ void *WebServer::serveConnection(void *p)
     client->setTimeout(5);
     client->getLine(line);
     stripLine(line);
+    if(line.empty())
+      throw Exception("Invalid web request");
     //    L<<"page: "<<line<<endl;
 
     vector<string> parts;
@@ -136,8 +138,7 @@ void *WebServer::serveConnection(void *p)
 
     HandlerFunction *fptr;
     if((fptr=d_functions[baseUrl])) {
-      
-      bool custom;
+      bool custom=false;
       string ret=(*fptr)(varmap, d_that, &custom);
 
       if(!custom) {
@@ -170,7 +171,7 @@ void *WebServer::serveConnection(void *p)
   catch(Exception &e) {
     L<<Logger::Error<<"Exception in webserver: "<<e.reason<<endl;
   }
-  catch(exception &e) {
+  catch(std::exception &e) {
     L<<Logger::Error<<"STL Exception in webserver: "<<e.what()<<endl;
   }
   catch(...) {
@@ -214,7 +215,7 @@ void WebServer::go()
   catch(Exception &e) {
     L<<Logger::Error<<"Fatal error in main webserver thread: "<<e.reason<<endl;
   }
-  catch(exception &e) {
+  catch(std::exception &e) {
     L<<Logger::Error<<"STL Exception in main webserver thread: "<<e.what()<<endl;
   }
   catch(...) {

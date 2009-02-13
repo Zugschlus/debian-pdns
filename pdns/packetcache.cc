@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005  PowerDNS.COM BV
+    Copyright (C) 2002 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -21,13 +21,13 @@
 #include "arguments.hh"
 #include "statbag.hh"
 #include <map>
+#include <boost/algorithm/string.hpp>
 
 extern StatBag S;
 
 PacketCache::PacketCache()
 {
   pthread_rwlock_init(&d_mut,0);
-  pthread_mutex_init(&d_dellock,0);
   d_hit=d_miss=0;
 
   d_ttl=-1;
@@ -37,9 +37,76 @@ PacketCache::PacketCache()
   S.declare("packetcache-miss");
   S.declare("packetcache-size");
 
-  statnumhit=S.getPointer("packetcache-hit");
-  statnummiss=S.getPointer("packetcache-miss");
-  statnumentries=S.getPointer("packetcache-size");
+  d_statnumhit=S.getPointer("packetcache-hit");
+  d_statnummiss=S.getPointer("packetcache-miss");
+  d_statnumentries=S.getPointer("packetcache-size");
+}
+
+int PacketCache::get(DNSPacket *p, DNSPacket *cached)
+{
+  extern StatBag S;
+  if(!((d_hit+d_miss)%150000)) {
+    cleanup();
+  }
+
+  if(d_ttl<0) 
+    getTTLS();
+
+  if(d_doRecursion && p->d.rd) { // wants recursion
+    if(!d_recursivettl) {
+      (*d_statnummiss)++;
+      d_miss++;
+      return 0;
+    }
+  }
+  else { // does not
+    if(!d_ttl) {
+      (*d_statnummiss)++;
+      d_miss++;
+      return 0;
+    }
+  }
+    
+  bool packetMeritsRecursion=d_doRecursion && p->d.rd;
+  if(ntohs(p->d.qdcount)!=1) // we get confused by packets with more than one question
+    return 0;
+
+  string value;
+  bool haveSomething;
+  {
+    TryReadLock l(&d_mut); // take a readlock here
+    if(!l.gotIt()) {
+      S.inc("deferred-cache-lookup");
+      return 0;
+    }
+
+    if(!((d_hit+d_miss)%30000)) {
+      *d_statnumentries=d_map.size(); // needs lock
+    }
+    haveSomething=getEntry(p->qdomain, p->qtype, PacketCache::PACKETCACHE, value, -1, packetMeritsRecursion);
+  }
+  if(haveSomething) {
+    (*d_statnumhit)++;
+    d_hit++;
+    if(cached->noparse(value.c_str(), value.size()) < 0) {
+      return 0;
+    }
+    cached->spoofQuestion(p->qdomain); // for correct case
+    return 1;
+  }
+
+  //  cerr<<"Packet cache miss for '"<<p->qdomain<<"', merits: "<<packetMeritsRecursion<<endl;
+  (*d_statnummiss)++;
+  d_miss++;
+  return 0; // bummer
+}
+
+void PacketCache::getTTLS()
+{
+  d_ttl=::arg().asNum("cache-ttl");
+  d_recursivettl=::arg().asNum("recursive-cache-ttl");
+
+  d_doRecursion=::arg().mustDo("recursor"); 
 }
 
 
@@ -49,125 +116,132 @@ void PacketCache::insert(DNSPacket *q, DNSPacket *r)
     getTTLS();
   
   if(ntohs(q->d.qdcount)!=1) {
-    L<<"Warning - tried to cache a packet with wrong number of questions: "<<ntohs(q->d.qdcount)<<endl;
     return; // do not try to cache packets with multiple questions
   }
 
   bool packetMeritsRecursion=d_doRecursion && q->d.rd;
 
-  char ckey[512];
-  int len=q->qdomain.length();
-  memcpy(ckey,q->qdomain.c_str(),len); // add TOLOWER HERE FIXME XXX
-  ckey[len]='|';
-  ckey[len+1]=packetMeritsRecursion ? 'r' : 'n';
-  ckey[len+2]=(q->qtype.getCode()>>8) & 0xff;
-  ckey[len+3]=(q->qtype.getCode()) & 0xff;
-  string key;
-  key.assign(ckey,q->qdomain.length()+4);
-
-  insert(key,r->getString(), packetMeritsRecursion ? d_recursivettl : d_ttl);
+  insert(q->qdomain, q->qtype, PacketCache::PACKETCACHE, r->getString(), packetMeritsRecursion ? d_recursivettl : d_ttl, -1, packetMeritsRecursion);
 }
 
-void PacketCache::getTTLS()
-{
-  d_ttl=arg().asNum("cache-ttl");
-  d_recursivettl=arg().asNum("recursive-cache-ttl");
-
-  d_doRecursion=arg().mustDo("recursor"); 
-}
-
-void PacketCache::insert(const char *packet, int length) 
-{
-  if(d_ttl<0)
-    getTTLS();
-
-  DNSPacket p;
-  p.parse(packet,length);
-
-  bool packetMeritsRecursion=d_doRecursion && p.d.rd;
-
-  char ckey[512];
-  int len=p.qdomain.length();
-  memcpy(ckey,p.qdomain.c_str(),len); // add TOLOWER HERE FIXME XXX
-  ckey[len]='|';
-  ckey[len+1]=packetMeritsRecursion ? 'r' : 'n';
-  ckey[len+2]=(p.qtype.getCode()>>8) & 0xff;
-  ckey[len+3]=(p.qtype.getCode()) & 0xff;
-  string key;
-  key.assign(ckey,p.qdomain.length()+4);
-  //  string key=toLower(p.qdomain+"|"+(packetMeritsRecursion ? "R" : "N")+"|"+p.qtype.getName());
-
-  string buffer;
-  buffer.assign(packet,length);
-  insert(key,buffer, packetMeritsRecursion ? d_recursivettl : d_ttl);
-}
-
-void PacketCache::insert(const string &key, const string &packet, unsigned int ttl)
+// universal key appears to be: qname, qtype, kind (packet, query cache), optionally zoneid, meritsRecursion
+void PacketCache::insert(const string &qname, const QType& qtype, CacheEntryType cet, const string& value, unsigned int ttl, int zoneID, bool meritsRecursion)
 {
   if(!ttl)
     return;
-
-  cvalue_t val;
+  
+  //  cerr<<"Inserting qname '"<<qname<<"', cet: "<<(int)cet<<", value: '"<< (cet ? value : "PACKET") <<"', qtype: "<<qtype.getName()<<", ttl: "<<ttl<<endl;
+  CacheEntry val;
   val.ttd=time(0)+ttl;
-  val.value=packet;
+  val.qname=qname;
+  val.qtype=qtype.getCode();
+  val.value=value;
+  val.ctype=cet;
+  val.meritsRecursion=meritsRecursion;
 
   TryWriteLock l(&d_mut);
-  if(l.gotIt())  
-    d_map[key]=val;
+  if(l.gotIt()) { 
+    bool success;
+    cmap_t::iterator place;
+    tie(place, success)=d_map.insert(val);
+    //    cerr<<"Insert succeeded: "<<success<<endl;
+    if(!success)
+      d_map.replace(place, val);
+    
+  }
   else 
     S.inc("deferred-cache-inserts"); 
 }
 
-/** purges entries from the packetcache. If prefix ends on a $, it is treated as a suffix */
-int PacketCache::purge(const string &f_prefix)
+/** purges entries from the packetcache. If match ends on a $, it is treated as a suffix */
+int PacketCache::purge(const vector<string> &matches)
 {
-  Lock pl(&d_dellock);
+  WriteLock l(&d_mut);
+  int delcount=0;
+  
+  if(matches.empty()) {
+    delcount = d_map.size();
+    d_map.clear();
+    *d_statnumentries=0;
+    return delcount;
+  }
 
-  string prefix(f_prefix);
-  if(prefix.empty()) {
-    cmap_t *tmp=new cmap_t;
-    {
-      DTime dt;
-      dt.set();
-      WriteLock l(&d_mut);
-      tmp->swap(d_map);
-      L<<Logger::Error<<"cache clean time: "<<dt.udiff()<<"usec"<<endl;
+  /* ok, the suffix delete plan. We want to be able to delete everything that 
+     pertains 'www.powerdns.com' but we also want to be able to delete everything
+     in the powerdns.com zone, so: 'powerdns.com' and '*.powerdns.com'.
+
+     However, we do NOT want to delete 'usepowerdns.com!, nor 'powerdnsiscool.com'
+
+     So, at first shot, store in reverse label order:
+
+     'be.someotherdomain'
+     'com.powerdns'
+     'com.powerdns.images'
+     'com.powerdns.www'
+     'com.powerdnsiscool'
+     'com.usepowerdns.www'
+
+     If we get a request to remove 'everything above powerdns.com', we do a search for 'com.powerdns' which is guaranteed to come first (it is shortest!)
+     Then we delete everything that is either equal to 'com.powerdns' or begins with 'com.powerdns.' This trailing dot saves us 
+     from deleting 'com.powerdnsiscool'.
+
+     We can stop the process once we reach something that doesn't match.
+
+     Ok - fine so far, except it doesn't work! Let's say there *is* no 'com.powerdns' in cache!
+
+     In that case our request doesn't find anything.. now what.
+     lower_bound to the rescue! It finds the place where 'com.powerdns' *would* be.
+     
+     Ok - next step, can we get away with simply reversing the string?
+
+     'moc.sndrewop'
+     'moc.sndrewop.segami'
+     'moc.sndrewop.www'
+     'moc.loocsidnsrewop'
+     'moc.dnsrewopesu.www'
+
+     Ok - next step, can we get away with only reversing the comparison?
+
+     'powerdns.com'
+     'images.powerdns.com'
+     '   www.powerdns.com'
+     'powerdnsiscool.com'
+     'www.userpowerdns.com'
+
+  */
+  for(vector<string>::const_iterator match = ++matches.begin(); match != matches.end() ; ++match) {
+    if(ends_with(*match, "$")) {
+      string suffix(*match);
+      suffix.resize(suffix.size()-1);
+
+      //    cerr<<"Begin dump!"<<endl;
+      cmap_t::const_iterator iter = d_map.lower_bound(tie(suffix));
+      cmap_t::const_iterator start=iter;
+      string dotsuffix = "."+suffix;
+
+      for(; iter != d_map.end(); ++iter) {
+	if(!iequals(iter->qname, suffix) && !iends_with(iter->qname, dotsuffix)) {
+	  //	cerr<<"Stopping!"<<endl;
+	  break;
+	}
+	//	cerr<<"Will erase '"<<iter->qname<<"'\n";
+
+	delcount++;
+      }
+      //    cerr<<"End dump!"<<endl;
+      d_map.erase(start, iter);
     }
-
-    int size=tmp->size();
-    delete tmp;
-
-    *statnumentries=0;
-    return size;
+    else {
+      delcount=d_map.count(tie(*match));
+      pair<cmap_t::iterator, cmap_t::iterator> range = d_map.equal_range(tie(*match));
+      d_map.erase(range.first, range.second);
+    }
   }
-
-  bool suffix=false;
-  if(prefix[prefix.size()-1]=='$') {
-    prefix=prefix.substr(0,prefix.size()-1);
-    suffix=true;
-  }
-  string check=prefix+"|";
-
-  vector<cmap_t::iterator> toRemove;
-
-  ReadLock l(&d_mut);
-
-  for(cmap_t::iterator i=d_map.begin();i!=d_map.end();++i) {
-    string::size_type pos=i->first.find(check);
-
-    if(!pos || (suffix && pos!=string::npos)) 
-      toRemove.push_back(i);
-  }
-
-  l.upgrade();  
-
-  for(vector<cmap_t::iterator>::const_iterator i=toRemove.begin();i!=toRemove.end();++i) 
-    d_map.erase(*i);
-  *statnumentries=d_map.size();
-  return toRemove.size();
+  *d_statnumentries=d_map.size();
+  return delcount;
 }
 
-bool PacketCache::getKey(const string &key, string &content)
+bool PacketCache::getEntry(const string &qname, const QType& qtype, CacheEntryType cet, string& value, int zoneID, bool meritsRecursion)
 {
   TryReadLock l(&d_mut); // take a readlock here
   if(!l.gotIt()) {
@@ -175,40 +249,44 @@ bool PacketCache::getKey(const string &key, string &content)
     return false;
   }
 
-  // needs to do ttl check here
-  cmap_t::const_iterator i=d_map.find(key);
+  uint16_t qt = qtype.getCode();
+  cmap_t::const_iterator i=d_map.find(tie(qname, qt, cet, zoneID, meritsRecursion));
   time_t now=time(0);
-  bool ret=(i!=d_map.end() && i->second.ttd>now);
+  bool ret=(i!=d_map.end() && i->ttd > now);
   if(ret)
-    content=i->second.value;
+    value = i->value;
+  
+  //  cerr<<"Cache hit: "<<(int)cet<<", "<<ret<<endl;
+  
   return ret;
 }
 
 map<char,int> PacketCache::getCounts()
 {
   ReadLock l(&d_mut);
-  int counts[256];
-  string::size_type offset;
-  memset(counts,0,256*sizeof(counts[0]));
-  char key;
-  for(cmap_t::const_iterator i=d_map.begin();i!=d_map.end();++i) {
-    if((offset=i->first.find_first_of("|"))==string::npos || offset+1>i->first.size())
-      continue;
-    
-    key=i->first[offset+1];
-    if((key=='Q' || key=='q') && !i->second.value.empty())
-      key='!';
-    counts[(int)key]++;
-  }
 
   map<char,int>ret;
-  for(int i=0;i<256;++i)
-    if(counts[i])
-      ret[i]=counts[i];
+  int recursivePackets=0, nonRecursivePackets=0, queryCacheEntries=0, negQueryCacheEntries=0;
+
+  for(cmap_t::const_iterator iter = d_map.begin() ; iter != d_map.end(); ++iter) {
+    if(iter->ctype == PACKETCACHE)
+      if(iter->meritsRecursion)
+	recursivePackets++;
+      else
+	nonRecursivePackets++;
+    else if(iter->ctype == QUERYCACHE) {
+      if(iter->value.empty())
+	negQueryCacheEntries++;
+      else
+	queryCacheEntries++;
+    }
+  }
+  ret['!']=negQueryCacheEntries;
+  ret['Q']=queryCacheEntries;
+  ret['n']=nonRecursivePackets;
+  ret['r']=recursivePackets;
   return ret;
-
 }
-
 
 int PacketCache::size()
 {
@@ -219,30 +297,50 @@ int PacketCache::size()
 /** readlock for figuring out which iterators to delete, upgrade to writelock when actually cleaning */
 void PacketCache::cleanup()
 {
-  Lock pl(&d_dellock); // ALWAYS ACQUIRE DELLOCK FIRST
-  ReadLock l(&d_mut);
+  WriteLock l(&d_mut);
 
-  *statnumentries=d_map.size();
+  *d_statnumentries=d_map.size();
 
+  unsigned int maxCached=::arg().asNum("max-cache-entries");
+  unsigned int toTrim=0;
+  
+  unsigned int cacheSize=*d_statnumentries;
+
+  if(maxCached && cacheSize > maxCached) {
+    toTrim = cacheSize - maxCached;
+  }
+
+  unsigned int lookAt=0;
+  // two modes - if toTrim is 0, just look through 10000 records and nuke everything that is expired
+  // otherwise, scan first 5*toTrim records, and stop once we've nuked enough
+  if(toTrim)
+    lookAt=5*toTrim;
+  else
+    lookAt=cacheSize/10;
+
+  //  cerr<<"cacheSize: "<<cacheSize<<", lookAt: "<<lookAt<<", toTrim: "<<toTrim<<endl;
   time_t now=time(0);
 
   DLOG(L<<"Starting cache clean"<<endl);
-  if(d_map.begin()==d_map.end()) {
+  if(d_map.empty())
     return; // clean
+
+  typedef cmap_t::nth_index<1>::type sequence_t;
+  sequence_t& sidx=d_map.get<1>();
+  unsigned int erased=0;
+  for(sequence_t::iterator i=sidx.begin(); i != sidx.end();) {
+    if(i->ttd < now) {
+      sidx.erase(i++);
+      erased++;
+    }
+    else
+      ++i;
+
+    if(toTrim && erased > toTrim)
+      break;
+
   }
-
-  vector<cmap_t::iterator> toRemove;
-
-  for(cmap_t::iterator i=d_map.begin();i!=d_map.end();++i) {
-    if(now>i->second.ttd)
-      toRemove.push_back(i);
-  }
-
-  l.upgrade(); 
-
-  for(vector<cmap_t::iterator>::const_iterator i=toRemove.begin();i!=toRemove.end();++i) 
-    d_map.erase(*i);
-    
-  *statnumentries=d_map.size();
+  //  cerr<<"erased: "<<erased<<endl;
+  *d_statnumentries=d_map.size();
   DLOG(L<<"Done with cache clean"<<endl);
 }

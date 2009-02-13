@@ -1,6 +1,6 @@
 // -*- sateh-c -*- 
 // File    : pdnsbackend.cc
-// Version : $Id: pipebackend.cc 546 2005-11-11 21:02:51Z ahu $ 
+// Version : $Id: pipebackend.cc 1288 2008-11-16 09:10:08Z ahu $ 
 //
 
 #include <string>
@@ -52,7 +52,7 @@ void CoWrapper::launch()
       return;
 
    d_cp=new CoProcess(d_command, d_timeout); 
-   d_cp->send("HELO\t"+lexical_cast<string>(arg().asNum("pipebackend-abi-version")));
+   d_cp->send("HELO\t"+lexical_cast<string>(::arg().asNum("pipebackend-abi-version")));
    string banner;
    d_cp->receive(banner); 
    L<<Logger::Error<<"Backend launched with banner: "<<banner<<endl;
@@ -88,6 +88,7 @@ void CoWrapper::receive(string &line)
 
 PipeBackend::PipeBackend(const string &suffix)
 {
+   signal(SIGCHLD, SIG_IGN);
    setArgPrefix("pipe"+suffix);
    try {
      d_coproc=shared_ptr<CoWrapper>(new CoWrapper(getArg("command"), getArgAsNum("timeout")));
@@ -108,7 +109,7 @@ void PipeBackend::lookup(const QType &qtype,const string &qname, DNSPacket *pkt_
    try {
       d_disavow=false;
       if(d_regex && !d_regex->match(qname+";"+qtype.getName())) { 
-         if(arg().mustDo("query-logging"))
+         if(::arg().mustDo("query-logging"))
             L<<Logger::Error<<"Query for '"<<qname<<"' type '"<<qtype.getName()<<"' failed regex '"<<d_regexstr<<"'"<<endl;
          d_disavow=true; // don't pass to backend
       } else {
@@ -126,10 +127,10 @@ void PipeBackend::lookup(const QType &qtype,const string &qname, DNSPacket *pkt_
          query<<"Q\t"<<qname<<"\tIN\t"<<qtype.getName()<<"\t"<<zoneId<<"\t"<<remoteIP;
 
          // add the local-ip-address if pipebackend-abi-version is set to 2
-         if (arg().asNum("pipebackend-abi-version") == 2) 
+         if (::arg().asNum("pipebackend-abi-version") == 2) 
             query<<"\t"<<localIP;
 
-         if(arg().mustDo("query-logging"))
+         if(::arg().mustDo("query-logging"))
             L<<Logger::Error<<"Query: '"<<query.str()<<"'"<<endl;
          d_coproc->send(query.str());
       }
@@ -198,6 +199,9 @@ bool PipeBackend::get(DNSResourceRecord &r)
          L<<Logger::Error<<kBackendId<<" coprocess returned emtpy line in query for "<<d_qname<<endl;
          throw AhuException("Format error communicating with coprocess");
       }
+      else if(parts[0]=="FAIL") {
+         throw DBException("coprocess returned a FAIL");
+      }
       else if(parts[0]=="END") {
          return false;
       }
@@ -215,9 +219,15 @@ bool PipeBackend::get(DNSResourceRecord &r)
          r.qtype=parts[3];
          r.ttl=atoi(parts[4].c_str());
          r.domain_id=atoi(parts[5].c_str());
-
-	 if(parts[3]!="MX")
-	   r.content=parts[6];
+ 
+	 if(parts[3]!="MX") {
+	   r.content.clear();
+	   for(int n=6; n < parts.size(); ++n) {
+	     if(n!=6)
+	       r.content.append(1,' ');
+	     r.content.append(parts[n]);
+	   }
+	 }
 	 else {
 	   if(parts.size()<8) {
             L<<Logger::Error<<kBackendId<<" coprocess returned incomplete MX line in data section for query for "<<d_qname<<endl;
@@ -226,6 +236,7 @@ bool PipeBackend::get(DNSResourceRecord &r)
 	   
 	   r.priority=atoi(parts[6].c_str());
 	   r.content=parts[7];
+
 	 }
          break;
       }

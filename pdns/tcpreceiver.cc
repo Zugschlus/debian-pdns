@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002-2007  PowerDNS.COM BV
+    Copyright (C) 2002-2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -15,6 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
+#include "packetcache.hh"
 #include "utility.hh"
 #include <cstdio>
 #include <cstring>
@@ -23,6 +24,7 @@
 #include <iostream>
 #include <string>
 #include "tcpreceiver.hh"
+#include "sstuff.hh"
 
 #include <errno.h>
 #include <signal.h>
@@ -34,7 +36,7 @@
 #include "lock.hh"
 #include "logger.hh"
 #include "arguments.hh"
-#include "packetcache.hh"
+
 #include "packethandler.hh"
 #include "statbag.hh"
 #include "resolver.hh"
@@ -87,19 +89,19 @@ int readnWithTimeout(int fd, void* buffer, unsigned int n, bool throwOnEOF=true)
       if(errno==EAGAIN) {
 	ret=waitForData(fd, 5);
 	if(ret < 0)
-	  throw AhuException("Waiting for data read");
+	  throw NetworkError("Waiting for data read");
 	if(!ret)
-	  throw AhuException("Timeout reading data");
+	  throw NetworkError("Timeout reading data");
 	continue;
       }
       else
-	throw AhuException("Reading data: "+stringerror());
+	throw NetworkError("Reading data: "+stringerror());
     }
     if(!ret) {
       if(!throwOnEOF && n == bytes)
 	return 0;
       else
-	throw AhuException("Did not fulfill read from TCP due to EOF");
+	throw NetworkError("Did not fulfill read from TCP due to EOF");
     }
     
     ptr += ret;
@@ -120,16 +122,16 @@ void writenWithTimeout(int fd, const void *buffer, unsigned int n)
       if(errno==EAGAIN) {
 	ret=waitForRWData(fd, false, 5, 0);
 	if(ret < 0)
-	  throw AhuException("Waiting for data write");
+	  throw NetworkError("Waiting for data write");
 	if(!ret)
-	  throw AhuException("Timeout writing data");
+	  throw NetworkError("Timeout writing data");
 	continue;
       }
       else
-	throw AhuException("Writing data: "+stringerror());
+	throw NetworkError("Writing data: "+stringerror());
     }
     if(!ret) {
-      throw AhuException("Did not fulfill TCP write due to EOF");
+      throw NetworkError("Did not fulfill TCP write due to EOF");
     }
     
     ptr += ret;
@@ -147,22 +149,22 @@ void connectWithTimeout(int fd, struct sockaddr* remote, size_t socklen)
 #else
   if((err=connect(clisock, remote, socklen))<0 && WSAGetLastError() != WSAEWOULDBLOCK ) 
 #endif // WIN32
-    throw AhuException("connect: "+stringerror());
+    throw NetworkError("connect: "+stringerror());
 
   if(!err)
     goto done;
   
   err=waitForRWData(fd, false, 5, 0);
   if(err == 0)
-    throw AhuException("Timeout connecting to remote");
+    throw NetworkError("Timeout connecting to remote");
   if(err < 0)
-    throw AhuException("Error connecting to remote");
+    throw NetworkError("Error connecting to remote");
 
   if(getsockopt(fd, SOL_SOCKET,SO_ERROR,(char *)&err,&len)<0)
-    throw AhuException("Error connecting to remote: "+stringerror()); // Solaris
+    throw NetworkError("Error connecting to remote: "+stringerror()); // Solaris
 
   if(err)
-    throw AhuException("Error connecting to remote: "+string(strerror(err)));
+    throw NetworkError("Error connecting to remote: "+string(strerror(err)));
 
  done:
   ;
@@ -182,20 +184,20 @@ try
 {
   readnWithTimeout(fd, mesg, pktlen);
 }
-catch(AhuException& ae) {
-    throw AhuException("Error reading DNS data from TCP client "+remote.toString()+": "+ae.reason);
+catch(NetworkError& ae) {
+  throw NetworkError("Error reading DNS data from TCP client "+remote.toString()+": "+ae.what());
 }
 
 static void proxyQuestion(shared_ptr<DNSPacket> packet)
 {
   int sock=socket(AF_INET, SOCK_STREAM, 0);
   if(sock < 0)
-    throw AhuException("Error making TCP connection socket to recursor: "+stringerror());
+    throw NetworkError("Error making TCP connection socket to recursor: "+stringerror());
 
   Utility::setNonBlocking(sock);
   ServiceTuple st;
   st.port=53;
-  parseService(arg()["recursor"],st);
+  parseService(::arg()["recursor"],st);
 
   try {
     ComboAddress recursor(st.host, st.port);
@@ -220,9 +222,9 @@ static void proxyQuestion(shared_ptr<DNSPacket> packet)
     
     writenWithTimeout(packet->getSocket(), answer, len);
   }
-  catch(AhuException& ae) {
+  catch(NetworkError& ae) {
     close(sock);
-    throw AhuException("While proxying a question to recursor "+st.host+": " +ae.reason);
+    throw NetworkError("While proxying a question to recursor "+st.host+": " +ae.what());
   }
   close(sock);
   return;
@@ -269,7 +271,7 @@ void *TCPNameserver::doConnection(void *data)
       if(packet->parse(mesg, pktlen)<0)
 	break;
       
-      if(packet->qtype.getCode()==QType::AXFR) {
+      if(packet->qtype.getCode()==QType::AXFR || packet->qtype.getCode()==QType::IXFR ) {
 	if(doAXFR(packet->qdomain, packet, fd)) 
 	  S.inc("tcp-answers");  
 	continue;
@@ -322,7 +324,11 @@ void *TCPNameserver::doConnection(void *data)
     s_P = 0; // on next call, backend will be recycled
     L<<Logger::Error<<"TCP nameserver had error, cycling backend: "<<ae.reason<<endl;
   }
-  catch(exception &e) {
+  catch(NetworkError &e) {
+    L<<Logger::Info<<"TCP Connection Thread died because of STL error: "<<e.what()<<endl;
+  }
+
+  catch(std::exception &e) {
     L<<Logger::Error<<"TCP Connection Thread died because of STL error: "<<e.what()<<endl;
   }
   catch( ... )
@@ -337,10 +343,10 @@ void *TCPNameserver::doConnection(void *data)
 
 bool TCPNameserver::canDoAXFR(shared_ptr<DNSPacket> q)
 {
-  if(arg().mustDo("disable-axfr"))
+  if(::arg().mustDo("disable-axfr"))
     return false;
 
-  if( arg()["allow-axfr-ips"].empty() || d_ng.match( (ComboAddress *) &q->remote ) )
+  if( ::arg()["allow-axfr-ips"].empty() || d_ng.match( (ComboAddress *) &q->remote ) )
     return true;
 
   extern CommunicatorClass Communicator;
@@ -438,7 +444,7 @@ int TCPNameserver::doAXFR(const string &target, shared_ptr<DNSPacket> q, int out
 
   int count=0;
   int chunk=100; // FIXME: this should probably be autosizing
-  if(arg().mustDo("strict-rfc-axfrs"))
+  if(::arg().mustDo("strict-rfc-axfrs"))
     chunk=1;
 
   outpacket=shared_ptr<DNSPacket>(q->replyPacket());
@@ -482,15 +488,15 @@ TCPNameserver::~TCPNameserver()
 
 TCPNameserver::TCPNameserver()
 {
-//  sem_init(&d_connectionroom_sem,0,arg().asNum("max-tcp-connections"));
-  d_connectionroom_sem = new Semaphore( arg().asNum( "max-tcp-connections" ));
+//  sem_init(&d_connectionroom_sem,0,::arg().asNum("max-tcp-connections"));
+  d_connectionroom_sem = new Semaphore( ::arg().asNum( "max-tcp-connections" ));
 
   s_timeout=10;
   vector<string>locals;
-  stringtok(locals,arg()["local-address"]," ,");
+  stringtok(locals,::arg()["local-address"]," ,");
 
   vector<string>locals6;
-  stringtok(locals6,arg()["local-ipv6"]," ,");
+  stringtok(locals6,::arg()["local-ipv6"]," ,");
 
   if(locals.empty() && locals6.empty())
     throw AhuException("No local address specified");
@@ -498,7 +504,7 @@ TCPNameserver::TCPNameserver()
   d_highfd=0;
 
   vector<string> parts;
-  stringtok( parts, arg()["allow-axfr-ips"], ", \t" ); // is this IP on the guestlist?
+  stringtok( parts, ::arg()["allow-axfr-ips"], ", \t" ); // is this IP on the guestlist?
   for( vector<string>::const_iterator i = parts.begin(); i != parts.end(); ++i ) {
     d_ng.addMask( *i );
   }
@@ -514,7 +520,7 @@ TCPNameserver::TCPNameserver()
     if(s<0) 
       throw AhuException("Unable to acquire TCP socket: "+stringerror());
 
-    ComboAddress local(*laddr, arg().asNum("local-port"));
+    ComboAddress local(*laddr, ::arg().asNum("local-port"));
       
     int tmp=1;
     if(setsockopt(s,SOL_SOCKET,SO_REUSEADDR,(char*)&tmp,sizeof tmp)<0) {
@@ -522,7 +528,7 @@ TCPNameserver::TCPNameserver()
       exit(1);  
     }
 
-    if(bind(s, (sockaddr*)&local, local.getSocklen())<0) {
+    if(::bind(s, (sockaddr*)&local, local.getSocklen())<0) {
       L<<Logger::Error<<"binding to TCP socket: "<<strerror(errno)<<endl;
       throw AhuException("Unable to bind to TCP socket");
     }
@@ -541,7 +547,7 @@ TCPNameserver::TCPNameserver()
     if(s<0) 
       throw AhuException("Unable to acquire TCPv6 socket: "+stringerror());
 
-    ComboAddress local(*laddr, arg().asNum("local-port"));
+    ComboAddress local(*laddr, ::arg().asNum("local-port"));
 
     int tmp=1;
     if(setsockopt(s,SOL_SOCKET,SO_REUSEADDR,(char*)&tmp,sizeof tmp)<0) {
