@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -22,22 +22,13 @@
 #include <string>
 #include <utility>
 #include <map>
-
-#ifndef WIN32
-# if __GNUC__ >= 3
-#   include <ext/hash_map>
-using namespace __gnu_cxx;
-# else
-#   include <hash_map>
-# endif // __GNUC__
-
-#else
-# include <map>
-
-#endif // WIN32
-
+#include <map>
+#include "dns.hh"
+#include <boost/version.hpp>
 using namespace std;
+using namespace ::boost::multi_index;
 
+using namespace boost;
 #include "dnspacket.hh"
 #include "lock.hh"
 #include "statbag.hh"
@@ -51,147 +42,93 @@ using namespace std;
 
     The cache itself is protected by a read/write lock. Because deleting is a two step process, which 
     first marks and then sweeps, a second lock is present to prevent simultaneous inserts and deletes.
-
-    Overloading!
-
-    The packet cache contains packets but also negative UeberBackend queries. Those last are recognized
-    because they start with a | and have empty content. One day, this content may also contain queries.
-
 */
+
+struct CIBackwardsStringCompare: public binary_function<string, string, bool>  
+{
+  bool operator()(const string& str_a, const string& str_b) const
+  {
+    string::const_reverse_iterator ra, rb;
+    char a=0, b=0;
+    for(ra = str_a.rbegin(), rb = str_b.rbegin();
+	ra < str_a.rend() && rb < str_b.rend() && (a=dns_tolower(*ra)) == (b=dns_tolower(*rb));
+	ra++, rb++);
+    
+    if (ra < str_a.rend() && rb==str_b.rend()) { a=*(ra++); b=0; }
+    if (rb < str_b.rend() && ra==str_a.rend()) { b=*(rb++); a=0; }
+
+    return a < b;
+  }
+};
+
+
 class PacketCache
 {
 public:
   PacketCache();
-  void insert(DNSPacket *q, DNSPacket *r);  //!< We copy the contents of *p into our cache. Do not needlessly call this to insert questions already in the cache as it wastes resources
-  void insert(const char *packet, int length);
+  enum CacheEntryType { PACKETCACHE, QUERYCACHE};
 
-  inline int get(DNSPacket *p, DNSPacket *q); //!< We return a dynamically allocated copy out of our cache. You need to delete it. You also need to spoof in the right ID with the DNSPacket.spoofID() method.
-  bool getKey(const string &key, string &content);
+  void insert(DNSPacket *q, DNSPacket *r);  //!< We copy the contents of *p into our cache. Do not needlessly call this to insert questions already in the cache as it wastes resources
+
+  void insert(const string &qname, const QType& qtype, CacheEntryType cet, const string& value, unsigned int ttl, int zoneID=-1, bool meritsRecursion=false);
+
+  int get(DNSPacket *p, DNSPacket *q); //!< We return a dynamically allocated copy out of our cache. You need to delete it. You also need to spoof in the right ID with the DNSPacket.spoofID() method.
+  bool getEntry(const string &content, const QType& qtype, CacheEntryType cet, string& entry, int zoneID=-1, bool meritsRecursion=false);
+
   int size(); //!< number of entries in the cache
   void cleanup(); //!< force the cache to preen itself from expired packets
-  int purge(const string &prefix="");
-  void insert(const string &key, const string &packet, unsigned int ttl);
+  int purge(const vector<string>&matches= vector<string>());
+
   map<char,int> getCounts();
 private:
-  typedef string ckey_t;
-
-  class CacheContent
+  struct CacheEntry
   {
-  public:
+    CacheEntry() { qtype = ctype = 0; zoneID = -1; meritsRecursion=false;}
+
+    string qname;
+    uint16_t qtype;
+    uint16_t ctype;
+    int zoneID;
     time_t ttd;
+    bool meritsRecursion;
     string value;
   };
 
-  typedef CacheContent cvalue_t;
   void getTTLS();
-#ifndef WIN32
 
-  struct compare_string
-  {
-    bool operator()(const string& s1, const string& s2) const
-    {
-      return s1 == s2;
-    }
-  };
+  typedef multi_index_container<
+    CacheEntry,
+    indexed_by <
+                ordered_unique<
+                      composite_key< 
+                        CacheEntry,
+                        member<CacheEntry,string,&CacheEntry::qname>,
+                        member<CacheEntry,uint16_t,&CacheEntry::qtype>,
+			member<CacheEntry,uint16_t, &CacheEntry::ctype>,
+			member<CacheEntry,int, &CacheEntry::zoneID>,
+			member<CacheEntry,bool, &CacheEntry::meritsRecursion>
+                      >,
+		  composite_key_compare<CIBackwardsStringCompare, std::less<uint16_t>, std::less<uint16_t>, std::less<int>, std::less<bool> >
+                >,
+               sequenced<>
+               >
+  > cmap_t;
 
-  struct hash_string
-  {
-    size_t operator()(const string& s) const
-    {
-      return __stl_hash_string(s.c_str());
-    }
-  };
-
-  typedef hash_map<ckey_t,cvalue_t, hash_string, compare_string > cmap_t;
-
-#else
-  typedef map< ckey_t, cvalue_t > cmap_t;
-
-#endif // WIN32
 
   cmap_t d_map;
 
   pthread_rwlock_t d_mut;
-  pthread_mutex_t d_dellock;
 
   int d_hit;
   int d_miss;
   int d_ttl;
   int d_recursivettl;
   bool d_doRecursion;
-  int *statnumhit;
-  int *statnummiss;
-  int *statnumentries;
+  unsigned int *d_statnumhit;
+  unsigned int *d_statnummiss;
+  unsigned int *d_statnumentries;
 };
 
-inline int PacketCache::get(DNSPacket *p, DNSPacket *cached)
-{
-  extern StatBag S;
-  if(!((d_hit+d_miss)%5000)) {
-    cleanup();
-  }
-
-  if(d_ttl<0) 
-    getTTLS();
-
-  if(d_doRecursion && p->d.rd) { // wants recursion
-    if(!d_recursivettl) {
-      (*statnummiss)++;
-      d_miss++;
-      return 0;
-    }
-  }
-  else { // does not
-    if(!d_ttl) {
-      (*statnummiss)++;
-      d_miss++;
-      return 0;
-    }
-  }
-    
-  bool packetMeritsRecursion=d_doRecursion && p->d.rd;
-  char ckey[512];
-  int len=p->qdomain.length();
-  memcpy(ckey,p->qdomain.c_str(),len); // add TOLOWER HERE FIXME XXX
-  ckey[len]='|';
-  ckey[len+1]=packetMeritsRecursion ? 'r' : 'n';
-  ckey[len+2]=(p->qtype.getCode()>>8)&0xff;
-  ckey[len+3]=(p->qtype.getCode())&0xff;
-  string key;
-
-  key.assign(ckey,p->qdomain.length()+4);
-  //  cout<<"key lookup: '"<<key<<"'"<<endl;
-  //  string key=toLower(p->qdomain+"|"+(packetMeritsRecursion ? "R" : "N")+ "|"+p->qtype.getName());
-
-  if(ntohs(p->d.qdcount)!=1) // we get confused by packets with more than one question
-    return 0;
-
-  {
-    TryReadLock l(&d_mut); // take a readlock here
-    if(!l.gotIt()) {
-      S.inc("deferred-cache-lookup");
-      return 0;
-    }
-
-    if(!((d_hit+d_miss)%1000)) {
-      *statnumentries=d_map.size(); // needs lock
-    }
-    cmap_t::const_iterator i;
-    if((i=d_map.find(key))!=d_map.end()) { // HIT!
-
-      if(i->second.ttd>time(0)) { // it is still fresh
-	(*statnumhit)++;
-	d_hit++;
-	cached->parse(i->second.value.c_str(),i->second.value.size());  
-	cached->spoofQuestion(p->qdomain); // for correct case
-	return 1;
-      }
-    }
-  }
-  (*statnummiss)++;
-  d_miss++;
-  return 0; // bummer
-}
 
 
 #endif /* PACKETCACHE_HH */

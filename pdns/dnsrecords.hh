@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005  PowerDNS.COM BV
+    Copyright (C) 2005 - 2007  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -54,6 +54,7 @@ private:
 class ARecordContent : public DNSRecordContent
 {
 public:
+  explicit ARecordContent(uint32_t ip);
   includeboilerplate(A);
   void doRecordCheck(const DNSRecord& dr);
   uint32_t getIP() const;
@@ -74,6 +75,40 @@ private:
   string d_mxname;
 };
 
+class KXRecordContent : public DNSRecordContent
+{
+public:
+  KXRecordContent(uint16_t preference, const string& exchanger);
+
+  includeboilerplate(KX)
+
+private:
+  uint16_t d_preference;
+  string d_exchanger;
+};
+
+class IPSECKEYRecordContent : public DNSRecordContent
+{
+public:
+  IPSECKEYRecordContent(uint16_t preference, uint8_t gatewaytype, uint8_t algo, const std::string& gateway, const std::string &publickey);
+
+  includeboilerplate(IPSECKEY)
+
+private:
+  uint8_t d_preference, d_gatewaytype, d_algorithm;
+  string d_gateway, d_publickey;
+};
+
+class DHCIDRecordContent : public DNSRecordContent
+{
+public:
+  includeboilerplate(DHCID)
+
+private:
+  string d_content;
+};
+
+
 class SRVRecordContent : public DNSRecordContent
 {
 public:
@@ -84,6 +119,22 @@ public:
 private:
   uint16_t d_preference, d_weight, d_port;
   string d_target;
+};
+
+class TSIGRecordContent : public DNSRecordContent
+{
+public:
+  includeboilerplate(TSIG)
+
+  string d_algoName;
+  uint64_t d_time; // 48 bits
+  uint16_t d_fudge;
+  //  uint16_t d_macSize;
+  string d_mac;
+  uint16_t d_origID;
+  uint16_t d_eRcode;
+  // uint16_t d_otherLen
+  string d_otherData;
 };
 
 
@@ -147,7 +198,7 @@ class OPTRecordContent : public DNSRecordContent
 {
 public:
   includeboilerplate(OPT)
-
+  void getData(vector<pair<uint16_t, string> > &opts);
 private:
   string d_data;
 };
@@ -313,6 +364,23 @@ public:
 private:
 };
 
+class URLRecordContent : public DNSRecordContent // Fake, 'fancy record' with type 256
+{
+public:
+  includeboilerplate(URL)
+private:
+  string d_url;
+};
+
+class MBOXFWRecordContent : public DNSRecordContent // Fake, 'fancy record' with type 256
+{
+public:
+  includeboilerplate(MBOXFW)
+private:
+  string d_mboxfw;
+};
+
+
 #define boilerplate(RNAME, RTYPE)                                                                         \
 RNAME##RecordContent::DNSRecordContent* RNAME##RecordContent::make(const DNSRecord& dr, PacketReader& pr) \
 {                                                                                                  \
@@ -372,8 +440,21 @@ void RNAME##RecordContent::xfrPacket(Convertor& conv)             \
   CONV;                                                           \
 }                                                                 \
 
+struct EDNSOpts
+{
+  uint16_t d_packetsize;
+  uint8_t d_extRCode, d_version;
+  uint16_t d_Z;
+  vector<pair<uint16_t, string> > d_options;
+};
+//! Convenience function that fills out EDNS0 options, and returns true if there are any
+
+class MOADNSParser;
+bool getEDNSOpts(const MOADNSParser& mdp, EDNSOpts* eo);
+
 void reportBasicTypes();
 void reportOtherTypes();
 void reportAllTypes();
+void reportFancyTypes();
 
 #endif 

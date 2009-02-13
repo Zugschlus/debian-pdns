@@ -151,7 +151,9 @@ LEX = @LEX@
 LEXLIB = @LEXLIB@
 LEX_OUTPUT_ROOT = @LEX_OUTPUT_ROOT@
 LIBDL = @LIBDL@
+LIBLDAP = @LIBLDAP@
 LIBOBJS = @LIBOBJS@
+LIBOPENDBX = @LIBOPENDBX@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LN_S = @LN_S@
@@ -248,6 +250,8 @@ bindparser.hh ../../unix_utility.cc
 
 libbind2backend_la_CXXFLAGS = $(AM_CXXFLAGS)
 libbind2backend_la_CFLAGS = $(AM_CFLAGS)
+libbind2backend_la_LDFLAGS = -module -avoid-version
+EXTRA_DIST = bindparser.cc bindparser.h
 zone2sql_SOURCES = bindparser.yy bindlexer.l \
 ../../arguments.cc ../../logger.cc zone2sql.cc ../../statbag.cc ../../misc.cc \
 ../../unix_utility.cc ../../qtype.cc ../../dnspacket.cc \

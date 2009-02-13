@@ -36,90 +36,98 @@ ArgvMap &arg()
   return theArg;
 }
 
-
 void declareArguments()
 {
-  arg().set("local-port","The port on which we listen")="53";
-  arg().setSwitch("log-failed-updates","If PDNS should log failed update requests")="";
-  arg().setSwitch("log-dns-details","If PDNS should log DNS non-erroneous details")="";
-  arg().setSwitch("allow-recursion-override","Set this so that local data fully overrides the recursor")="no";
-  arg().set("urlredirector","Where we send hosts to that need to be url redirected")="127.0.0.1";
-  arg().set("smtpredirector","Our smtpredir MX host")="a.misconfigured.powerdns.smtp.server";
-  arg().set("local-address","Local IP addresses to which we bind")="0.0.0.0";
-  arg().set("local-ipv6","Local IP address to which we bind")="";
-  arg().set("query-local-address","Source IP address for sending queries")="";
-  arg().set("max-queue-length","Maximum queuelength before considering situation lost")="5000";
-  arg().set("soa-serial-offset","Make sure that no SOA serial is less than this number")="0";
+  ::arg().set("local-port","The port on which we listen")="53";
+  ::arg().setSwitch("log-failed-updates","If PDNS should log failed update requests")="";
+  ::arg().setSwitch("log-dns-details","If PDNS should log DNS non-erroneous details")="";
+  ::arg().setSwitch("allow-recursion-override","Set this so that local data fully overrides the recursor")="no";
+  ::arg().set("urlredirector","Where we send hosts to that need to be url redirected")="127.0.0.1";
+  ::arg().set("smtpredirector","Our smtpredir MX host")="a.misconfigured.powerdns.smtp.server";
+  ::arg().set("local-address","Local IP addresses to which we bind")="0.0.0.0";
+  ::arg().set("local-ipv6","Local IP address to which we bind")="";
+  ::arg().set("query-local-address","Source IP address for sending queries")="";
+  ::arg().set("max-queue-length","Maximum queuelength before considering situation lost")="5000";
+  ::arg().set("soa-serial-offset","Make sure that no SOA serial is less than this number")="0";
 
-  arg().setCmd("help","Provide a helpful message");
-  arg().setCmd("version","Output version and compilation date");
-  arg().setCmd("config","Provide configuration file on standard output");
-  arg().setCmd("list-modules","Lists all modules available");
-  arg().setCmd("no-config","Don't parse configuration file");
+  ::arg().setCmd("help","Provide a helpful message");
+  ::arg().setCmd("version","Output version and compilation date");
+  ::arg().setCmd("config","Provide configuration file on standard output");
+  ::arg().setCmd("list-modules","Lists all modules available");
+  ::arg().setCmd("no-config","Don't parse configuration file");
   
-  arg().set("version-string","PowerDNS version in packets - full, anonymous, powerdns or custom")="full"; 
-  arg().set("control-console","Debugging switch - don't use")="no"; // but I know you will!
-  arg().set("fancy-records","Process URL and MBOXFW records")="no";
-  arg().set("wildcard-url","Process URL and MBOXFW records")="no";
-  arg().set("wildcards","Honor wildcards in the database")="";
-  arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
-  arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
-  arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
-  arg().set("queue-limit","Maximum number of milliseconds to queue a query")="1500"; 
-  arg().set("recursor","If recursion is desired, IP address of a recursing nameserver")="no"; 
-  arg().set("lazy-recursion","Only recurse if question cannot be answered locally")="yes";
-  arg().set("allow-recursion","List of subnets that are allowed to recurse")="0.0.0.0/0";
-  arg().set("pipebackend-abi-version","Version of the pipe backend ABI")="1";
+  ::arg().set("version-string","PowerDNS version in packets - full, anonymous, powerdns or custom")="full"; 
+  ::arg().set("control-console","Debugging switch - don't use")="no"; // but I know you will!
+  ::arg().set("fancy-records","Process URL and MBOXFW records")="no";
+  ::arg().set("wildcard-url","Process URL and MBOXFW records")="no";
+  ::arg().set("wildcards","Honor wildcards in the database")="";
+  ::arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
+  ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
+  ::arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
+  ::arg().set("receiver-threads","Default number of Distributor (backend) threads to start")="1";
+  ::arg().set("queue-limit","Maximum number of milliseconds to queue a query")="1500"; 
+  ::arg().set("recursor","If recursion is desired, IP address of a recursing nameserver")="no"; 
+  ::arg().set("lazy-recursion","Only recurse if question cannot be answered locally")="yes";
+  ::arg().set("allow-recursion","List of subnets that are allowed to recurse")="0.0.0.0/0";
+  ::arg().set("pipebackend-abi-version","Version of the pipe backend ABI")="1";
   
-  arg().set("disable-tcp","Do not listen to TCP queries")="no";
-  arg().set("disable-axfr","Do not allow zone transfers")="no";
+  ::arg().set("disable-tcp","Do not listen to TCP queries")="no";
+  ::arg().set("disable-axfr","Do not allow zone transfers")="no";
   
-  arg().set("config-name","Name of this virtual configuration - will rename the binary image")="";
+  ::arg().set("config-name","Name of this virtual configuration - will rename the binary image")="";
 
-  arg().set("load-modules","Load this module - supply absolute or relative path")="";
-  arg().set("launch","Which backends to launch and order to query them in")="";
-  arg().setSwitch("disable-axfr","Disable zonetransfers but do allow TCP queries")="no";
-  arg().set("allow-axfr-ips","Allow zonetransfers only to these subnets")="0.0.0.0/0";
-  arg().set("slave-cycle-interval","Reschedule failed SOA serial checks once every .. seconds")="60";
+  ::arg().set("load-modules","Load this module - supply absolute or relative path")="";
+  ::arg().set("launch","Which backends to launch and order to query them in")="";
+  ::arg().setSwitch("disable-axfr","Disable zonetransfers but do allow TCP queries")="no";
+  ::arg().set("allow-axfr-ips","Allow zonetransfers only to these subnets")="0.0.0.0/0";
+  ::arg().set("slave-cycle-interval","Reschedule failed SOA serial checks once every .. seconds")="60";
+
+  ::arg().set("tcp-control-address","If set, PowerDNS can be controlled over TCP on this address")="";
+  ::arg().set("tcp-control-port","If set, PowerDNS can be controlled over TCP on this address")="53000";
+  ::arg().set("tcp-control-secret","If set, PowerDNS can be controlled over TCP after passing this secret")="";
+  ::arg().set("tcp-control-range","If set, remote control of PowerDNS is possible over these networks only")="127.0.0.0/8, 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, ::1/128, fe80::/10";
   
-  arg().setSwitch("slave","Act as a slave")="no";
-  arg().setSwitch("master","Act as a master")="no";
-  arg().setSwitch("guardian","Run within a guardian process")="no";
-  arg().setSwitch("skip-cname","Do not perform CNAME indirection for each query")="no";
-  arg().setSwitch("strict-rfc-axfrs","Perform strictly rfc compliant axfrs (very slow)")="no";
-  arg().setSwitch("send-root-referral","Send out old-fashioned root-referral instead of ServFail in case of no authority")="no";
+  ::arg().setSwitch("slave","Act as a slave")="no";
+  ::arg().setSwitch("master","Act as a master")="no";
+  ::arg().setSwitch("guardian","Run within a guardian process")="no";
+  ::arg().setSwitch("skip-cname","Do not perform CNAME indirection for each query")="no";
+  ::arg().setSwitch("strict-rfc-axfrs","Perform strictly rfc compliant axfrs (very slow)")="no";
+  ::arg().setSwitch("send-root-referral","Send out old-fashioned root-referral instead of ServFail in case of no authority")="no";
 
-  arg().setSwitch("webserver","Start a webserver for monitoring")="no"; 
-  arg().setSwitch("webserver-print-arguments","If the webserver should print arguments")="no"; 
-  arg().set("webserver-address","IP Address of webserver to listen on")="127.0.0.1";
-  arg().set("webserver-port","Port of webserver to listen on")="8081";
-  arg().set("webserver-password","Password required for accessing the webserver")="";
+  ::arg().setSwitch("webserver","Start a webserver for monitoring")="no"; 
+  ::arg().setSwitch("webserver-print-arguments","If the webserver should print arguments")="no"; 
+  ::arg().set("webserver-address","IP Address of webserver to listen on")="127.0.0.1";
+  ::arg().set("webserver-port","Port of webserver to listen on")="8081";
+  ::arg().set("webserver-password","Password required for accessing the webserver")="";
 
-  arg().setSwitch("out-of-zone-additional-processing","Do out of zone additional processing")="yes";
-  arg().setSwitch("do-ipv6-additional-processing", "Do AAAA additional processing")="no";
-  arg().setSwitch("query-logging","Hint backends that queries should be logged")="no";
+  ::arg().setSwitch("out-of-zone-additional-processing","Do out of zone additional processing")="yes";
+  ::arg().setSwitch("do-ipv6-additional-processing", "Do AAAA additional processing")="no";
+  ::arg().setSwitch("query-logging","Hint backends that queries should be logged")="no";
   
-  arg().set("cache-ttl","Seconds to store packets in the PacketCache")="20";
-  arg().set("recursive-cache-ttl","Seconds to store packets in the PacketCache")="10";
-  arg().set("negquery-cache-ttl","Seconds to store packets in the PacketCache")="60";
-  arg().set("query-cache-ttl","Seconds to store packets in the PacketCache")="20";
-  arg().set("soa-minimum-ttl","Default SOA mininum ttl")="3600";
+  ::arg().set("cache-ttl","Seconds to store packets in the PacketCache")="20";
+  ::arg().set("recursive-cache-ttl","Seconds to store packets in the PacketCache")="10";
+  ::arg().set("negquery-cache-ttl","Seconds to store packets in the PacketCache")="60";
+  ::arg().set("query-cache-ttl","Seconds to store packets in the PacketCache")="20";
+  ::arg().set("soa-minimum-ttl","Default SOA mininum ttl")="3600";
+  ::arg().set("server-id", "Returned when queried for 'server.id' TXT or NSID, defaults to hostname")="";
+  ::arg().set("soa-refresh-default","Default SOA refresh")="10800";
+  ::arg().set("soa-retry-default","Default SOA retry")="3600";
+  ::arg().set("soa-expire-default","Default SOA expire")="604800";
 
-  arg().set("soa-refresh-default","Default SOA refresh")="10800";
-  arg().set("soa-retry-default","Default SOA retry")="3600";
-  arg().set("soa-expire-default","Default SOA expire")="604800";
+  ::arg().set("trusted-notification-proxy", "IP address of incoming notification proxy")="";
 
-  arg().set("default-ttl","Seconds a result is valid if not set otherwise")="3600";
-  arg().set("max-tcp-connections","Maximum number of TCP connections")="10";
-  arg().setSwitch("no-shuffle","Set this to prevent random shuffling of answers - for regression testing")="off";
+  ::arg().set("default-ttl","Seconds a result is valid if not set otherwise")="3600";
+  ::arg().set("max-tcp-connections","Maximum number of TCP connections")="10";
+  ::arg().setSwitch("no-shuffle","Set this to prevent random shuffling of answers - for regression testing")="off";
 
-  arg().setSwitch( "use-logfile", "Use a log file" )= "no";
-  arg().set( "logfile", "Logfile to use" )= "pdns.log";
-  arg().set("setuid","If set, change user id to this uid for more security")="";
-  arg().set("setgid","If set, change group id to this gid for more security")="";
+  ::arg().setSwitch( "use-logfile", "Use a log file (Windows only)" )= "no";
+  ::arg().set( "logfile", "Logfile to use (Windows only)" )= "pdns.log";
+  ::arg().set("setuid","If set, change user id to this uid for more security")="";
+  ::arg().set("setgid","If set, change group id to this gid for more security")="";
+
+  ::arg().set("max-cache-entries", "Maximum number of cache entries")="1000000";
+  ::arg().set("entropy-source", "If set, read entropy from this file")="/dev/urandom";
 }
-
-
 
 void declareStats(void)
 {
@@ -174,9 +182,9 @@ int isGuarded(char **argv)
 
 void sendout(const DNSDistributor::AnswerData &AD)
 {
-  static int &numanswered=*S.getPointer("udp-answers");
-  static int &numanswered4=*S.getPointer("udp4-answers");
-  static int &numanswered6=*S.getPointer("udp6-answers");
+  static unsigned int &numanswered=*S.getPointer("udp-answers");
+  static unsigned int &numanswered4=*S.getPointer("udp4-answers");
+  static unsigned int &numanswered6=*S.getPointer("udp6-answers");
 
   if(!AD.A)
     return;
@@ -195,36 +203,39 @@ void sendout(const DNSDistributor::AnswerData &AD)
   delete AD.A;  
 }
 
+static DNSDistributor* g_distributor;
+static pthread_mutex_t d_distributorlock =PTHREAD_MUTEX_INITIALIZER;
+static bool g_mustlockdistributor;
 
 //! The qthread receives questions over the internet via the Nameserver class, and hands them to the Distributor for futher processing
-void *qthread(void *p)
+void *qthread(void *number)
 {
-  DNSDistributor *D=static_cast<DNSDistributor *>(p);
-
   DNSPacket *P;
 
   DNSPacket question;
   DNSPacket cached;
 
-  int &numreceived=*S.getPointer("udp-queries");
-  int &numanswered=*S.getPointer("udp-answers");
+  unsigned int &numreceived=*S.getPointer("udp-queries");
+  unsigned int &numanswered=*S.getPointer("udp-answers");
 
-  int &numreceived4=*S.getPointer("udp4-queries");
-  int &numanswered4=*S.getPointer("udp4-answers");
+  unsigned int &numreceived4=*S.getPointer("udp4-queries");
+  unsigned int &numanswered4=*S.getPointer("udp4-answers");
 
-  int &numreceived6=*S.getPointer("udp6-queries");
-  int &numanswered6=*S.getPointer("udp6-answers");
+  unsigned int &numreceived6=*S.getPointer("udp6-queries");
+  unsigned int &numanswered6=*S.getPointer("udp6-answers");
   numreceived=-1;
   int diff;
 
   for(;;) {
-    if(!((numreceived++)%50)) { // maintenance tasks
-      S.set("latency",(int)avg_latency);
-      int qcount, acount;
-      D->getQueueSizes(qcount, acount);
-      S.set("qsize-q",qcount);
+    if(number==0) {
+      if(!((numreceived++)%50)) { // maintenance tasks
+	S.set("latency",(int)avg_latency);
+	int qcount, acount;
+	g_distributor->getQueueSizes(qcount, acount);
+	S.set("qsize-q",qcount);
+      }
     }
-    
+
     if(!(P=N->receive(&question))) { // receive a packet         inline
       continue;                    // packet was broken, try again
     }
@@ -237,10 +248,11 @@ void *qthread(void *p)
     S.ringAccount("queries", P->qdomain+"/"+P->qtype.getName());
     S.ringAccount("remotes",P->getRemote());
 
-    if((P->d.opcode != Opcode::Notify) && PC.get(P,&cached)) { // short circuit - does the PacketCache recognize this question?
+    if((P->d.opcode != Opcode::Notify) && P->couldBeCached() && PC.get(P, &cached)) { // short circuit - does the PacketCache recognize this question?
       cached.setRemote(&P->remote);  // inlined
       cached.setSocket(P->getSocket());                               // inlined
       cached.spoofID(P->d.id);                                        // inlined 
+      cached.setMaxReplyLen(P->getMaxReplyLen());
       cached.d.rd=P->d.rd; // copy in recursion desired bit 
       cached.commitD(); // commit d to the packet                        inlined
 
@@ -256,8 +268,12 @@ void *qthread(void *p)
 
       continue;
     }
-
-    D->question(P, &sendout); // otherwise, give to the distributor
+    if(g_mustlockdistributor) {
+      Lock l(&d_distributorlock);
+      g_distributor->question(P, &sendout); // otherwise, give to the distributor
+    }
+    else
+      g_distributor->question(P, &sendout); // otherwise, give to the distributor
   }
   return 0;
 }
@@ -268,30 +284,30 @@ void mainthread()
   Utility::srandom(time(0));
 
    int newgid=0;      
-   if(!arg()["setgid"].empty()) 
-     newgid=Utility::makeGidNumeric(arg()["setgid"]);      
+   if(!::arg()["setgid"].empty()) 
+     newgid=Utility::makeGidNumeric(::arg()["setgid"]);      
    int newuid=0;      
-   if(!arg()["setuid"].empty())        
-     newuid=Utility::makeUidNumeric(arg()["setuid"]); 
+   if(!::arg()["setuid"].empty())        
+     newuid=Utility::makeUidNumeric(::arg()["setuid"]); 
 #ifndef WIN32
 
-   if(!arg()["chroot"].empty()) {  
-     if(arg().mustDo("master") || arg().mustDo("slave"))
+   if(!::arg()["chroot"].empty()) {  
+     if(::arg().mustDo("master") || ::arg().mustDo("slave"))
 	gethostbyname("a.root-servers.net"); // this forces all lookup libraries to be loaded
-     if(chroot(arg()["chroot"].c_str())<0 || chdir("/")<0) {
-       L<<Logger::Error<<"Unable to chroot to '"+arg()["chroot"]+"': "<<strerror(errno)<<", exiting"<<endl; 
+     if(chroot(::arg()["chroot"].c_str())<0 || chdir("/")<0) {
+       L<<Logger::Error<<"Unable to chroot to '"+::arg()["chroot"]+"': "<<strerror(errno)<<", exiting"<<endl; 
        exit(1);
      }   
      else
-       L<<Logger::Error<<"Chrooted to '"<<arg()["chroot"]<<"'"<<endl;      
+       L<<Logger::Error<<"Chrooted to '"<<::arg()["chroot"]<<"'"<<endl;      
    }  
 #endif
 
    Utility::dropPrivs(newuid, newgid);
 
-  if(arg().mustDo("recursor")){
-    DP=new DNSProxy(arg()["recursor"]);
-    DP->onlyFrom(arg()["allow-recursion"]);
+  if(::arg().mustDo("recursor")){
+    DP=new DNSProxy(::arg()["recursor"]);
+    DP->onlyFrom(::arg()["allow-recursion"]);
     DP->go();
   }
   // NOW SAFE TO CREATE THREADS!
@@ -300,18 +316,22 @@ void mainthread()
   pthread_t qtid;
   StatWebServer sws;
 
-  if(arg().mustDo("webserver"))
+  if(::arg().mustDo("webserver"))
     sws.go();
   
-  if(arg().mustDo("slave") || arg().mustDo("master"))
+  if(::arg().mustDo("slave") || ::arg().mustDo("master"))
     Communicator.go(); 
 
   if(TN)
     TN->go(); // tcp nameserver launch
     
   //  fork(); (this worked :-))
-  DNSDistributor *D= new DNSDistributor(arg().asNum("distributor-threads")); // the big dispatcher!
-  pthread_create(&qtid,0,qthread,static_cast<void *>(D)); // receives packets
+  g_distributor = new DNSDistributor(::arg().asNum("distributor-threads")); // the big dispatcher!
+  if(::arg().asNum("receiver-threads") > 1) {
+    g_mustlockdistributor=true;
+  }
+  for(int n=0; n < ::arg().asNum("receiver-threads"); ++n)
+    pthread_create(&qtid,0,qthread, reinterpret_cast<void *>(n)); // receives packets
 
   void *p;
   pthread_join(qtid, &p);

@@ -18,7 +18,7 @@
 */
 /* accepts a named.conf as parameter and outputs heaps of sql */
 
-// $Id: zone2sql.cc 1018 2007-04-08 12:50:57Z ahu $ 
+// $Id: zone2sql.cc 1298 2008-11-18 12:48:42Z ahu $ 
 #ifdef WIN32
 # pragma warning ( disable: 4786 )
 
@@ -41,6 +41,9 @@ using namespace std;
 #include "zoneparser-tng.hh"
 #include "dnsrecords.hh"
 #include <boost/algorithm/string.hpp>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 using namespace boost;
 StatBag S;
@@ -82,10 +85,10 @@ static void callback(unsigned int domain_id,const string &domain, const string &
       dirty_hack_num++;
       cerr<<"Second SOA in zone, raised domain_id"<<endl;
       if(mode==POSTGRES || mode==ORACLE) {
-	if(g_intransaction && arg().mustDo("transactions")) {
+	if(g_intransaction && ::arg().mustDo("transactions")) {
 	  cout<<"COMMIT WORK;"<<endl;
 	}
-	if(arg().mustDo("transactions")) {
+	if(::arg().mustDo("transactions")) {
 	  if(mode==POSTGRES)
 	    cout<<"BEGIN TRANSACTION;"<<endl;
 	  g_intransaction=1;
@@ -165,68 +168,78 @@ int main(int argc, char **argv)
 {
   try {
     reportAllTypes();
+    reportFancyTypes();
 #if __GNUC__ >= 3
     ios_base::sync_with_stdio(false);
 #endif
     lastsoa_qname=" ";
-    arg().setSwitch("mysql","Output in format suitable for mysqlbackend")="yes";
-    arg().setCmd("gpgsql","Output in format suitable for default gpgsqlbackend");
-    arg().setCmd("gmysql","Output in format suitable for default gmysqlbackend");
-    arg().setCmd("oracle","Output in format suitable for the oraclebackend");
-    arg().setCmd("bare","Output in a bare format, suitable for further parsing");
-    arg().setSwitch("verbose","Verbose comments on operation")="no";
-    arg().setSwitch("slave","Keep BIND slaves as slaves")="no";
-    arg().setSwitch("transactions","If target SQL supports it, use transactions")="no";
-    arg().setSwitch("on-error-resume-next","Continue after errors")="no";
-    arg().set("start-id","Value of first domain-id")="0";
-    arg().set("zone","Zonefile with $ORIGIN to parse")="";
-    arg().set("zone-name","Specify an $ORIGIN in case it is not present")="";
-    arg().set("named-conf","Bind 8/9 named.conf to parse")="";
-    arg().set("soa-minimum-ttl","Do not change")="0";
-    arg().set("soa-refresh-default","Do not change")="0";
-    arg().set("soa-retry-default","Do not change")="0";
-    arg().set("soa-expire-default","Do not change")="0";
+    ::arg().setSwitch("mysql","Output in format suitable for mysqlbackend")="yes";
+    ::arg().setCmd("gpgsql","Output in format suitable for default gpgsqlbackend");
+    ::arg().setCmd("gmysql","Output in format suitable for default gmysqlbackend");
+    ::arg().setCmd("oracle","Output in format suitable for the oraclebackend");
+    ::arg().setCmd("bare","Output in a bare format, suitable for further parsing");
+    ::arg().setSwitch("verbose","Verbose comments on operation")="no";
+    ::arg().setSwitch("slave","Keep BIND slaves as slaves")="no";
+    ::arg().setSwitch("transactions","If target SQL supports it, use transactions")="no";
+    ::arg().setSwitch("on-error-resume-next","Continue after errors")="no";
+    ::arg().set("start-id","Value of first domain-id")="0";
+    ::arg().set("zone","Zonefile with $ORIGIN to parse")="";
+    ::arg().set("zone-name","Specify an $ORIGIN in case it is not present")="";
+    ::arg().set("named-conf","Bind 8/9 named.conf to parse")="";
+    ::arg().set("soa-minimum-ttl","Do not change")="0";
+    ::arg().set("soa-refresh-default","Do not change")="0";
+    ::arg().set("soa-retry-default","Do not change")="0";
+    ::arg().set("soa-expire-default","Do not change")="0";
 
-    arg().setCmd("help","Provide a helpful message");
+    ::arg().setCmd("help","Provide a helpful message");
 
     S.declare("logmessages");
 
     string namedfile="";
     string zonefile="";
 
-    arg().parse(argc, argv);
+    ::arg().parse(argc, argv);
   
-    if(argc<2 || arg().mustDo("help")) {
+    if(argc<2 || ::arg().mustDo("help")) {
       cerr<<"syntax:"<<endl<<endl;
-      cerr<<arg().helpstring()<<endl;
+      cerr<<::arg().helpstring()<<endl;
       exit(1);
     }
   
-    if(arg().mustDo("mysql")) 
+    if(::arg().mustDo("mysql")) 
       mode=MYSQL;
-    if(arg().mustDo("gpgsql") || arg().mustDo("gmysql"))
+    if(::arg().mustDo("gpgsql") || ::arg().mustDo("gmysql"))
       mode=POSTGRES;
-    if(arg().mustDo("bare"))
+    if(::arg().mustDo("bare"))
       mode=BARE;
-    if(arg().mustDo("oracle")) {
+    if(::arg().mustDo("oracle")) {
       mode=ORACLE;
-      if(!arg().mustDo("transactions"))
+      if(!::arg().mustDo("transactions"))
 	cout<<"set autocommit on;"<<endl;
     }
 
 
-    dirty_hack_num=arg().asNum("start-id");
-    namedfile=arg()["named-conf"];
-    zonefile=arg()["zone"];
+    dirty_hack_num=::arg().asNum("start-id");
+    namedfile=::arg()["named-conf"];
+    zonefile=::arg()["zone"];
 
-    int count=0;
+    int count=0, num_domainsdone=0;
 
     if(zonefile.empty()) {
       BindParser BP;
-      BP.setVerbose(arg().mustDo("verbose"));
+      BP.setVerbose(::arg().mustDo("verbose"));
       BP.parse(namedfile.empty() ? "./named.conf" : namedfile);
     
-      const vector<BindDomainInfo> &domains=BP.getDomains();
+      vector<BindDomainInfo> domains=BP.getDomains();
+      struct stat st;
+      for(vector<BindDomainInfo>::iterator i=domains.begin(); i!=domains.end(); ++i) {
+	if(stat(i->filename.c_str(), &st) == 0) {
+	  i->d_dev = st.st_dev;
+	  i->d_ino = st.st_ino;
+	}
+      }
+      
+      sort(domains.begin(), domains.end()); // put stuff in inode order
 
       int numdomains=domains.size();
       int tick=numdomains/100;
@@ -238,17 +251,17 @@ int main(int argc, char **argv)
 	{
 	  try {
 	    if(mode==POSTGRES || mode==ORACLE) {
-	      if(g_intransaction && arg().mustDo("transactions")) {
+	      if(g_intransaction && ::arg().mustDo("transactions")) {
 		cout<<"COMMIT WORK;"<<endl;
 	      }
-	      if(arg().mustDo("transactions")) {
+	      if(::arg().mustDo("transactions")) {
 		if(mode==POSTGRES)
 		  cout<<"BEGIN TRANSACTION;"<<endl;
 		g_intransaction=1;
 	      }
 
 	      if(mode==POSTGRES) {
-		if(arg().mustDo("slave")) {
+		if(::arg().mustDo("slave")) {
 		  if(i->masters.empty())
 		    cout<<"insert into domains (name,type) values ("<<sqlstr(i->name)<<",'NATIVE');"<<endl;
 		  else {
@@ -273,9 +286,17 @@ int main(int argc, char **argv)
 	    DNSResourceRecord rr;
 	    while(zpt.get(rr)) 
 	      callback(0, rr.qname, rr.qtype.getName(), rr.content, rr.ttl, rr.priority);
+	    num_domainsdone++;
 	  }
+	  catch(std::exception &ae) {
+	    if(!::arg().mustDo("on-error-resume-next"))
+	      throw;
+	    else
+	      cerr<<endl<<ae.what()<<endl;
+	  }
+
 	  catch(AhuException &ae) {
-	    if(!arg().mustDo("on-error-resume-next"))
+	    if(!::arg().mustDo("on-error-resume-next"))
 	      throw;
 	    else
 	      cerr<<ae.reason<<endl;
@@ -288,21 +309,21 @@ int main(int argc, char **argv)
       cerr<<"\r100% done\033\133\113"<<endl;
     }
     else {
-      ZoneParserTNG zpt(zonefile, arg()["zone-name"]);
+      ZoneParserTNG zpt(zonefile, ::arg()["zone-name"]);
       DNSResourceRecord rr;
       dirty_hack_num=-1; // trigger first SOA output
       while(zpt.get(rr)) 
 	callback(0, rr.qname, rr.qtype.getName(), rr.content, rr.ttl, rr.priority);
-
+      num_domainsdone=1;
     }
-    cerr<<"Parsed "<<num_records<<" records"<<endl;
+    cerr<<num_domainsdone<<" domains were fully parsed, containing "<<num_records<<" records\n";
     
   }
   catch(AhuException &ae) {
     cerr<<"\nFatal error: "<<ae.reason<<endl;
     return 0;
   }
-  catch(exception &e) {
+  catch(std::exception &e) {
     cerr<<"died because of STL error: "<<e.what()<<endl;
     exit(0);
   }
@@ -311,7 +332,7 @@ int main(int argc, char **argv)
     exit(0);
   }
   
-  if((mode==POSTGRES || mode==ORACLE) && arg().mustDo("transactions") && g_intransaction)
+  if((mode==POSTGRES || mode==ORACLE) && ::arg().mustDo("transactions") && g_intransaction)
     cout<<"COMMIT WORK;"<<endl;
   return 1;
 

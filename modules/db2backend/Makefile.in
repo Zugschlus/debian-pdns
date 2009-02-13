@@ -124,7 +124,9 @@ LEX = @LEX@
 LEXLIB = @LEXLIB@
 LEX_OUTPUT_ROOT = @LEX_OUTPUT_ROOT@
 LIBDL = @LIBDL@
+LIBLDAP = @LIBLDAP@
 LIBOBJS = @LIBOBJS@
+LIBOPENDBX = @LIBOPENDBX@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LN_S = @LN_S@
@@ -215,7 +217,7 @@ target_alias = @target_alias@
 AM_CPPFLAGS = @THREADFLAGS@
 lib_LTLIBRARIES = libdb2backend.la 
 libdb2backend_la_SOURCES = DB2Backend.cc DB2Backend.hh DB2Exception.cc DB2Exception.hh
-libdb2backend_la_LDFLAGS = -ldb2
+libdb2backend_la_LDFLAGS = -module -avoid-version -ldb2
 all: all-am
 
 .SUFFIXES:

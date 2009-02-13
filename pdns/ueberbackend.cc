@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005  PowerDNS.COM BV
+    Copyright (C) 2005 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -15,7 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-
+#include "packetcache.hh"
 #include "utility.hh"
 
 #ifdef HAVE_CONFIG_H
@@ -38,7 +38,7 @@
 #include "dnspacket.hh"
 #include "logger.hh"
 #include "statbag.hh"
-#include "packetcache.hh"
+
 
 extern StatBag S;
 
@@ -237,11 +237,11 @@ void UeberBackend::cleanup()
 int UeberBackend::cacheHas(const Question &q, DNSResourceRecord &rr)
 {
   extern PacketCache PC;
-  static int *qcachehit=S.getPointer("query-cache-hit");
-  static int *qcachemiss=S.getPointer("query-cache-miss");
+  static unsigned int *qcachehit=S.getPointer("query-cache-hit");
+  static unsigned int *qcachemiss=S.getPointer("query-cache-miss");
 
-  static int negqueryttl=arg().asNum("negquery-cache-ttl");
-  static int queryttl=arg().asNum("query-cache-ttl");
+  static int negqueryttl=::arg().asNum("negquery-cache-ttl");
+  static int queryttl=::arg().asNum("query-cache-ttl");
 
   if(!negqueryttl && !queryttl) {
     (*qcachemiss)++;
@@ -249,19 +249,16 @@ int UeberBackend::cacheHas(const Question &q, DNSResourceRecord &rr)
   }
 
   string content;
-  //  L<<Logger::Warning<<"looking up: "<<q.qname+"|N|"+q.qtype.getName()+"|"+itoa(q.zoneId)<<endl;
+  //  L<<Logger::Warning<<"looking up: '"<<q.qname+"'|N|"+q.qtype.getName()+"|"+itoa(q.zoneId)<<endl;
 
-  string key=q.qname+"|Q|"+q.qtype.getName()+"|"+itoa(q.zoneId); // perhaps work around g++ 2.95 bug
-
-  bool ret=PC.getKey(key, content);   // think about lowercasing here
+  bool ret=PC.getEntry(q.qname, q.qtype, PacketCache::QUERYCACHE, content, q.zoneId);   // think about lowercasing here
 
   if(!ret) {
     (*qcachemiss)++;
     return -1;
   }
-
   (*qcachehit)++;
-  if(content.empty())
+  if(content.empty()) // negatively cached
     return 0;
   rr.unSerialize(content);
   return 1;
@@ -270,21 +267,21 @@ int UeberBackend::cacheHas(const Question &q, DNSResourceRecord &rr)
 void UeberBackend::addNegCache(const Question &q)
 {
   extern PacketCache PC;
-  static int negqueryttl=arg().asNum("negquery-cache-ttl");
+  static int negqueryttl=::arg().asNum("negquery-cache-ttl");
   if(!negqueryttl)
     return;
   //  L<<Logger::Warning<<"negative inserting: "<<q.qname+"|N|"+q.qtype.getName()+"|"+itoa(q.zoneId)<<endl;
-  PC.insert(q.qname+"|Q|"+q.qtype.getName()+"|"+itoa(q.zoneId),"",negqueryttl);
+  PC.insert(q.qname, q.qtype, PacketCache::QUERYCACHE, "", negqueryttl, q.zoneId);
 }
 
 void UeberBackend::addOneCache(const Question &q, const DNSResourceRecord &rr)
 {
   extern PacketCache PC;
-  static int queryttl=arg().asNum("query-cache-ttl");
+  static int queryttl=::arg().asNum("query-cache-ttl");
   if(!queryttl)
     return;
-
-  PC.insert(q.qname+"|Q|"+q.qtype.getName()+"|"+itoa(q.zoneId),rr.serialize(),queryttl);
+  //  L<<Logger::Warning<<"inserting: "<<q.qname+"|N|"+q.qtype.getName()+"|"+itoa(q.zoneId)<<endl;
+  PC.insert(q.qname, q.qtype, PacketCache::QUERYCACHE, rr.serialize(), queryttl, q.zoneId);
 }
 
 
@@ -358,13 +355,12 @@ bool UeberBackend::get(DNSResourceRecord &rr)
     d_negcached=true; // ugly, confusing 
     return true;
   }
-
   if(!d_handle.get(rr)) {
     if(!d_ancount && !d_handle.qname.empty()) // don't cache axfr
       addNegCache(d_question);
 
     if(d_ancount==1) {
-      addOneCache(d_question,lastrr);
+      addOneCache(d_question, lastrr);
     }
 
     return false;

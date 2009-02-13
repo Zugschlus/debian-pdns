@@ -42,10 +42,16 @@ DNSResourceRecord String2DNSRR(const string& qname, const QType& qt, const strin
   rr.qtype=qt;
   rr.qname=qname;
 
-  if(rr.qtype.getCode()==QType::A) {
+  if(rr.qtype.getCode()==QType::A && serial.size()==4) {
     uint32_t ip;
     memcpy((char*)&ip, serial.c_str(), 4);
     rr.content=U32ToIP(ntohl(ip));
+  }
+  else if(rr.qtype.getCode()==QType::AAAA && serial.size()==16) {
+    ComboAddress tmp;
+    tmp.sin4.sin_family=AF_INET6;
+    memcpy(tmp.sin6.sin6_addr.s6_addr, serial.c_str(), 16);
+    rr.content=tmp.toString();
   }
   else if(rr.qtype.getCode()==QType::CNAME || rr.qtype.getCode()==QType::NS || rr.qtype.getCode()==QType::PTR) {
     unsigned int frompos=0;
@@ -85,14 +91,12 @@ string DNSRR2String(const DNSResourceRecord& rr)
     IpToU32(rr.content, &ip);
     return string((char*)&ip, 4);
   }
-  else if(type==QType::NS) {
-    NSRecordContent ar(rr.content);
-    return ar.serialize(rr.qname);
+  else if(type==QType::AAAA) {
+    ComboAddress ca(rr.content);
+    return string((char*)&ca.sin6.sin6_addr.s6_addr, 16);
   }
-  else if(type==QType::CNAME) {
-    CNAMERecordContent ar(rr.content);
-    return ar.serialize(rr.qname);
-  }
+  else if(type==QType::NS || type==QType::CNAME)
+      return simpleCompress(rr.content, rr.qname);
   else {
     string ret;
     shared_ptr<DNSRecordContent> drc(DNSRecordContent::mastermake(type, 1, rr.content));
@@ -202,7 +206,9 @@ int MemRecursorCache::get(time_t now, const string &qname, const QType& qt, set<
 
   if(d_cachecache.first!=d_cachecache.second) { 
     for(cache_t::const_iterator i=d_cachecache.first; i != d_cachecache.second; ++i) 
-      if(i->d_qtype == qt.getCode() || qt.getCode()==QType::ANY) {
+      if(i->d_qtype == qt.getCode() || qt.getCode()==QType::ANY || 
+	 (qt.getCode()==QType::ADDR && (i->d_qtype == QType::A || i->d_qtype == QType::AAAA) )
+	 ) {
 	typedef cache_t::nth_index<1>::type sequence_t;
 	sequence_t& sidx=d_cache.get<1>();
 	sequence_t::iterator si=d_cache.project<1>(i);
@@ -222,16 +228,44 @@ int MemRecursorCache::get(time_t now, const string &qname, const QType& qt, set<
 	  else
 	    sidx.relocate(sidx.end(), si); 
 	}
-	if(qt.getCode()!=QType::ANY) // normally if we have a hit, we are done
+	if(qt.getCode()!=QType::ANY && qt.getCode()!=QType::ADDR) // normally if we have a hit, we are done
 	  break;
       }
 
     //    cerr<<"time left : "<<ttd - now<<", "<< (res ? res->size() : 0) <<"\n";
-    return (unsigned int)ttd-now;
+    return (int)ttd-now;
   }
   return -1;
 }
  
+bool MemRecursorCache::attemptToRefreshNSTTL(const QType& qt, const set<DNSResourceRecord>& content, const CacheEntry& stored)
+{
+  if(!stored.d_auth) {
+//    cerr<<"feel free to scribble non-auth data!"<<endl;
+    return false;
+  }
+
+  if(qt.getCode()!=QType::NS) {
+  //  cerr<<"Not NS record"<<endl;
+    return false;
+  }
+  if(content.size()!=stored.d_records.size()) {
+  //  cerr<<"Not equal number of records"<<endl;
+    return false;
+  }
+  if(stored.d_records.empty())
+    return false;
+
+  if(stored.d_records.begin()->d_ttd > content.begin()->ttl) {
+    // cerr<<"attempt to LOWER TTL - fine by us"<<endl;
+    return false;
+  }
+
+
+ // cerr<<"Returning true - update attempt!\n";
+  return true;
+}
+
 /* the code below is rather tricky - it basically replaces the stuff cached for qname by content, but it is special
    cased for when inserting identical records with only differing ttls, in which case the entry is not
    touched, but only given a new ttd */
@@ -257,7 +291,7 @@ void MemRecursorCache::replace(time_t now, const string &qname, const QType& qt,
   if(qt.getCode()==QType::SOA || qt.getCode()==QType::CNAME)  // you can only have one (1) each of these
     ce.d_records.clear();
 
-  if(auth && !ce.d_auth) {
+  if(auth && !attemptToRefreshNSTTL(qt, content, ce) ) {
     ce.d_records.clear(); // clear non-auth data
     ce.d_auth = true;
     isNew=true;           // data should be sorted again
@@ -300,13 +334,14 @@ void MemRecursorCache::replace(time_t now, const string &qname, const QType& qt,
       }
     }
   }
+
   if(isNew) {
     sort(ce.d_records.begin(), ce.d_records.end());
   }
-
+  
   if(ce.d_records.capacity() != ce.d_records.size())
     vector<StoredRecord>(ce.d_records).swap(ce.d_records);
-
+  
   d_cache.replace(stored, ce);
 }
 
@@ -326,6 +361,34 @@ int MemRecursorCache::doWipeCache(const string& name, uint16_t qtype)
   }
   return count;
 }
+
+bool MemRecursorCache::doAgeCache(time_t now, const string& name, uint16_t qtype, int32_t newTTL)
+{
+  cache_t::iterator iter = d_cache.find(tie(name, qtype));
+  if(iter == d_cache.end()) 
+    return false;
+
+  int32_t ttl = iter->getTTD() - now;
+  if(ttl < 0) 
+    return false;  // would be dead anyhow
+
+  if(ttl > newTTL) {
+    d_cachecachevalid=false;
+
+    ttl = newTTL;
+    uint32_t newTTD = now + ttl;
+    
+    CacheEntry ce = *iter;
+    for(vector<StoredRecord>::iterator j = ce.d_records.begin() ; j != ce.d_records.end(); ++j)  {
+      j->d_ttd = newTTD;
+    }
+    
+    d_cache.replace(iter, ce);
+    return true;
+  }
+  return false;
+}
+
 
 void MemRecursorCache::doDumpAndClose(int fd)
 {

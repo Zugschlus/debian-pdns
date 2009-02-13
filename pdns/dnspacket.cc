@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2001 - 2007  PowerDNS.COM BV
+    Copyright (C) 2001 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -38,12 +38,14 @@
 #include "arguments.hh"
 #include "dnswriter.hh"
 #include "dnsparser.hh"
+#include "dnsrecords.hh"
 
 DNSPacket::DNSPacket() 
 {
   d_wrapped=false;
   d_compress=true;
   d_tcp=false;
+  d_wantsnsid=false;
 }
 
 string DNSPacket::getString()
@@ -87,7 +89,9 @@ DNSPacket::DNSPacket(const DNSPacket &orig)
   qtype=orig.qtype;
   qclass=orig.qclass;
   qdomain=orig.qdomain;
-
+  d_maxreplylen = orig.d_maxreplylen;
+  d_ednsping = orig.d_ednsping;
+  d_wantsnsid = orig.d_wantsnsid;
   rrs=orig.rrs;
 
   d_wrapped=orig.d_wrapped;
@@ -184,10 +188,10 @@ void fillSOAData(const string &content, SOAData &data)
   // fill out data with some plausible defaults:
   // 10800 3600 604800 3600
   data.serial=0;
-  data.refresh=arg().asNum("soa-refresh-default");
-  data.retry=arg().asNum("soa-retry-default");
-  data.expire=arg().asNum("soa-expire-default");
-  data.default_ttl=arg().asNum("soa-minimum-ttl");
+  data.refresh=::arg().asNum("soa-refresh-default");
+  data.retry=::arg().asNum("soa-retry-default");
+  data.expire=::arg().asNum("soa-expire-default");
+  data.default_ttl=::arg().asNum("soa-minimum-ttl");
 
   vector<string>parts;
   stringtok(parts,content);
@@ -263,6 +267,11 @@ void DNSPacket::setCompress(bool compress)
   rrs.reserve(200);
 }
 
+bool DNSPacket::couldBeCached()
+{
+  return d_ednsping.empty() && !d_wantsnsid;
+}
+
 /** Must be called before attempting to access getData(). This function stuffs all resource
  *  records found in rrs into the data buffer. It also frees resource records queued for us.
  */
@@ -287,7 +296,9 @@ void DNSPacket::wrapup(void)
 
   stable_sort(rrs.begin(),rrs.end(),rrcomp);
 
-  if(!d_tcp && !arg().mustDo("no-shuffle")) {
+  static bool mustShuffle =::arg().mustDo("no-shuffle");
+
+  if(!d_tcp && !mustShuffle) {
     shuffle(rrs);
   }
   d_wrapped=true;
@@ -302,7 +313,16 @@ void DNSPacket::wrapup(void)
   pw.getHeader()->id=d.id;
   pw.getHeader()->rd=d.rd;
 
-  if(!rrs.empty()) {
+  DNSPacketWriter::optvect_t opts;
+  if(d_wantsnsid) {
+    opts.push_back(make_pair(3, ::arg()["server-id"]));
+  }
+
+  if(!d_ednsping.empty()) {
+    opts.push_back(make_pair(4, d_ednsping));
+  }
+
+  if(!rrs.empty() || !opts.empty()) {
     try {
       for(pos=rrs.begin(); pos < rrs.end(); ++pos) {
 	// this needs to deal with the 'prio' mismatch!
@@ -318,10 +338,13 @@ void DNSPacket::wrapup(void)
 	shared_ptr<DNSRecordContent> drc(DNSRecordContent::mastermake(pos->qtype.getCode(), 1, pos->content)); 
 	drc->toPacket(pw);
       }
+      if(!opts.empty())
+	pw.addOpt(2800, 0, 0, opts);
+
       pw.commit();
     }
-    catch(exception& e) {
-      L<<Logger::Error<<"Exception: "<<e.what()<<endl;
+    catch(std::exception& e) {
+      L<<Logger::Warning<<"Exception: "<<e.what()<<endl;
       throw;
     }
   }
@@ -380,6 +403,9 @@ DNSPacket *DNSPacket::replyPacket() const
   r->d_tcp = d_tcp;
   r->qdomain = qdomain;
   r->qtype = qtype;
+  r->d_maxreplylen = d_maxreplylen;
+  r->d_ednsping = d_ednsping;
+  r->d_wantsnsid = d_wantsnsid;
   return r;
 }
 
@@ -391,6 +417,23 @@ void DNSPacket::spoofQuestion(const string &qd)
   d_wrapped=true; // if we do this, don't later on wrapup
 }
 
+int DNSPacket::noparse(const char *mesg, int length)
+{
+  stringbuffer.assign(mesg,length); 
+  
+  len=length;
+  if(length < 12) { 
+    L << Logger::Warning << "Ignoring packet: too short from "
+      << getRemote() << endl;
+    return -1;
+  }
+  d_wantsnsid=false;
+  d_ednsping.clear();
+  d_maxreplylen=512;
+  memcpy((void *)&d,(const void *)stringbuffer.c_str(),12);
+  return 0;
+}
+
 /** This function takes data from the network, possibly received with recvfrom, and parses
     it into our class. Results of calling this function multiple times on one packet are
     unknown. Returns -1 if the packet cannot be parsed.
@@ -399,14 +442,41 @@ int DNSPacket::parse(const char *mesg, int length)
 try
 {
   stringbuffer.assign(mesg,length); 
-
+  
   len=length;
   if(length < 12) { 
     L << Logger::Warning << "Ignoring packet: too short from "
       << getRemote() << endl;
     return -1;
   }
-  MOADNSParser mdp(string(mesg, length));
+
+  MOADNSParser mdp(stringbuffer);
+  EDNSOpts edo;
+
+  // ANY OPTION WHICH *MIGHT* BE SET DOWN BELOW SHOULD BE CLEARED FIRST!
+
+  d_wantsnsid=false;
+  d_ednsping.clear();
+
+  if(getEDNSOpts(mdp, &edo)) {
+    d_maxreplylen=max(edo.d_packetsize, (uint16_t)1280);
+
+    for(vector<pair<uint16_t, string> >::const_iterator iter = edo.d_options.begin();
+	iter != edo.d_options.end(); 
+	++iter) {
+      if(iter->first == 3) {// 'EDNS NSID'
+	d_wantsnsid=1;
+      }
+      else if(iter->first == 5) {// 'EDNS PING'
+	d_ednsping = iter->second;
+      }
+      else
+	; // cerr<<"Have an option #"<<iter->first<<endl;
+    }
+  }
+  else  {
+    d_maxreplylen=512;
+  }
 
   memcpy((void *)&d,(const void *)stringbuffer.c_str(),12);
   qdomain=mdp.d_qname;
@@ -424,8 +494,18 @@ try
   qclass=mdp.d_qclass;
   return 0;
 }
-catch(exception& e) {
+catch(std::exception& e) {
   return -1;
+}
+
+int DNSPacket::getMaxReplyLen()
+{
+  return d_maxreplylen;
+}
+
+void DNSPacket::setMaxReplyLen(int bytes)
+{
+  d_maxreplylen=bytes;
 }
 
 //! Use this to set where this packet was received from or should be sent to

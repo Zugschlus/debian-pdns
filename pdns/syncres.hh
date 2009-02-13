@@ -102,6 +102,7 @@ public:
   DecayingEwma() :  d_val(0.0) 
   {
     d_needinit=true;
+    d_last.tv_sec = d_last.tv_usec = 0;
     d_lastget=d_last;
   }
 
@@ -211,7 +212,7 @@ class SyncRes
 public:
   explicit SyncRes(const struct timeval& now) :  d_outqueries(0), d_tcpoutqueries(0), d_throttledqueries(0), d_timeouts(0), d_unreachables(0),
 						 d_now(now),
-						 d_cacheonly(false), d_nocache(false) { }
+						 d_cacheonly(false), d_nocache(false), d_doEDNS0(false) { }
   int beginResolve(const string &qname, const QType &qtype, uint16_t qclass, vector<DNSResourceRecord>&ret);
   void setId(int id)
   {
@@ -230,6 +231,12 @@ public:
   {
     d_nocache=state;
   }
+
+  void setDoEDNS0(bool state=true)
+  {
+    d_doEDNS0=state;
+  }
+
   static unsigned int s_queries;
   static unsigned int s_outgoingtimeouts;
   static unsigned int s_throttledqueries;
@@ -319,7 +326,7 @@ public:
 
   struct AuthDomain
   {
-    string d_server;
+    vector<ComboAddress> d_servers;
     typedef multi_index_container <
       DNSResourceRecord,
       indexed_by < 
@@ -371,7 +378,7 @@ private:
   static bool s_log;
   bool d_cacheonly;
   bool d_nocache;
-  LWRes d_lwr;
+  bool d_doEDNS0;
 
   struct GetBestNSAnswer
   {
@@ -472,6 +479,7 @@ struct RecursorStats
   uint64_t clientParseError;
   uint64_t serverParseError;
   uint64_t unexpectedCount;
+  uint64_t caseMismatchCount;
   uint64_t spoofCount;
   uint64_t resourceLimits;
   uint64_t ipv6queries;
@@ -492,6 +500,8 @@ struct RecursorStats
     remotes[(d_remotepos++) % remotes.size()]=remote;
   }
 };
+
+string doReloadLuaScript(vector<string>::const_iterator begin, vector<string>::const_iterator end);
 
 extern RecursorStats g_stats;
 

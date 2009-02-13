@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2006  PowerDNS.COM BV
+    Copyright (C) 2002 - 2008  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as published 
@@ -15,10 +15,9 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-
-
-
 #include "arguments.hh"
+#include <boost/algorithm/string.hpp>
+using namespace boost;
 
 const ArgvMap::param_t::const_iterator ArgvMap::begin()
 {
@@ -77,10 +76,14 @@ string & ArgvMap::setSwitch(const string &var, const string &help)
 
 bool ArgvMap::contains(const string &var, const string &val)
 {
+  params_t::const_iterator param = params.find(var);
+  if(param == params.end() || param->second.empty())  {
+    return false;
+  }
   vector<string> parts;
   vector<string>::const_iterator i;
   
-  stringtok( parts, params[var], ", \t" );
+  stringtok( parts, param->second, ", \t" );
   for( i = parts.begin(); i != parts.end(); i++ ) {
     if( *i == val ) {
       return true;
@@ -89,7 +92,6 @@ bool ArgvMap::contains(const string &var, const string &val)
 
   return false;
 }
-
 
 string ArgvMap::helpstring(string prefix)
 {
@@ -161,20 +163,113 @@ const string & ArgvMap::operator[](const string &arg)
   return params[arg];
 }
 
+#ifndef WIN32
+mode_t ArgvMap::asMode(const string &arg) 
+{
+  mode_t mode;
+  const char *cptr_orig;
+  char *cptr_ret = NULL;
+
+  if(!parmIsset(arg))
+   throw ArgException(string("Undefined but needed argument: '")+arg+"'");
+
+  cptr_orig = params[arg].c_str();
+  mode = static_cast<mode_t>(strtol(cptr_orig, &cptr_ret, 8));
+  if (mode == 0 && cptr_ret == cptr_orig) 
+    throw ArgException("'" + arg + string("' contains invalid octal mode"));
+   return mode;
+}
+
+gid_t ArgvMap::asGid(const string &arg)
+{
+  gid_t gid;
+  const char *cptr_orig;
+  char *cptr_ret = NULL;
+
+  if(!parmIsset(arg))
+   throw ArgException(string("Undefined but needed argument: '")+arg+"'");
+
+  cptr_orig = params[arg].c_str();
+  gid = static_cast<gid_t>(strtol(cptr_orig, &cptr_ret, 0));
+  if (gid == 0 && cptr_ret == cptr_orig) {
+    // try to resolve
+    struct group *group = getgrnam(params[arg].c_str());
+    if (group == NULL)
+     throw ArgException("'" + arg + string("' contains invalid group"));
+    gid = group->gr_gid;
+   }
+   return gid;
+}
+
+uid_t ArgvMap::asUid(const string &arg)
+{
+  uid_t uid;
+  const char *cptr_orig;
+  char *cptr_ret = NULL;
+
+  if(!parmIsset(arg))
+   throw ArgException(string("Undefined but needed argument: '")+arg+"'");
+
+  cptr_orig = params[arg].c_str();
+  uid = static_cast<uid_t>(strtol(cptr_orig, &cptr_ret, 0));
+  if (uid == 0 && cptr_ret == cptr_orig) {
+    // try to resolve
+    struct passwd *pwent = getpwnam(params[arg].c_str());
+    if (pwent == NULL)
+     throw ArgException("'" + arg + string("' contains invalid group"));
+    uid = pwent->pw_uid;
+   }
+   return uid;
+}
+#endif
+
 int ArgvMap::asNum(const string &arg)
 {
+  int retval;
+  const char *cptr_orig;
+  char *cptr_ret = NULL;
+
   if(!parmIsset(arg))
     throw ArgException(string("Undefined but needed argument: '")+arg+"'");
 
-  return atoi(params[arg].c_str());
+  // treat empty values as zeros
+  if (params[arg].empty())
+   return 0;
+
+  cptr_orig = params[arg].c_str();
+  retval = static_cast<int>(strtol(cptr_orig, &cptr_ret, 0));
+  if (!retval && cptr_ret == cptr_orig)
+   throw ArgException("'"+arg+string("' is not valid number"));
+
+  return retval;
+}
+
+bool ArgvMap::isEmpty(const string &arg) 
+{
+   if(!parmIsset(arg))
+    return true;
+   return params[arg].empty();
 }
 
 double ArgvMap::asDouble(const string &arg)
 {
+  double retval;
+  const char *cptr_orig;
+  char *cptr_ret = NULL;
+
   if(!parmIsset(arg))
     throw ArgException(string("Undefined but needed argument: '")+arg+"'");
 
-  return atof(params[arg].c_str());
+  if (params[arg].empty())
+   return 0.0;
+
+  cptr_orig = params[arg].c_str();
+  retval = strtod(cptr_orig, &cptr_ret);
+ 
+  if (retval == 0 && cptr_ret == cptr_orig)
+   throw ArgException("'"+arg+string("' is not valid double"));
+
+  return retval;
 }
 
 ArgvMap::ArgvMap()
@@ -259,8 +354,8 @@ bool ArgvMap::preParseFile(const char *fname, const string &arg)
   string::size_type pos;
 
   while(getline(f,pline)) {
-    chomp(pline," \t\r\n");   // strip trailing white spaces
-
+    trim_right(pline);
+    
     if(pline[pline.size()-1]=='\\') {
       line+=pline.substr(0,pline.length()-1);
       continue;
@@ -273,7 +368,7 @@ bool ArgvMap::preParseFile(const char *fname, const string &arg)
       line=line.substr(0,pos);
 
     // strip trailing spaces
-    chomp(line," \t");
+    trim_right(line);
 
     // strip leading spaces
     if((pos=line.find_first_not_of(" \t\r\n"))!=string::npos)
@@ -301,7 +396,7 @@ bool ArgvMap::file(const char *fname, bool lax)
   string::size_type pos;
 
   while(getline(f,pline)) {
-    chomp(pline," \t\r\n");   // strip trailing white spaces
+    trim_right(pline);
     if(pline.empty())
       continue;
 
@@ -318,11 +413,7 @@ bool ArgvMap::file(const char *fname, bool lax)
       line=line.substr(0,pos);
 
     // strip trailing spaces
-    chomp(line," \t");
-
-    // strip leading spaces
-    if((pos=line.find_first_not_of(" \t\r\n"))!=string::npos)
-      line=line.substr(pos);
+    trim(line);
 
     parseOne(string("--")+line,"",lax);
     line="";

@@ -53,7 +53,8 @@ public:
   void startRecord(const string& name, uint16_t qtype, uint32_t ttl=3600, uint16_t qclass=1, Place place=ANSWER);
 
   /** Shorthand way to add an Opt-record, for example for EDNS0 purposes */
-  void addOpt(int udpsize, int extRCode, int Z);
+  typedef vector<pair<uint16_t,std::string> > optvect_t;
+  void addOpt(int udpsize, int extRCode, int Z, const optvect_t& options=optvect_t());
 
   /** needs to be called after the last record is added, but can be called again and again later on. Is called internally by startRecord too.
       The content of the vector<> passed to the constructor is inconsistent until commit is called.
@@ -65,6 +66,7 @@ public:
   /** Should the packet have grown too big for the writer's liking, rollback removes the record currently being written */
   void rollback();
 
+  void xfr48BitInt(uint64_t val);
   void xfr32BitInt(uint32_t val);
   void xfr16BitInt(uint16_t val);
   void xfrType(uint16_t val)
@@ -84,7 +86,7 @@ public:
 
   void xfrLabel(const string& label, bool compress=false);
   void xfrText(const string& text, bool multi=false);
-  void xfrBlob(const string& blob);
+  void xfrBlob(const string& blob, int len=-1);
   void xfrHexBlob(const string& blob);
 
   uint16_t d_pos;

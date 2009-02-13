@@ -2,7 +2,7 @@
  * 	Copyright (C) 2004 Mark Bergsma <mark@nedworks.org>
  *		This software is licensed under the terms of the GPL, version 2.
  * 
- * 	$Id: geobackend.cc 876 2006-08-13 18:17:42Z ahu $
+ * 	$Id: geobackend.cc 1282 2008-11-15 21:56:02Z ahu $
  */
 
 #include <fstream>
@@ -18,8 +18,10 @@
 #include <pdns/misc.hh>
 #include <pdns/lock.hh>
 #include <pdns/dnspacket.hh>
-
+#include <boost/algorithm/string.hpp>
 #include "geobackend.hh"
+
+using boost::trim_right;
 
 // Static members
 
@@ -319,7 +321,7 @@ void GeoBackend::loadIPLocationMap() {
 	// Stat file to see if it has changed since last read
 	struct stat stbuf;
 	if (stat(filename.c_str(), &stbuf) != 0 || !S_ISREG(stbuf.st_mode)) {
-		const string errormsg = "stat() failed, or " + filename + "is no regular file.";
+		const string errormsg = "stat() failed, or " + filename + " is no regular file.";
 		if (lastDiscoverTime == 0)	// We have no older map, bail out
 			throw AhuException(errormsg);
 		else {
@@ -344,7 +346,7 @@ void GeoBackend::loadIPLocationMap() {
 	
 	while (getline(ifs, line)) {
 		linenr++;		
-		chomp(line, " \t");	// Erase whitespace
+		trim_right(line);	// Erase whitespace
 		
 		if (line[0] == '#')
 			continue;	// Skip comments
@@ -489,7 +491,7 @@ void GeoBackend::loadDirectorMap(GeoRecord &gr) {
 	
 	string line;
 	while(getline(ifs, line)) {
-		chomp(line, " \t");	// Erase whitespace
+		trim_right(line);	// Erase whitespace
 
 		if (line.empty() || line[0] == '#')
 			continue;	// Skip empty lines and comments
@@ -497,7 +499,7 @@ void GeoBackend::loadDirectorMap(GeoRecord &gr) {
 		// Parse $RECORD
 		if (line.substr(0, 7) == "$RECORD") {
 			gr.qname = line.substr(8);
-			chomp(gr.qname, " \t");
+			trim_right(gr.qname);
 			if (gr.qname[gr.qname.size()-1] != '.')
 				gr.qname += '.' + zoneName;
 			else {
@@ -512,7 +514,7 @@ void GeoBackend::loadDirectorMap(GeoRecord &gr) {
 		// Parse $ORIGIN
 		if (line.substr(0, 7) == "$ORIGIN") {
 			gr.origin = line.substr(8);
-			chomp(gr.origin, " \t.");
+			trim_right_if(gr.origin, boost::is_any_of(" \t."));
 			gr.origin.insert(0, ".");
 			continue;
 		}	

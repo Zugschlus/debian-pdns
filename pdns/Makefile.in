@@ -46,9 +46,9 @@ host_triplet = @host@
 @RECURSOR_TRUE@	rec_control$(EXEEXT)
 EXTRA_PROGRAMS = pdns_recursor$(EXEEXT) sdig$(EXEEXT) \
 	dnspbench$(EXEEXT) pdns_control$(EXEEXT) dnsscope$(EXEEXT) \
-	dnsgram$(EXEEXT) dnsdemog$(EXEEXT) dnsreplay_mindex$(EXEEXT) \
-	dnswasher$(EXEEXT) dnsreplay$(EXEEXT) dnsscan$(EXEEXT) \
-	dnslog$(EXEEXT)
+	dnsgram$(EXEEXT) dnsdemog$(EXEEXT) dnswasher$(EXEEXT) \
+	dnsreplay$(EXEEXT) dnsscan$(EXEEXT) dnslog$(EXEEXT) \
+	nproxy$(EXEEXT) notify$(EXEEXT)
 @NEDMALLOC_TRUE@am__append_1 = ext/nedmalloc/malloc.c
 subdir = pdns
 DIST_COMMON = README $(srcdir)/Makefile.am $(srcdir)/Makefile.in \
@@ -91,24 +91,17 @@ dnslog_LDADD = $(LDADD)
 am_dnspbench_OBJECTS = dnspbench.$(OBJEXT) dnsparser.$(OBJEXT) \
 	dnsrecords.$(OBJEXT) dnswriter.$(OBJEXT) misc.$(OBJEXT) \
 	rcpgenerator.$(OBJEXT) base64.$(OBJEXT) unix_utility.$(OBJEXT) \
-	logger.$(OBJEXT) statbag.$(OBJEXT) qtype.$(OBJEXT)
+	logger.$(OBJEXT) statbag.$(OBJEXT) qtype.$(OBJEXT) \
+	sillyrecords.$(OBJEXT)
 dnspbench_OBJECTS = $(am_dnspbench_OBJECTS)
 dnspbench_LDADD = $(LDADD)
 am_dnsreplay_OBJECTS = dnsreplay.$(OBJEXT) misc.$(OBJEXT) \
 	qtype.$(OBJEXT) logger.$(OBJEXT) statbag.$(OBJEXT) \
 	dnspcap.$(OBJEXT) dnsparser.$(OBJEXT) dnsrecords.$(OBJEXT) \
-	dnswriter.$(OBJEXT) rcpgenerator.$(OBJEXT) base64.$(OBJEXT) \
-	unix_utility.$(OBJEXT)
+	rcpgenerator.$(OBJEXT) base64.$(OBJEXT) dnswriter.$(OBJEXT) \
+	unix_utility.$(OBJEXT) sillyrecords.$(OBJEXT)
 dnsreplay_OBJECTS = $(am_dnsreplay_OBJECTS)
 dnsreplay_LDADD = $(LDADD)
-am_dnsreplay_mindex_OBJECTS = dnsreplay-mindex.$(OBJEXT) \
-	misc.$(OBJEXT) qtype.$(OBJEXT) logger.$(OBJEXT) \
-	statbag.$(OBJEXT) dnspcap.$(OBJEXT) dnsparser.$(OBJEXT) \
-	dnsrecords.$(OBJEXT) rcpgenerator.$(OBJEXT) base64.$(OBJEXT) \
-	dnswriter.$(OBJEXT) unix_utility.$(OBJEXT) \
-	sillyrecords.$(OBJEXT)
-dnsreplay_mindex_OBJECTS = $(am_dnsreplay_mindex_OBJECTS)
-dnsreplay_mindex_LDADD = $(LDADD)
 am_dnsscan_OBJECTS = dnsscan.$(OBJEXT) misc.$(OBJEXT) qtype.$(OBJEXT) \
 	logger.$(OBJEXT) statbag.$(OBJEXT) dnspcap.$(OBJEXT) \
 	dnsparser.$(OBJEXT) dnsrecords.$(OBJEXT) \
@@ -128,6 +121,18 @@ am_dnswasher_OBJECTS = dnswasher.$(OBJEXT) misc.$(OBJEXT) \
 	statbag.$(OBJEXT) dnspcap.$(OBJEXT)
 dnswasher_OBJECTS = $(am_dnswasher_OBJECTS)
 dnswasher_LDADD = $(LDADD)
+am_notify_OBJECTS = notify.$(OBJEXT) dnsparser.$(OBJEXT) \
+	dnsrecords.$(OBJEXT) rcpgenerator.$(OBJEXT) base64.$(OBJEXT) \
+	dnswriter.$(OBJEXT) sillyrecords.$(OBJEXT) \
+	selectmplexer.$(OBJEXT)
+notify_OBJECTS = $(am_notify_OBJECTS)
+notify_LDADD = $(LDADD)
+am_nproxy_OBJECTS = nproxy.$(OBJEXT) dnsparser.$(OBJEXT) \
+	dnsrecords.$(OBJEXT) rcpgenerator.$(OBJEXT) base64.$(OBJEXT) \
+	dnswriter.$(OBJEXT) sillyrecords.$(OBJEXT) \
+	selectmplexer.$(OBJEXT)
+nproxy_OBJECTS = $(am_nproxy_OBJECTS)
+nproxy_LDADD = $(LDADD)
 am_pdns_control_OBJECTS = dynloader.$(OBJEXT) dynmessenger.$(OBJEXT) \
 	arguments.$(OBJEXT) logger.$(OBJEXT) statbag.$(OBJEXT) \
 	misc.$(OBJEXT) unix_utility.$(OBJEXT) qtype.$(OBJEXT)
@@ -141,7 +146,10 @@ am__pdns_recursor_SOURCES_DIST = syncres.cc resolver.hh misc.cc \
 	rcpgenerator.hh base64.cc base64.hh zoneparser-tng.cc \
 	zoneparser-tng.hh rec_channel.cc rec_channel.hh \
 	rec_channel_rec.cc selectmplexer.cc epollmplexer.cc \
-	sillyrecords.cc ext/nedmalloc/malloc.c
+	sillyrecords.cc htimer.cc htimer.hh aes/dns_random.cc \
+	aes/aescrypt.c aes/aeskey.c aes/aestab.c aes/aes_modes.c \
+	lua-pdns-recursor.cc lua-pdns-recursor.hh randomhelper.cc \
+	ext/nedmalloc/malloc.c
 @NEDMALLOC_TRUE@am__objects_1 = malloc.$(OBJEXT)
 am_pdns_recursor_OBJECTS = syncres.$(OBJEXT) misc.$(OBJEXT) \
 	unix_utility.$(OBJEXT) qtype.$(OBJEXT) logger.$(OBJEXT) \
@@ -151,7 +159,11 @@ am_pdns_recursor_OBJECTS = syncres.$(OBJEXT) misc.$(OBJEXT) \
 	rcpgenerator.$(OBJEXT) base64.$(OBJEXT) \
 	zoneparser-tng.$(OBJEXT) rec_channel.$(OBJEXT) \
 	rec_channel_rec.$(OBJEXT) selectmplexer.$(OBJEXT) \
-	epollmplexer.$(OBJEXT) sillyrecords.$(OBJEXT) $(am__objects_1)
+	epollmplexer.$(OBJEXT) sillyrecords.$(OBJEXT) htimer.$(OBJEXT) \
+	dns_random.$(OBJEXT) aescrypt.$(OBJEXT) aeskey.$(OBJEXT) \
+	aestab.$(OBJEXT) aes_modes.$(OBJEXT) \
+	lua-pdns-recursor.$(OBJEXT) randomhelper.$(OBJEXT) \
+	$(am__objects_1)
 pdns_recursor_OBJECTS = $(am_pdns_recursor_OBJECTS)
 pdns_recursor_DEPENDENCIES =
 am_pdns_server_OBJECTS = dnspacket.$(OBJEXT) nameserver.$(OBJEXT) \
@@ -168,7 +180,9 @@ am_pdns_server_OBJECTS = dnspacket.$(OBJEXT) nameserver.$(OBJEXT) \
 	bindlexer.$(OBJEXT) gsqlbackend.$(OBJEXT) base64.$(OBJEXT) \
 	sillyrecords.$(OBJEXT) zoneparser-tng.$(OBJEXT) \
 	dnsrecords.$(OBJEXT) dnswriter.$(OBJEXT) \
-	rcpgenerator.$(OBJEXT) dnsparser.$(OBJEXT)
+	rcpgenerator.$(OBJEXT) dnsparser.$(OBJEXT) aescrypt.$(OBJEXT) \
+	aeskey.$(OBJEXT) aes_modes.$(OBJEXT) aestab.$(OBJEXT) \
+	dns_random.$(OBJEXT) randomhelper.$(OBJEXT)
 pdns_server_OBJECTS = $(am_pdns_server_OBJECTS)
 pdns_server_LDADD = $(LDADD)
 am_rec_control_OBJECTS = rec_channel.$(OBJEXT) rec_control.$(OBJEXT) \
@@ -203,17 +217,17 @@ CXXLD = $(CXX)
 CXXLINK = $(LIBTOOL) --tag=CXX --mode=link $(CXXLD) $(AM_CXXFLAGS) \
 	$(CXXFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 SOURCES = $(dnsdemog_SOURCES) $(dnsgram_SOURCES) $(dnslog_SOURCES) \
-	$(dnspbench_SOURCES) $(dnsreplay_SOURCES) \
-	$(dnsreplay_mindex_SOURCES) $(dnsscan_SOURCES) \
-	$(dnsscope_SOURCES) $(dnswasher_SOURCES) \
-	$(pdns_control_SOURCES) $(pdns_recursor_SOURCES) \
-	$(pdns_server_SOURCES) $(rec_control_SOURCES) $(sdig_SOURCES)
+	$(dnspbench_SOURCES) $(dnsreplay_SOURCES) $(dnsscan_SOURCES) \
+	$(dnsscope_SOURCES) $(dnswasher_SOURCES) $(notify_SOURCES) \
+	$(nproxy_SOURCES) $(pdns_control_SOURCES) \
+	$(pdns_recursor_SOURCES) $(pdns_server_SOURCES) \
+	$(rec_control_SOURCES) $(sdig_SOURCES)
 DIST_SOURCES = $(dnsdemog_SOURCES) $(dnsgram_SOURCES) \
 	$(dnslog_SOURCES) $(dnspbench_SOURCES) $(dnsreplay_SOURCES) \
-	$(dnsreplay_mindex_SOURCES) $(dnsscan_SOURCES) \
-	$(dnsscope_SOURCES) $(dnswasher_SOURCES) \
-	$(pdns_control_SOURCES) $(am__pdns_recursor_SOURCES_DIST) \
-	$(pdns_server_SOURCES) $(rec_control_SOURCES) $(sdig_SOURCES)
+	$(dnsscan_SOURCES) $(dnsscope_SOURCES) $(dnswasher_SOURCES) \
+	$(notify_SOURCES) $(nproxy_SOURCES) $(pdns_control_SOURCES) \
+	$(am__pdns_recursor_SOURCES_DIST) $(pdns_server_SOURCES) \
+	$(rec_control_SOURCES) $(sdig_SOURCES)
 RECURSIVE_TARGETS = all-recursive check-recursive dvi-recursive \
 	html-recursive info-recursive install-data-recursive \
 	install-exec-recursive install-info-recursive \
@@ -275,7 +289,9 @@ LEX = @LEX@
 LEXLIB = @LEXLIB@
 LEX_OUTPUT_ROOT = @LEX_OUTPUT_ROOT@
 LIBDL = @LIBDL@
+LIBLDAP = @LIBLDAP@
 LIBOBJS = @LIBOBJS@
+LIBOPENDBX = @LIBOPENDBX@
 LIBS = @LIBS@
 LIBTOOL = @LIBTOOL@
 LN_S = @LN_S@
@@ -363,7 +379,7 @@ sharedstatedir = @sharedstatedir@
 socketdir = @socketdir@
 sysconfdir = @sysconfdir@
 target_alias = @target_alias@
-AM_CXXFLAGS = -DSYSCONFDIR=\"@sysconfdir@\" -DLIBDIR=\"@libdir@\" -DLOCALSTATEDIR=\"@socketdir@\" -Ibackends/bind @THREADFLAGS@
+AM_CXXFLAGS = -DSYSCONFDIR=\"@sysconfdir@\" -DLIBDIR=\"@libdir@\" -DLOCALSTATEDIR=\"@socketdir@\" -Ibackends/bind @THREADFLAGS@ # -I/usr/include/lua5.1
 AM_CPPFLAGS = -Ibackends/bind @THREADFLAGS@
 EXTRA_DIST = docs/Makefile docs/expand \
 docs/gslb-operations.sgml docs/powerdns-case.sgml docs/powerdns-install.sgml \
@@ -390,7 +406,10 @@ backends/gsql/gsqlbackend.cc \
 backends/gsql/gsqlbackend.hh backends/gsql/ssql.hh \
 base64.cc sillyrecords.cc \
 base64.hh zoneparser-tng.cc dnsrecords.cc dnswriter.cc \
-rcpgenerator.cc	 dnsparser.cc
+rcpgenerator.cc	dnsparser.cc dns_random.hh aes/aescpp.h \
+aes/aescrypt.c aes/aes.h aes/aeskey.c aes/aes_modes.c aes/aesopt.h \
+aes/aestab.c aes/aestab.h aes/brg_endian.h aes/brg_types.h aes/dns_random.cc \
+randomhelper.cc
 
 
 #
@@ -402,7 +421,7 @@ sdig_SOURCES = sdig.cc sstuff.hh dnsparser.cc dnsparser.hh dnsrecords.cc dnswrit
 
 dnspbench_SOURCES = dnspbench.cc sstuff.hh dnsparser.cc dnsparser.hh dnsrecords.cc dnswriter.cc dnswriter.hh \
 	misc.cc misc.hh rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh unix_utility.cc logger.cc \
-	statbag.cc qtype.cc
+	statbag.cc qtype.cc sillyrecords.cc
 
 dnswasher_SOURCES = dnswasher.cc misc.cc unix_utility.cc qtype.cc \
 	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.hh 
@@ -410,11 +429,6 @@ dnswasher_SOURCES = dnswasher.cc misc.cc unix_utility.cc qtype.cc \
 dnswasher_LDFLAGS = @DYNLINKFLAGS@ @THREADFLAGS@
 
 # unix_utility.cc
-dnsreplay_SOURCES = dnsreplay.cc misc.cc  qtype.cc anadns.hh \
-	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc dnsparser.hh \
-	dnswriter.cc dnswriter.hh rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh unix_utility.cc
-
-dnsreplay_LDFLAGS = @DYNLINKFLAGS@ @THREADFLAGS@
 dnsscan_SOURCES = dnsscan.cc misc.cc  qtype.cc anadns.hh \
 	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc dnsparser.hh  \
 	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnswriter.hh \
@@ -425,12 +439,25 @@ dnslog_SOURCES = dnslog.cc misc.cc  qtype.cc anadns.hh \
 	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnswriter.hh \
 	unix_utility.cc utility.hh		
 
-dnsreplay_mindex_SOURCES = dnsreplay-mindex.cc misc.cc  qtype.cc anadns.hh \
+
+#socketbench_SOURCES=socketbench.cc qtype.cc misc.cc unix_utility.cc\
+#	 logger.cc statbag.cc epollmplexer.cc
+dnsreplay_SOURCES = dnsreplay.cc misc.cc  qtype.cc anadns.hh \
 	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc dnsparser.hh  \
 	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnswriter.hh \
 	unix_utility.cc utility.hh sillyrecords.cc	
 
-dnsreplay_mindex_LDFLAGS = @DYNLINKFLAGS@ @THREADFLAGS@
+dnsreplay_LDFLAGS = @DYNLINKFLAGS@ @THREADFLAGS@ -lboost_program_options
+nproxy_SOURCES = nproxy.cc dnsparser.cc dnsrecords.cc dnsparser.hh  \
+	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnswriter.hh \
+	sillyrecords.cc selectmplexer.cc  mplexer.hh
+
+nproxy_LDFLAGS = @DYNLINKFLAGS@ @THREADFLAGS@ -lboost_program_options
+notify_SOURCES = notify.cc dnsparser.cc dnsrecords.cc dnsparser.hh  \
+	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnswriter.hh \
+	sillyrecords.cc selectmplexer.cc 
+
+notify_LDFLAGS = @DYNLINKFLAGS@ @THREADFLAGS@ -lboost_program_options
 dnsscope_SOURCES = dnsscope.cc misc.cc unix_utility.cc qtype.cc \
 	logger.cc statbag.cc  dnspcap.cc dnspcap.hh dnsparser.cc dnsrecords.cc \
 	base64.cc base64.hh dnswriter.cc dnswriter.hh rcpgenerator.cc rcpgenerator.hh \
@@ -447,8 +474,6 @@ dnsdemog_SOURCES = dnsdemog.cc misc.cc unix_utility.cc qtype.cc \
 	base64.cc base64.hh dnswriter.cc dnswriter.hh rcpgenerator.cc rcpgenerator.hh \
 	utility.hh dnsparser.hh sillyrecords.cc
 
-
-# INCLUDES=-I/usr/include/mysql
 rec_control_SOURCES = rec_channel.cc rec_channel.hh rec_control.cc arguments.cc arguments.hh
 pdns_recursor_SOURCES = syncres.cc resolver.hh misc.cc unix_utility.cc \
 	qtype.cc logger.cc statbag.cc arguments.cc lwres.cc \
@@ -458,10 +483,13 @@ pdns_recursor_SOURCES = syncres.cc resolver.hh misc.cc unix_utility.cc \
 	rcpgenerator.hh base64.cc base64.hh zoneparser-tng.cc \
 	zoneparser-tng.hh rec_channel.cc rec_channel.hh \
 	rec_channel_rec.cc selectmplexer.cc epollmplexer.cc \
-	sillyrecords.cc $(am__append_1)
+	sillyrecords.cc htimer.cc htimer.hh aes/dns_random.cc \
+	aes/aescrypt.c aes/aeskey.c aes/aestab.c aes/aes_modes.c \
+	lua-pdns-recursor.cc lua-pdns-recursor.hh randomhelper.cc \
+	$(am__append_1)
 
 #../modules/gmysqlbackend/smysql.cc 
-pdns_recursor_LDFLAGS = 
+pdns_recursor_LDFLAGS = # -llua5.1 
 pdns_recursor_LDADD = 
 pdns_control_SOURCES = dynloader.cc dynmessenger.cc  arguments.cc logger.cc statbag.cc \
 misc.cc unix_utility.cc qtype.cc
@@ -579,9 +607,6 @@ dnspbench$(EXEEXT): $(dnspbench_OBJECTS) $(dnspbench_DEPENDENCIES)
 dnsreplay$(EXEEXT): $(dnsreplay_OBJECTS) $(dnsreplay_DEPENDENCIES) 
 	@rm -f dnsreplay$(EXEEXT)
 	$(CXXLINK) $(dnsreplay_LDFLAGS) $(dnsreplay_OBJECTS) $(dnsreplay_LDADD) $(LIBS)
-dnsreplay_mindex$(EXEEXT): $(dnsreplay_mindex_OBJECTS) $(dnsreplay_mindex_DEPENDENCIES) 
-	@rm -f dnsreplay_mindex$(EXEEXT)
-	$(CXXLINK) $(dnsreplay_mindex_LDFLAGS) $(dnsreplay_mindex_OBJECTS) $(dnsreplay_mindex_LDADD) $(LIBS)
 dnsscan$(EXEEXT): $(dnsscan_OBJECTS) $(dnsscan_DEPENDENCIES) 
 	@rm -f dnsscan$(EXEEXT)
 	$(CXXLINK) $(dnsscan_LDFLAGS) $(dnsscan_OBJECTS) $(dnsscan_LDADD) $(LIBS)
@@ -591,6 +616,12 @@ dnsscope$(EXEEXT): $(dnsscope_OBJECTS) $(dnsscope_DEPENDENCIES)
 dnswasher$(EXEEXT): $(dnswasher_OBJECTS) $(dnswasher_DEPENDENCIES) 
 	@rm -f dnswasher$(EXEEXT)
 	$(CXXLINK) $(dnswasher_LDFLAGS) $(dnswasher_OBJECTS) $(dnswasher_LDADD) $(LIBS)
+notify$(EXEEXT): $(notify_OBJECTS) $(notify_DEPENDENCIES) 
+	@rm -f notify$(EXEEXT)
+	$(CXXLINK) $(notify_LDFLAGS) $(notify_OBJECTS) $(notify_LDADD) $(LIBS)
+nproxy$(EXEEXT): $(nproxy_OBJECTS) $(nproxy_DEPENDENCIES) 
+	@rm -f nproxy$(EXEEXT)
+	$(CXXLINK) $(nproxy_LDFLAGS) $(nproxy_OBJECTS) $(nproxy_LDADD) $(LIBS)
 pdns_control$(EXEEXT): $(pdns_control_OBJECTS) $(pdns_control_DEPENDENCIES) 
 	@rm -f pdns_control$(EXEEXT)
 	$(CXXLINK) $(pdns_control_LDFLAGS) $(pdns_control_OBJECTS) $(pdns_control_LDADD) $(LIBS)
@@ -613,6 +644,10 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/aes_modes.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/aescrypt.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/aeskey.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/aestab.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/arguments.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/base64.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bindbackend2.Po@am__quote@
@@ -620,6 +655,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bindparser.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/common_startup.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/communicator.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dns_random.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnsbackend.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnsdemog.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnsgram.Po@am__quote@
@@ -630,7 +666,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnspcap.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnsproxy.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnsrecords.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnsreplay-mindex.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnsreplay.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnsscan.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnsscope.Po@am__quote@
@@ -642,16 +677,21 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dynmessenger.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/epollmplexer.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gsqlbackend.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/htimer.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/logger.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lua-pdns-recursor.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lwres.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/malloc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/misc.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nameserver.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/notify.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/nproxy.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/packetcache.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/packethandler.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pdns_recursor.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/qtype.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/randombackend.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/randomhelper.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rcpgenerator.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rec_channel.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/rec_channel_rec.Po@am__quote@
@@ -693,6 +733,62 @@ distclean-compile:
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LTCOMPILE) -c -o $@ $<
+
+aescrypt.o: aes/aescrypt.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT aescrypt.o -MD -MP -MF "$(DEPDIR)/aescrypt.Tpo" -c -o aescrypt.o `test -f 'aes/aescrypt.c' || echo '$(srcdir)/'`aes/aescrypt.c; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/aescrypt.Tpo" "$(DEPDIR)/aescrypt.Po"; else rm -f "$(DEPDIR)/aescrypt.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='aes/aescrypt.c' object='aescrypt.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o aescrypt.o `test -f 'aes/aescrypt.c' || echo '$(srcdir)/'`aes/aescrypt.c
+
+aescrypt.obj: aes/aescrypt.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT aescrypt.obj -MD -MP -MF "$(DEPDIR)/aescrypt.Tpo" -c -o aescrypt.obj `if test -f 'aes/aescrypt.c'; then $(CYGPATH_W) 'aes/aescrypt.c'; else $(CYGPATH_W) '$(srcdir)/aes/aescrypt.c'; fi`; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/aescrypt.Tpo" "$(DEPDIR)/aescrypt.Po"; else rm -f "$(DEPDIR)/aescrypt.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='aes/aescrypt.c' object='aescrypt.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o aescrypt.obj `if test -f 'aes/aescrypt.c'; then $(CYGPATH_W) 'aes/aescrypt.c'; else $(CYGPATH_W) '$(srcdir)/aes/aescrypt.c'; fi`
+
+aeskey.o: aes/aeskey.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT aeskey.o -MD -MP -MF "$(DEPDIR)/aeskey.Tpo" -c -o aeskey.o `test -f 'aes/aeskey.c' || echo '$(srcdir)/'`aes/aeskey.c; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/aeskey.Tpo" "$(DEPDIR)/aeskey.Po"; else rm -f "$(DEPDIR)/aeskey.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='aes/aeskey.c' object='aeskey.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o aeskey.o `test -f 'aes/aeskey.c' || echo '$(srcdir)/'`aes/aeskey.c
+
+aeskey.obj: aes/aeskey.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT aeskey.obj -MD -MP -MF "$(DEPDIR)/aeskey.Tpo" -c -o aeskey.obj `if test -f 'aes/aeskey.c'; then $(CYGPATH_W) 'aes/aeskey.c'; else $(CYGPATH_W) '$(srcdir)/aes/aeskey.c'; fi`; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/aeskey.Tpo" "$(DEPDIR)/aeskey.Po"; else rm -f "$(DEPDIR)/aeskey.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='aes/aeskey.c' object='aeskey.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o aeskey.obj `if test -f 'aes/aeskey.c'; then $(CYGPATH_W) 'aes/aeskey.c'; else $(CYGPATH_W) '$(srcdir)/aes/aeskey.c'; fi`
+
+aestab.o: aes/aestab.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT aestab.o -MD -MP -MF "$(DEPDIR)/aestab.Tpo" -c -o aestab.o `test -f 'aes/aestab.c' || echo '$(srcdir)/'`aes/aestab.c; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/aestab.Tpo" "$(DEPDIR)/aestab.Po"; else rm -f "$(DEPDIR)/aestab.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='aes/aestab.c' object='aestab.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o aestab.o `test -f 'aes/aestab.c' || echo '$(srcdir)/'`aes/aestab.c
+
+aestab.obj: aes/aestab.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT aestab.obj -MD -MP -MF "$(DEPDIR)/aestab.Tpo" -c -o aestab.obj `if test -f 'aes/aestab.c'; then $(CYGPATH_W) 'aes/aestab.c'; else $(CYGPATH_W) '$(srcdir)/aes/aestab.c'; fi`; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/aestab.Tpo" "$(DEPDIR)/aestab.Po"; else rm -f "$(DEPDIR)/aestab.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='aes/aestab.c' object='aestab.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o aestab.obj `if test -f 'aes/aestab.c'; then $(CYGPATH_W) 'aes/aestab.c'; else $(CYGPATH_W) '$(srcdir)/aes/aestab.c'; fi`
+
+aes_modes.o: aes/aes_modes.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT aes_modes.o -MD -MP -MF "$(DEPDIR)/aes_modes.Tpo" -c -o aes_modes.o `test -f 'aes/aes_modes.c' || echo '$(srcdir)/'`aes/aes_modes.c; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/aes_modes.Tpo" "$(DEPDIR)/aes_modes.Po"; else rm -f "$(DEPDIR)/aes_modes.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='aes/aes_modes.c' object='aes_modes.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o aes_modes.o `test -f 'aes/aes_modes.c' || echo '$(srcdir)/'`aes/aes_modes.c
+
+aes_modes.obj: aes/aes_modes.c
+@am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT aes_modes.obj -MD -MP -MF "$(DEPDIR)/aes_modes.Tpo" -c -o aes_modes.obj `if test -f 'aes/aes_modes.c'; then $(CYGPATH_W) 'aes/aes_modes.c'; else $(CYGPATH_W) '$(srcdir)/aes/aes_modes.c'; fi`; \
+@am__fastdepCC_TRUE@	then mv -f "$(DEPDIR)/aes_modes.Tpo" "$(DEPDIR)/aes_modes.Po"; else rm -f "$(DEPDIR)/aes_modes.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='aes/aes_modes.c' object='aes_modes.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o aes_modes.obj `if test -f 'aes/aes_modes.c'; then $(CYGPATH_W) 'aes/aes_modes.c'; else $(CYGPATH_W) '$(srcdir)/aes/aes_modes.c'; fi`
 
 malloc.o: ext/nedmalloc/malloc.c
 @am__fastdepCC_TRUE@	if $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT malloc.o -MD -MP -MF "$(DEPDIR)/malloc.Tpo" -c -o malloc.o `test -f 'ext/nedmalloc/malloc.c' || echo '$(srcdir)/'`ext/nedmalloc/malloc.c; \
@@ -742,6 +838,20 @@ bindlexer.obj: backends/bind/bindlexer.c
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='$<' object='$@' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(LTCXXCOMPILE) -c -o $@ $<
+
+dns_random.o: aes/dns_random.cc
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT dns_random.o -MD -MP -MF "$(DEPDIR)/dns_random.Tpo" -c -o dns_random.o `test -f 'aes/dns_random.cc' || echo '$(srcdir)/'`aes/dns_random.cc; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/dns_random.Tpo" "$(DEPDIR)/dns_random.Po"; else rm -f "$(DEPDIR)/dns_random.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='aes/dns_random.cc' object='dns_random.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o dns_random.o `test -f 'aes/dns_random.cc' || echo '$(srcdir)/'`aes/dns_random.cc
+
+dns_random.obj: aes/dns_random.cc
+@am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT dns_random.obj -MD -MP -MF "$(DEPDIR)/dns_random.Tpo" -c -o dns_random.obj `if test -f 'aes/dns_random.cc'; then $(CYGPATH_W) 'aes/dns_random.cc'; else $(CYGPATH_W) '$(srcdir)/aes/dns_random.cc'; fi`; \
+@am__fastdepCXX_TRUE@	then mv -f "$(DEPDIR)/dns_random.Tpo" "$(DEPDIR)/dns_random.Po"; else rm -f "$(DEPDIR)/dns_random.Tpo"; exit 1; fi
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='aes/dns_random.cc' object='dns_random.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o dns_random.obj `if test -f 'aes/dns_random.cc'; then $(CYGPATH_W) 'aes/dns_random.cc'; else $(CYGPATH_W) '$(srcdir)/aes/dns_random.cc'; fi`
 
 bindbackend2.o: backends/bind/bindbackend2.cc
 @am__fastdepCXX_TRUE@	if $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT bindbackend2.o -MD -MP -MF "$(DEPDIR)/bindbackend2.Tpo" -c -o bindbackend2.o `test -f 'backends/bind/bindbackend2.cc' || echo '$(srcdir)/'`backends/bind/bindbackend2.cc; \

@@ -39,6 +39,7 @@ public:
   void doSlash(int perc);
   void doDumpAndClose(int fd);
   int doWipeCache(const string& name, uint16_t qtype=0xffff);
+  bool doAgeCache(time_t now, const string& name, uint16_t qtype, int32_t newTTL);
   uint64_t cacheHits, cacheMisses;
   bool d_followRFC2181;
 
@@ -118,6 +119,8 @@ private:
   pair<cache_t::iterator, cache_t::iterator> d_cachecache;
   string d_cachedqname;
   bool d_cachecachevalid;
+  bool attemptToRefreshNSTTL(const QType& qt, const set<DNSResourceRecord>& content, const CacheEntry& stored);
+
 };
 string DNSRR2String(const DNSResourceRecord& rr);
 DNSResourceRecord String2DNSRR(const string& qname, const QType& qt, const string& serial, uint32_t ttd);

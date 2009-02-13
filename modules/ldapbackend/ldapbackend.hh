@@ -24,6 +24,7 @@
 #include <string>
 #include <cstdlib>
 #include <cctype>
+#include <inttypes.h>
 #include <pdns/dns.hh>
 #include <pdns/utility.hh>
 #include <pdns/dnspacket.hh>
@@ -39,12 +40,6 @@
 #include <config.h>
 #endif
 
-#ifdef HAVE_STDINT_H
-#include <stdint.h>
-#else
-#include <sys/types.h>
-#endif
-
 
 #ifndef LDAPBACKEND_HH
 #define LDAPBACKEND_HH
@@ -54,7 +49,12 @@ using std::vector;
 
 
 
-static char* ldap_attrany[] = {
+/*
+ *  Known DNS RR types
+ *  Types which aren't active are currently not supported by PDNS
+ */
+
+static const char* ldap_attrany[] = {
 	"associatedDomain",
 	"dNSTTL",
 	"aRecord",
@@ -66,15 +66,27 @@ static char* ldap_attrany[] = {
 	"mXRecord",
 	"tXTRecord",
 	"rPRecord",
+	"aFSDBRecord",
 //	"SigRecord",
-//	"KeyRecord",
+	"KeyRecord",
+//	"gPosRecord",
 	"aAAARecord",
 	"lOCRecord",
-//	"nXTRecord",
 	"sRVRecord",
 	"nAPTRRecord",
-//	"kXRecord",
-//	"certRecord",
+	"kXRecord",
+	"certRecord",
+//	"a6Record",
+//	"dNameRecord",
+//	"aPLRecord",
+	"dSRecord",
+	"sSHFPRecord",
+	"iPSecKeyRecord",
+	"rRSIGRecord",
+	"nSECRecord",
+	"dNSKeyRecord",
+	"dHCIDRecord",
+	"sPFRecord",
 	"modifyTimestamp",
 	NULL
 };
@@ -112,7 +124,7 @@ class LdapBackend : public DNSBackend
 	bool prepare();
 	bool prepare_simple();
 	bool prepare_strict();
-	
+
 	bool getDomainInfo( const string& domain, DomainInfo& di );
 
 public:

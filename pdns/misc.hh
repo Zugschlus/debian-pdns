@@ -19,16 +19,9 @@
 #ifndef MISC_HH
 #define MISC_HH
 #include <stdint.h>
+#include <cstring>
 
 #if 0
-#define RDTSC(qp) \
-do { \
-  unsigned long lowPart, highPart;					\
-  __asm__ __volatile__("cpuid"); \
-  __asm__ __volatile__("rdtsc" : "=a" (lowPart), "=d" (highPart)); \
-    qp = (((unsigned long long) highPart) << 32) | lowPart; \
-} while (0)
-
 #include <iostream>
 using std::cout;
 using std::endl;
@@ -176,6 +169,10 @@ vstringtok (Container &container, string const &in,
   }
 }
 
+int writen2(int fd, const void *buf, size_t count);
+inline int writen2(int fd, const std::string &s) { return writen2(fd, s.data(), s.size()); }
+
+
 const string toLower(const string &upper);
 const string toLowerCanonic(const string &upper);
 bool IpToU32(const string &str, uint32_t *ip);
@@ -234,7 +231,7 @@ inline bool dns_isspace(char c)
   return c==' ' || c=='\t' || c=='\r' || c=='\n';
 }
 
-inline const char dns_tolower(char c)
+inline char dns_tolower(char c)
 {
   if(c>='A' && c<='Z')
     c+='a'-'A';
@@ -289,17 +286,6 @@ inline double getTime()
   Utility::gettimeofday(&now,0);
   
   return now.tv_sec+now.tv_usec/1000000.0;
-}
-
-
-inline void chomp( string& line, const string& delim )
-{
-	string::size_type pos;
-
-	if( ( pos = line.find_last_not_of( delim ) ) != string::npos )
-	{
-		line.resize( pos + 1 );
-	}
 }
 
 inline void unixDie(const string &why)
@@ -383,10 +369,17 @@ inline string toCanonic(const string& zone, const string& domain)
     return domain;
   string ret=domain;
   ret.append(1,'.');
-  ret.append(zone);
+  if(!zone.empty() && zone[0]!='.')
+    ret.append(zone);
   return ret;
 }
 
-string stripDot(const string& dom);
+inline void setSocketReusable(int fd)
+{
+  int tmp=1;
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char*)&tmp, static_cast<unsigned>(sizeof tmp));
+}
 
+string stripDot(const string& dom);
+void seedRandom(const string& source);
 #endif

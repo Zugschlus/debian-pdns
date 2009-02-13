@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2007 PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -56,14 +56,21 @@ QType::QType()
       insert("AAAA",28);
       insert("LOC",29);
       insert("SRV",33);
+      insert("CERT", 37);
       insert("A6",38);
       insert("NAPTR",35);
+      insert("DS", 43);
+      insert("SSHFP", 44);
+      insert("RRSIG", 46);
+      insert("DNSKEY", 48);
       insert("SPF",99);
+      insert("IXFR",251);
       insert("AXFR",252);
       insert("ANY",255);
       insert("URL",256);
       insert("MBOXFW",257);
       insert("CURL",258);
+      insert("ADDR",259);
     }
 }
 

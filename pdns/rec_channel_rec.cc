@@ -10,11 +10,13 @@
 #include <boost/optional.hpp>
 #include <boost/tuple/tuple.hpp>
 #include <boost/format.hpp>
+#include <boost/algorithm/string.hpp>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "logger.hh"
 #include "dnsparser.hh"
+#include "arguments.hh"
 #ifndef WIN32
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -70,6 +72,26 @@ string doGet(T begin, T end)
 }
 
 template<typename T>
+string doGetParameter(T begin, T end)
+{
+  string ret;
+  string parm;
+  for(T i=begin; i != end; ++i) {
+    if(::arg().parmIsset(*i)) {
+      parm=::arg()[*i];
+      replace_all(parm, "\\", "\\\\");
+      replace_all(parm, "\"", "\\\"");
+      replace_all(parm, "\n", "\\n");
+      ret += *i +"=\""+ parm +"\"\n";
+    }
+    else
+      ret += *i +" not known\n";
+  }
+  return ret;
+}
+
+
+template<typename T>
 string doDumpCache(T begin, T end)
 {
   T i=begin;
@@ -90,11 +112,16 @@ string doDumpCache(T begin, T end)
 template<typename T>
 string doWipeCache(T begin, T end)
 {
-  int count=0;
-  for(T i=begin; i != end; ++i)
+  int count=0, countNeg=0;
+  for(T i=begin; i != end; ++i) {
     count+=RC.doWipeCache(toCanonic("", *i));
+    string canon=toCanonic("", *i);
+    countNeg+=SyncRes::s_negcache.count(tie(canon));
+    pair<SyncRes::negcache_t::iterator, SyncRes::negcache_t::iterator> range=SyncRes::s_negcache.equal_range(tie(canon));
+    SyncRes::s_negcache.erase(range.first, range.second);
+  }
 
-  return "wiped "+lexical_cast<string>(count)+" records\n";
+  return "wiped "+lexical_cast<string>(count)+" records, "+lexical_cast<string>(countNeg)+" negative records\n";
 }
 
 template<typename T>
@@ -189,6 +216,7 @@ RecursorControlParser::RecursorControlParser()
 
   addGetStat("qa-latency", &g_stats.avgLatencyUsec);
   addGetStat("unexpected-packets", &g_stats.unexpectedCount);
+  addGetStat("case-mismatches", &g_stats.caseMismatchCount);
   addGetStat("spoof-prevents", &g_stats.spoofCount);
 
   addGetStat("nsset-invalidations", &g_stats.nsSetInvalidations);
@@ -283,6 +311,10 @@ string RecursorControlParser::getAnswer(const string& question, RecursorControlP
   if(cmd=="get") 
     return doGet(begin, end);
 
+  if(cmd=="get-parameter") 
+    return doGetParameter(begin, end);
+
+
   if(cmd=="quit") {
     *command=&doExit;
     return "bye\n";
@@ -296,6 +328,16 @@ string RecursorControlParser::getAnswer(const string& question, RecursorControlP
 
   if(cmd=="wipe-cache") 
     return doWipeCache(begin, end);
+
+  if(cmd=="reload-lua-script") 
+    return doReloadLuaScript(begin, end);
+
+  if(cmd=="unload-lua-script") {
+    vector<string> empty;
+    empty.push_back(string());
+    return doReloadLuaScript(empty.begin(), empty.end());
+  }
+
 
   if(cmd=="top-remotes")
     return doTopRemotes();

@@ -1,4 +1,4 @@
-// $Id: gsqlbackend.cc 1018 2007-04-08 12:50:57Z ahu $ 
+// $Id: gsqlbackend.cc 1271 2008-11-15 19:44:33Z ahu $ 
 #ifdef WIN32
 # pragma warning ( disable: 4786 )
 #endif // WIN32
@@ -16,8 +16,9 @@ using namespace std;
 #include "pdns/ahuexception.hh"
 #include "pdns/logger.hh"
 #include "pdns/arguments.hh"
-
+#include <boost/algorithm/string.hpp>
 #include <sstream>
+using namespace boost;
 
 void GSQLBackend::setNotified(uint32_t domain_id, uint32_t serial)
 {
@@ -93,7 +94,7 @@ bool GSQLBackend::getDomainInfo(const string &domain, DomainInfo &di)
   di.backend=this;
   
   string type=d_result[0][5];
-  if(type=="SLAVE") {
+  if(iequals(type,"SLAVE")) {
     di.serial=0;
     try {
       SOAData sd;
@@ -108,8 +109,8 @@ bool GSQLBackend::getDomainInfo(const string &domain, DomainInfo &di)
     
     di.kind=DomainInfo::Slave;
   }
-  else if(type=="MASTER")
-    di.kind=DomainInfo::Slave;
+  else if(iequals(type,"MASTER"))
+    di.kind=DomainInfo::Master;
   else 
     di.kind=DomainInfo::Native;
   
@@ -246,7 +247,7 @@ void GSQLBackend::lookup(const QType &qtype,const string &qname, DNSPacket *pkt_
   string format;
   char output[1024];
 
-  d_db->setLog(arg().mustDo("query-logging"));
+  d_db->setLog(::arg().mustDo("query-logging"));
 
   string lcqname=toLower(qname);
   
@@ -365,7 +366,10 @@ bool GSQLBackend::get(DNSResourceRecord &r)
   SSql::row_t row;
   if(d_db->getRow(row)) {
     r.content=row[0];
-    r.ttl=atol(row[1].c_str());
+    if (row[1].empty())
+        r.ttl = ::arg().asNum( "default-ttl" );
+    else 
+        r.ttl=atol(row[1].c_str());
     r.priority=atol(row[2].c_str());
     if(!d_qname.empty())
       r.qname=d_qname;
