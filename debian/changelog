@@ -1,3 +1,9 @@
+pdns (2.9.22-1) unstable; urgency=low
+
+  * New upstream version (closes: #513409).
+
+ -- Christoph Haas <haas@debian.org>  Wed, 25 Feb 2009 23:25:51 +0100
+
 pdns (2.9.21.2-2) unstable; urgency=low
 
   * Added japanese PO file (closes: #510705)
