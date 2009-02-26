@@ -29,6 +29,13 @@ config.status:
 	
 	# First run the bootstrap.
 	./bootstrap
+
+ifneq "$(wildcard /usr/share/misc/config.sub)" ""
+	cp -f /usr/share/misc/config.sub config.sub
+endif
+ifneq "$(wildcard /usr/share/misc/config.guess)" ""
+	cp -f /usr/share/misc/config.guess config.guess
+endif
 	
 	# Add here commands to configure the package.
 	CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" ./configure \
@@ -57,7 +64,7 @@ clean: clean1 unpatch
 clean1:
 	dh_testdir
 	dh_testroot
-	rm -f build-stamp config.log
+	rm -f build-stamp config.log config.sub config.guess
 	
 	# Add here commands to clean up after the build process.
 	[ ! -f modules/db2backend/Makefile ] || $(MAKE) -C modules/db2backend/ distclean
@@ -68,12 +75,6 @@ clean1:
 	[ ! -f modules/opendbxbackend/Makefile ] || $(MAKE) -C modules/opendbxbackend/ distclean
 	[ ! -f Makefile ] || $(MAKE) distclean
 	[ ! -f pdns/docs/Makefile ] || $(MAKE) -C pdns/docs clean
-ifneq "$(wildcard /usr/share/misc/config.sub)" ""
-	cp -f /usr/share/misc/config.sub config.sub
-endif
-ifneq "$(wildcard /usr/share/misc/config.guess)" ""
-	cp -f /usr/share/misc/config.guess config.guess
-endif
 	
 	dh_clean 
 
