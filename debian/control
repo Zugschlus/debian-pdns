@@ -27,6 +27,7 @@ Description: extremely powerful and versatile nameserver
 Package: pdns-doc
 Section: doc
 Architecture: all
+Depends: ${misc:Depends}
 Description: PowerDNS manual
  PowerDNS is a versatile nameserver which supports a large number
  of different backends ranging from simple zonefiles to relational
@@ -38,7 +39,7 @@ Description: PowerDNS manual
 
 Package: pdns-backend-pipe
 Architecture: any
-Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
 Provides: pdns-backend
 Description: pipe/coprocess backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number
@@ -64,7 +65,7 @@ Description: LDAP backend for PowerDNS
 
 Package: pdns-backend-geo
 Architecture: any
-Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
 Provides: pdns-backend
 Description: geo backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number
