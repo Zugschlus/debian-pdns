@@ -3,4 +3,3 @@ addconfigdir
 clean-docs
 fix-ldapbackend-openldap.dpatch
 gcc43-fixes
-ldap-subtree
