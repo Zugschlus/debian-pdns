@@ -1,5 +1,4 @@
 # Apply following patches
 addconfigdir
 clean-docs
-fix-ldapbackend-openldap.dpatch
 gcc43-fixes
