@@ -3,12 +3,13 @@
 ##
 ## All lines beginning with `## DP:' are a description of the patch.
 ## DP: Add include option to include files from directories
+## DP: See also: http://wiki.powerdns.com/cgi-bin/trac.fcgi/ticket/53
 
 @DPATCH@
-diff -urNad pdns-2.9.20~/pdns/arguments.cc pdns-2.9.20/pdns/arguments.cc
---- pdns-2.9.20~/pdns/arguments.cc	2006-03-16 21:54:57.000000000 +0100
-+++ pdns-2.9.20/pdns/arguments.cc	2006-03-16 21:55:05.318533464 +0100
-@@ -217,9 +217,12 @@
+diff -urNad pdns~/pdns/arguments.cc pdns/pdns/arguments.cc
+--- pdns~/pdns/arguments.cc	2009-02-26 20:29:38.000000000 +0100
++++ pdns/pdns/arguments.cc	2009-02-26 20:41:34.000000000 +0100
+@@ -312,9 +312,12 @@
      if(pos && pos!=string::npos) 
        val=val.substr(pos);
  
@@ -23,7 +24,7 @@ diff -urNad pdns-2.9.20~/pdns/arguments.cc pdns-2.9.20/pdns/arguments.cc
        if(!lax)
  	throw ArgException("Trying to set unexisting parameter '"+var+"'");
    }
-@@ -246,6 +249,31 @@
+@@ -341,6 +344,31 @@
    }
  }
  
@@ -54,10 +55,10 @@ diff -urNad pdns-2.9.20~/pdns/arguments.cc pdns-2.9.20/pdns/arguments.cc
 +
  bool ArgvMap::preParseFile(const char *fname, const string &arg)
  {
-   ifstream f(fname);
-diff -urNad pdns-2.9.20~/pdns/arguments.hh pdns-2.9.20/pdns/arguments.hh
---- pdns-2.9.20~/pdns/arguments.hh	2006-03-16 21:54:57.000000000 +0100
-+++ pdns-2.9.20/pdns/arguments.hh	2006-03-16 21:55:26.854259536 +0100
+   params[arg].clear();
+diff -urNad pdns~/pdns/arguments.hh pdns/pdns/arguments.hh
+--- pdns~/pdns/arguments.hh	2009-02-26 20:29:38.000000000 +0100
++++ pdns/pdns/arguments.hh	2009-02-26 20:41:34.000000000 +0100
 @@ -24,6 +24,7 @@
  #include <vector>
  #include <fstream>
@@ -65,8 +66,8 @@ diff -urNad pdns-2.9.20~/pdns/arguments.hh pdns-2.9.20/pdns/arguments.hh
 +#include <dirent.h>
  #include "misc.hh"
  #include "ahuexception.hh"
- 
-@@ -78,6 +79,7 @@
+ #ifndef WIN32
+@@ -83,6 +84,7 @@
    }
    void preParse(int &argc, char **argv, const string &arg); //!< use this to preparse a single var
    bool preParseFile(const char *fname, const string &arg); //!< use this to preparse a single var in configuration
@@ -74,21 +75,41 @@ diff -urNad pdns-2.9.20~/pdns/arguments.hh pdns-2.9.20/pdns/arguments.hh
  
    bool file(const char *fname, bool lax=false); //!< Parses a file with parameters
    bool laxFile(const char *fname) 
-diff -urNad pdns-2.9.20~/pdns/common_startup.cc pdns-2.9.20/pdns/common_startup.cc
---- pdns-2.9.20~/pdns/common_startup.cc	2006-03-16 21:54:57.000000000 +0100
-+++ pdns-2.9.20/pdns/common_startup.cc	2006-03-16 21:55:05.319533312 +0100
-@@ -62,6 +62,7 @@
-   arg().set("fancy-records","Process URL and MBOXFW records")="no";
-   arg().set("wildcard-url","Process URL and MBOXFW records")="no";
-   arg().set("wildcards","Honor wildcards in the database")="";
-+  arg().set("include", "Directory with config files to include")="@@SYSCONFDIR@@/pdns.d"; // Add directory with config files
-   arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
-   arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
-   arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
-diff -urNad pdns-2.9.20~/pdns/docs/pdns.sgml pdns-2.9.20/pdns/docs/pdns.sgml
---- pdns-2.9.20~/pdns/docs/pdns.sgml	2006-03-16 21:54:57.000000000 +0100
-+++ pdns-2.9.20/pdns/docs/pdns.sgml	2006-03-16 21:55:05.329531792 +0100
-@@ -6319,6 +6319,10 @@
+diff -urNad pdns~/pdns/common_startup.cc pdns/pdns/common_startup.cc
+--- pdns~/pdns/common_startup.cc	2009-02-26 20:29:38.000000000 +0100
++++ pdns/pdns/common_startup.cc	2009-02-26 20:41:34.000000000 +0100
+@@ -61,6 +61,7 @@
+   ::arg().set("fancy-records","Process URL and MBOXFW records")="no";
+   ::arg().set("wildcard-url","Process URL and MBOXFW records")="no";
+   ::arg().set("wildcards","Honor wildcards in the database")="";
++  ::arg().set("include", "Directory with config files to include")="/etc/powerdns/pdns.d"; // Add directory with config files
+   ::arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
+   ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
+   ::arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
+diff -urNad pdns~/pdns/common_startup.cc.rej pdns/pdns/common_startup.cc.rej
+--- pdns~/pdns/common_startup.cc.rej	1970-01-01 01:00:00.000000000 +0100
++++ pdns/pdns/common_startup.cc.rej	2009-02-26 20:41:34.000000000 +0100
+@@ -0,0 +1,16 @@
++***************
++*** 62,67 ****
++    arg().set("fancy-records","Process URL and MBOXFW records")="no";
++    arg().set("wildcard-url","Process URL and MBOXFW records")="no";
++    arg().set("wildcards","Honor wildcards in the database")="";
++    arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
++    arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
++    arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
++--- 62,68 ----
++    arg().set("fancy-records","Process URL and MBOXFW records")="no";
++    arg().set("wildcard-url","Process URL and MBOXFW records")="no";
++    arg().set("wildcards","Honor wildcards in the database")="";
+++   arg().set("include", "Directory with config files to include")="@@SYSCONFDIR@@/pdns.d"; // Add directory with config files
++    arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
++    arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
++    arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
+diff -urNad pdns~/pdns/docs/pdns.sgml pdns/pdns/docs/pdns.sgml
+--- pdns~/pdns/docs/pdns.sgml	2009-02-26 20:29:38.000000000 +0100
++++ pdns/pdns/docs/pdns.sgml	2009-02-26 20:41:34.000000000 +0100
+@@ -9549,6 +9549,10 @@
  	    <listitem><para>
  		Provide a helpful message
  	      </para></listitem></varlistentry>
