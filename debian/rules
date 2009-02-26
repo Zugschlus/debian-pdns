@@ -27,9 +27,6 @@ backends := ldap pipe gmysql gpgsql gsqlite gsqlite3 geo
 config.status:
 	dh_testdir
 	
-	# First run the bootstrap.
-	./bootstrap
-
 ifneq "$(wildcard /usr/share/misc/config.sub)" ""
 	cp -f /usr/share/misc/config.sub config.sub
 endif
@@ -37,6 +34,9 @@ ifneq "$(wildcard /usr/share/misc/config.guess)" ""
 	cp -f /usr/share/misc/config.guess config.guess
 endif
 	
+	# First run the bootstrap.
+	./bootstrap
+
 	# Add here commands to configure the package.
 	CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" ./configure \
 		--host=$(DEB_HOST_GNU_TYPE) \
