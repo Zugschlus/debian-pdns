@@ -86,26 +86,6 @@ diff -urNad pdns~/pdns/common_startup.cc pdns/pdns/common_startup.cc
    ::arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
    ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
    ::arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
-diff -urNad pdns~/pdns/common_startup.cc.rej pdns/pdns/common_startup.cc.rej
---- pdns~/pdns/common_startup.cc.rej	1970-01-01 01:00:00.000000000 +0100
-+++ pdns/pdns/common_startup.cc.rej	2009-02-26 20:41:34.000000000 +0100
-@@ -0,0 +1,16 @@
-+***************
-+*** 62,67 ****
-+    arg().set("fancy-records","Process URL and MBOXFW records")="no";
-+    arg().set("wildcard-url","Process URL and MBOXFW records")="no";
-+    arg().set("wildcards","Honor wildcards in the database")="";
-+    arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
-+    arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
-+    arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
-+--- 62,68 ----
-+    arg().set("fancy-records","Process URL and MBOXFW records")="no";
-+    arg().set("wildcard-url","Process URL and MBOXFW records")="no";
-+    arg().set("wildcards","Honor wildcards in the database")="";
-++   arg().set("include", "Directory with config files to include")="@@SYSCONFDIR@@/pdns.d"; // Add directory with config files
-+    arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
-+    arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
-+    arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
 diff -urNad pdns~/pdns/docs/pdns.sgml pdns/pdns/docs/pdns.sgml
 --- pdns~/pdns/docs/pdns.sgml	2009-02-26 20:29:38.000000000 +0100
 +++ pdns/pdns/docs/pdns.sgml	2009-02-26 20:41:34.000000000 +0100
