@@ -80,6 +80,6 @@ if [ -x /usr/bin/diff ] && [ -f "$CONF_FILE" ] && /usr/bin/diff -q "$CONF_FILE" 
   rm -f "$TMP_FILE"
 else
   mv -f "$TMP_FILE" "$CONF_FILE"
-  [ -x /etc/init.d/pdns ] && ps -C pdns_server > /dev/null && /etc/init.d/pdns reload || :
+  [ -x /etc/init.d/pdns ] && ps -C pdns_server > /dev/null && invoke-rc.d pdns reload || :
 fi
 
