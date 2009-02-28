@@ -1,1 +1,2 @@
 debian/config/pdns.local.gpgsql
+debian/config/pgsql.sql

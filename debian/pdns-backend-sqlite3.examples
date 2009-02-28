@@ -1,1 +1,2 @@
 debian/config/pdns.local.gsqlite3
+debian/config/sqlite3.sql
