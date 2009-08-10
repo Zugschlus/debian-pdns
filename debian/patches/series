@@ -1,2 +1,3 @@
 addconfigdir -p0
 clean-docs -p0
+gcc-4.4-ftbfs-fix -p0
