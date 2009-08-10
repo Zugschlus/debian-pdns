@@ -6,7 +6,7 @@ pdns (2.9.22-2) unstable; urgency=low
   * Added SQLite3 database schema to examples
   * Added PostgreSQL database schema to examples
 
- -- Christoph Haas <haas@debian.org>  Sat, 28 Feb 2009 14:26:07 +0100
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Mon, 10 Aug 2009 20:47:10 +0200
 
 pdns (2.9.22-1) unstable; urgency=low
 
