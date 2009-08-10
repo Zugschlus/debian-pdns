@@ -1,4 +1,0 @@
-# Apply following patches
-addconfigdir
-clean-docs
-#gcc43-fixes

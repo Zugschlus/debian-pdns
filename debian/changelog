@@ -5,8 +5,10 @@ pdns (2.9.22-2) unstable; urgency=low
   * Added spanish translation (Closes: #508987)
   * Added SQLite3 database schema to examples
   * Added PostgreSQL database schema to examples
+  * Change libmysqlclient15-dev to libmysqlclient-dev.
+  * Moved from dpatch to quilt patch system.
 
- -- Matthijs Mohlmann <matthijs@cacholong.nl>  Mon, 10 Aug 2009 20:47:10 +0200
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Mon, 10 Aug 2009 21:23:37 +0200
 
 pdns (2.9.22-1) unstable; urgency=low
 

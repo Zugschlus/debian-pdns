@@ -23,6 +23,9 @@ endif
 
 backends := ldap pipe gmysql gpgsql gsqlite gsqlite3 geo
 
+# Include quilt patch system
+include /usr/share/quilt/quilt.make
+
 # Targets
 config.status:
 	dh_testdir
@@ -124,15 +127,6 @@ binary-arch: build install
 	dh_gencontrol -a
 	dh_md5sums -a
 	dh_builddeb -a
-
-patch: patch-stamp
-patch-stamp:
-	dpatch apply-all
-	touch patch-stamp
-
-unpatch:
-	dpatch deapply-all
-	rm -rf patch-stamp debian/patched
 
 binary: binary-arch binary-indep
 .PHONY: build clean binary-indep binary-arch binary install

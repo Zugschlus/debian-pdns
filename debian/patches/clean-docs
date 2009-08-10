@@ -1,0 +1,13 @@
+Index: pdns/docs/Makefile
+===================================================================
+--- pdns/docs/Makefile.orig
++++ pdns/docs/Makefile
+@@ -6,7 +6,7 @@
+ 	./expand < $< > $@
+ 	
+ clean:
+-	rm -rf *.xml *.dvi *.pdf *.tex *.toc *.aux *.ps *.bak *.tmp *~ *.log html.tar.gz html pdns
++	rm -rf *.xml *.dvi *.pdf *.tex *.toc *.aux *.ps *.bak *.tmp *~ *.log html.tar.gz html pdns pdns-expanded.sgml
+ 
+ html/index.html: pdns-expanded.sgml
+ 	db2html -V %use-id-as-filename% -o html $<

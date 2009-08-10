@@ -1,14 +1,7 @@
-#! /bin/sh /usr/share/dpatch/dpatch-run
-## addconfigdir.dpatch by Matthijs Mohlmann <matthijs@cacholong.nl>
-##
-## All lines beginning with `## DP:' are a description of the patch.
-## DP: Add include option to include files from directories
-## DP: See also: http://wiki.powerdns.com/cgi-bin/trac.fcgi/ticket/53
-
-@DPATCH@
-diff -urNad pdns~/pdns/arguments.cc pdns/pdns/arguments.cc
---- pdns~/pdns/arguments.cc	2009-02-26 20:29:38.000000000 +0100
-+++ pdns/pdns/arguments.cc	2009-02-26 20:41:34.000000000 +0100
+Index: pdns/arguments.cc
+===================================================================
+--- pdns/arguments.cc.orig
++++ pdns/arguments.cc
 @@ -312,9 +312,12 @@
      if(pos && pos!=string::npos) 
        val=val.substr(pos);
@@ -17,10 +10,10 @@ diff -urNad pdns~/pdns/arguments.cc pdns/pdns/arguments.cc
 +    if(parmIsset(var)) {
        params[var]=val;
 -    else
-+      if (var == "include") { // include directory
-+        preParseDir(val, arg, lax);
-+      }
-+    } else
++	  if (var == "include") { // include directory
++		  preParseDir(val, arg, lax);
++	  }
++	} else
        if(!lax)
  	throw ArgException("Trying to set unexisting parameter '"+var+"'");
    }
@@ -30,35 +23,36 @@ diff -urNad pdns~/pdns/arguments.cc pdns/pdns/arguments.cc
  
 +bool ArgvMap::preParseDir(const string dir, const string &arg, bool lax)
 +{
-+  DIR *dir_p;
-+  string filename;
-+  struct dirent *dir_entry_p;
++	DIR *dir_p;
++	string filename;
++	struct dirent *dir_entry_p;
 +
-+  if (dir_p = opendir(dir.c_str())) {
-+    while((dir_entry_p = readdir(dir_p)))
-+    {
-+      if (strcmp(dir_entry_p->d_name, ".") == 0 ||
-+          strcmp(dir_entry_p->d_name, "..") == 0)
-+        continue;
++	if (dir_p = opendir(dir.c_str())) {
++		while((dir_entry_p = readdir(dir_p)))
++		{
++			if (strcmp(dir_entry_p->d_name, ".") == 0 ||
++					strcmp(dir_entry_p->d_name, "..") == 0)
++				continue;
 +
-+      filename = dir + "/" + dir_entry_p->d_name;
-+      file(filename.c_str(), lax);
-+    }
-+    closedir(dir_p);
-+  } else {
-+    // Could be a file.
-+    file(dir.c_str(), lax);
-+  }
++			filename = dir + "/" + dir_entry_p->d_name;
++			file(filename.c_str(), lax);
++		}
++		closedir(dir_p);
++	} else {
++		// Could be a file.
++		file(dir.c_str(), lax);
++	}
 +
-+  return true;
++	return true;
 +}
 +
  bool ArgvMap::preParseFile(const char *fname, const string &arg)
  {
    params[arg].clear();
-diff -urNad pdns~/pdns/arguments.hh pdns/pdns/arguments.hh
---- pdns~/pdns/arguments.hh	2009-02-26 20:29:38.000000000 +0100
-+++ pdns/pdns/arguments.hh	2009-02-26 20:41:34.000000000 +0100
+Index: pdns/arguments.hh
+===================================================================
+--- pdns/arguments.hh.orig
++++ pdns/arguments.hh
 @@ -24,6 +24,7 @@
  #include <vector>
  #include <fstream>
@@ -75,9 +69,10 @@ diff -urNad pdns~/pdns/arguments.hh pdns/pdns/arguments.hh
  
    bool file(const char *fname, bool lax=false); //!< Parses a file with parameters
    bool laxFile(const char *fname) 
-diff -urNad pdns~/pdns/common_startup.cc pdns/pdns/common_startup.cc
---- pdns~/pdns/common_startup.cc	2009-02-26 20:29:38.000000000 +0100
-+++ pdns/pdns/common_startup.cc	2009-02-26 20:41:34.000000000 +0100
+Index: pdns/common_startup.cc
+===================================================================
+--- pdns/common_startup.cc.orig
++++ pdns/common_startup.cc
 @@ -61,6 +61,7 @@
    ::arg().set("fancy-records","Process URL and MBOXFW records")="no";
    ::arg().set("wildcard-url","Process URL and MBOXFW records")="no";
@@ -86,17 +81,18 @@ diff -urNad pdns~/pdns/common_startup.cc pdns/pdns/common_startup.cc
    ::arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
    ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
    ::arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
-diff -urNad pdns~/pdns/docs/pdns.sgml pdns/pdns/docs/pdns.sgml
---- pdns~/pdns/docs/pdns.sgml	2009-02-26 20:29:38.000000000 +0100
-+++ pdns/pdns/docs/pdns.sgml	2009-02-26 20:41:34.000000000 +0100
+Index: pdns/docs/pdns.sgml
+===================================================================
+--- pdns/docs/pdns.sgml.orig
++++ pdns/docs/pdns.sgml
 @@ -9549,6 +9549,10 @@
  	    <listitem><para>
  		Provide a helpful message
  	      </para></listitem></varlistentry>
 +	  <varlistentry><term>include</term>
-+	    <listitem><para>
-+		Include a directory with configuration files. This adds support for pdns.d or config.d constructions.
-+	      </para></listitem></varlistentry>
++	  	<listitem><para>
++			Include a directory with configuration files. This adds support for pdns.d or config.d constructions.
++		</para></listitem></varlistentry>
  	  <varlistentry><term>launch=...</term>
  	    <listitem><para>
  		Which backends to launch and order to query them in. See <xref linkend="modules">.
