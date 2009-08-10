@@ -1,13 +1,8 @@
-pdns (2.9.22-3) unstable; urgency=low
+pdns (2.9.22-2) unstable; urgency=low
 
   * Updated Standards-Version to 3.8.2
   * Added russian translation (Closes: #539465)
   * Added spanish translation (Closes: #508987)
-
- -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 09 Aug 2009 21:50:30 +0200
-
-pdns (2.9.22-2) unstable; urgency=low
-
   * Added SQLite3 database schema to examples
   * Added PostgreSQL database schema to examples
 
