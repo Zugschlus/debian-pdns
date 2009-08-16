@@ -1,7 +1,7 @@
-Index: pdns/docs/Makefile
+Index: b/pdns/docs/Makefile
 ===================================================================
---- pdns/docs/Makefile.orig
-+++ pdns/docs/Makefile
+--- a/pdns/docs/Makefile
++++ b/pdns/docs/Makefile
 @@ -6,7 +6,7 @@
  	./expand < $< > $@
  	
