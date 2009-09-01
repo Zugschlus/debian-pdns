@@ -37,7 +37,7 @@ esac
 [ -x /usr/sbin/pdns_server ] || exit 0
 [ -x /lib/resolvconf/list-records ] || exit 1
 
-RUN_DIR=/etc/powerdns/pdns.d
+RUN_DIR=/var/run/powerdns
 CONF_FILE="$RUN_DIR/pdns.recursors"
 TMP_FILE="${CONF_FILE}_new.$$"
 

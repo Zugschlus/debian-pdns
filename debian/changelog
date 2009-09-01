@@ -1,6 +1,7 @@
 pdns (2.9.22-3) unstable; urgency=low
 
   * Fixed init.d script (Closes: #518294)
+  * Moved resolvconf temp file to /var/run/powerdns (Closes: #333726)
 
  -- Christoph Haas <haas@debian.org>  Mon, 31 Aug 2009 23:48:08 +0200
 
