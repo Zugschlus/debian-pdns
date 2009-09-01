@@ -20,6 +20,8 @@ if [ -r /etc/default/pdns ]; then
   . /etc/default/pdns
 fi
 
+# Make sure that /var/run exists
+mkdir -p $SOCKETPATH
 cd $SOCKETPATH
 suffix=`basename $0 | awk -F- '{print $2}'`
 if [ $suffix ]; then
