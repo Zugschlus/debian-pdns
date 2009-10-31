@@ -113,6 +113,13 @@ case "$1" in
   ;;
 esac
 
+# Recover from incorrect init.d script headers in version 2.9.22-1 and earlier
+if [ "$1" = "configure" ] && dpkg --compare-versions "$2" le "2.9.22-1" \
+	&& [ -f /etc/rc0.d/K[0-9][0-9]pdns ] \
+	&& ! [ -f /etc/rc1.d/K[0-9][0-9]pdns ]; then
+  update-rc.d -f pdns remove
+fi
+
 if [ -x "/etc/init.d/pdns" ]; then
   update-rc.d pdns defaults 20 85 >/dev/null || exit 0
   if [ -x /usr/sbin/invoke-rc.d ]; then

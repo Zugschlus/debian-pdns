@@ -1,12 +1,10 @@
-pdns (2.9.22-3) unstable; urgency=low
+pdns (2.9.22-2) unstable; urgency=low
 
+  [ Christoph Haas ]
   * Fixed init.d script (Closes: #518294)
   * Moved resolvconf temp file to /var/run/powerdns (Closes: #333726)
 
- -- Christoph Haas <haas@debian.org>  Mon, 31 Aug 2009 23:48:08 +0200
-
-pdns (2.9.22-2) unstable; urgency=low
-
+  [ Matthijs Mohlmann ]
   * Updated Standards-Version to 3.8.2
   * Added russian translation (Closes: #539465)
   * Added spanish translation (Closes: #508987)
@@ -15,8 +13,12 @@ pdns (2.9.22-2) unstable; urgency=low
   * Change libmysqlclient15-dev to libmysqlclient-dev.
   * Moved from dpatch to quilt patch system.
   * Fix FTBFS with gcc 4.4 (Closes: #510674)
+  * Added italian translation (Closes: #552219, #548695)
+  * Added basque translation (Closes: #553150)
+  * Fixed init.d script including correct dependencies and runlevels
+    (Closes: #548293)
 
- -- Matthijs Mohlmann <matthijs@cacholong.nl>  Mon, 10 Aug 2009 21:27:36 +0200
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sat, 31 Oct 2009 23:19:11 +0100
 
 pdns (2.9.22-1) unstable; urgency=low
 
