@@ -120,12 +120,14 @@ if [ "$1" = "configure" ] && dpkg --compare-versions "$2" le "2.9.22-1" \
   update-rc.d -f pdns remove
 fi
 
-if [ -x "/etc/init.d/pdns" ]; then
-  update-rc.d pdns defaults 20 85 >/dev/null || exit 0
-  if [ -x /usr/sbin/invoke-rc.d ]; then
-    invoke-rc.d pdns restart || exit $?
-  else
-    /etc/init.d/pdns restart || exit $?
+if [ "$1" = "triggered" ]; then
+  if [ -x "/etc/init.d/pdns" ]; then
+    update-rc.d pdns defaults 20 85 >/dev/null || exit 0
+    if [ -x /usr/sbin/invoke-rc.d ]; then
+      invoke-rc.d pdns restart || exit $?
+    else
+      /etc/init.d/pdns restart || exit $?
+    fi
   fi
 fi
 
