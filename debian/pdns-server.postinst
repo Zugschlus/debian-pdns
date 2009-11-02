@@ -104,6 +104,14 @@ case "$1" in
     fi
   ;;
 
+  triggered)
+    if [ -x /usr/sbin/invoke-rc.d ]; then
+      invoke-rc.d pdns restart || exit $?
+    else
+      /etc/init.d/pdns restart || exit $?
+    fi
+  ;;
+
   abort-upgrade|abort-remove|abort-deconfigure)
   ;;
 
@@ -120,15 +128,8 @@ if [ "$1" = "configure" ] && dpkg --compare-versions "$2" le "2.9.22-1" \
   update-rc.d -f pdns remove
 fi
 
-if [ "$1" = "triggered" ]; then
-  if [ -x "/etc/init.d/pdns" ]; then
-    update-rc.d pdns defaults 20 85 >/dev/null || exit 0
-    if [ -x /usr/sbin/invoke-rc.d ]; then
-      invoke-rc.d pdns restart || exit $?
-    else
-      /etc/init.d/pdns restart || exit $?
-    fi
-  fi
+if [ "$1" = "configure" ] && [ -x "/etc/init.d/pdns" ]; then
+  update-rc.d pdns defaults 20 85 >/dev/null || exit 0
 fi
 
 # dh_installdeb will replace this with shell code automatically
