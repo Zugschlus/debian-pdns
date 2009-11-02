@@ -17,8 +17,9 @@ pdns (2.9.22-2) unstable; urgency=low
   * Added basque translation (Closes: #553150)
   * Fixed init.d script including correct dependencies and runlevels
     (Closes: #548293)
+  * Added finnish translation (Closes: #553648)
 
- -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sat, 31 Oct 2009 23:19:11 +0100
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Mon, 02 Nov 2009 08:34:43 +0100
 
 pdns (2.9.22-1) unstable; urgency=low
 
