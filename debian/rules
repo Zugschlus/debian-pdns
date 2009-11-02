@@ -117,6 +117,7 @@ binary-arch: build install
 	dh_installdebconf -a
 	dh_installman -a
 	dh_installexamples -a
+	dh_lintian -a
 	dh_link -a
 	dh_strip -a
 	dh_compress -a
