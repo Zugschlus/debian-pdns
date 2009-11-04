@@ -5,7 +5,7 @@ pdns (2.9.22-2) unstable; urgency=low
   * Moved resolvconf temp file to /var/run/powerdns (Closes: #333726)
 
   [ Matthijs Mohlmann ]
-  * Updated Standards-Version to 3.8.2
+  * Updated Standards-Version to 3.8.3
   * Added russian translation (Closes: #539465)
   * Added spanish translation (Closes: #508987)
   * Added SQLite3 database schema to examples
