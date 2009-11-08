@@ -24,7 +24,7 @@ PDNSDEFAULT=/etc/default/pdns
 if [ -e $PDNSCONF ]; then
   PDNSDIR=`cat $PDNSCONF | grep include | awk -F '=' '{print $2}'`
 fi
-if [ -z $PDNSDIR ]; then
+if [ -z "$PDNSDIR" ]; then
   PDNSDIR=/etc/powerdns/pdns.d
 fi
 PDNSLOCAL=$PDNSDIR/pdns.local
@@ -33,19 +33,6 @@ PDNSLOCAL=$PDNSDIR/pdns.local
 PDNSCONFTEMP=`mktemp`
 PDNSLOCALTEMP=`mktemp`
 PDNSDEFAULTTEMP=`mktemp`
-
-#splitconfig() {
-#  if [ -e $PDNSCONF ]; then
-#    for i in geo ldap gmysql gpgsql pipe gsqlite; do
-#      CONF=`(cat $PDNSCONF | grep -- $i-) || /bin/true`
-#      if [ ! -z "$CONF" ]; then
-#        for j in $CONF; do
-#          echo $j >> $PDNSLOCALTEMP
-#        done
-#      fi
-#    done
-#  fi
-#}
 
 case "$1" in
   configure)
@@ -62,9 +49,6 @@ case "$1" in
     cat /usr/share/pdns-server/pdns.conf > $PDNSCONFTEMP
     cat /usr/share/pdns-server/pdns.local > $PDNSLOCALTEMP
     cat /usr/share/pdns-server/pdns > $PDNSDEFAULTTEMP
-
-    # Split config
-    #splitconfig
 
     # Do we listen on a specified address
     db_get pdns-server/localaddress || true

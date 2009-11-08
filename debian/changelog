@@ -1,3 +1,10 @@
+pdns (2.9.22-3) unstable; urgency=low
+
+  * Fix a syntax error in postinst.
+  * Removed old upgrade code for splitting the config.
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 08 Nov 2009 14:48:57 +0100
+
 pdns (2.9.22-2) unstable; urgency=low
 
   [ Christoph Haas ]
