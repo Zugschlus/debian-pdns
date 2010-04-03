@@ -1,3 +1,13 @@
+pdns (2.9.22-4) unstable; urgency=low
+
+  * Add db_stop to fix an upgrade (Closes: #555311)
+  * Fix error in postinst of sqlite and sqlite3 (Closes: #565516)
+  * Updated Standards-Version to 3.8.4
+  * Make lintian happy
+  * Complete the pdns_control manpage (Closes: #556473)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sat, 03 Apr 2010 17:42:39 +0200
+
 pdns (2.9.22-3) unstable; urgency=low
 
   * Fix a syntax error in postinst.

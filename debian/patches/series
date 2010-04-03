@@ -1,3 +1,4 @@
 addconfigdir 
 clean-docs 
 gcc-4.4-ftbfs-fix 
+pdns_control-manpage-additions

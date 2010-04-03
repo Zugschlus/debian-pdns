@@ -19,9 +19,9 @@ set -e
 
 # Configuration file
 PDNSCONF=/etc/powerdns/pdns.conf
-PDNSDIR=`cat $PDNSCONF | grep include | awk -F '=' '{print $2}'`
-PDNSUSER=`cat $PDNSCONF | grep setuid | awk -F '=' '{print $2}'`
-PDNSGROUP=`cat $PDNSCONF | grep setgid | awk -F '=' '{print $2}'`
+PDNSDIR=`cat $PDNSCONF | grep ^include | awk -F '=' '{print $2}'`
+PDNSUSER=`cat $PDNSCONF | grep ^setuid | awk -F '=' '{print $2}'`
+PDNSGROUP=`cat $PDNSCONF | grep ^setgid | awk -F '=' '{print $2}'`
 DATABASE=/var/lib/powerdns/pdns.sqlite3
 PDNSLOCAL=$PDNSDIR/pdns.local
 
@@ -60,13 +60,11 @@ create table supermasters (
 
 update_permissions() {
   data="$1"
-  if [ -d "$dir" ]; then
-    if [ ! -z "$PDNSUSER" ]; then
-      chown -R "$PDNSUSER" "$data"
-    fi
-    if [ ! -z "$PDNSGROUP" ]; then
-      chgrp -R "$PDNSGROUP" "$data"
-    fi
+  if [ ! -z "$PDNSUSER" ]; then
+    chown "$PDNSUSER" "$data"
+  fi
+  if [ ! -z "$PDNSGROUP" ]; then
+    chgrp "$PDNSGROUP" "$data"
   fi
 }
 
@@ -94,6 +92,7 @@ case "$1" in
       echo "done"
     fi
 
+	update_permissions /var/lib/powerdns
     update_permissions "$DATABASE"
   ;;
 

@@ -94,6 +94,9 @@ case "$1" in
     else
       /etc/init.d/pdns restart || exit $?
     fi
+
+    # Stop the debconf stuff
+    db_stop || true
   ;;
 
   abort-upgrade|abort-remove|abort-deconfigure)

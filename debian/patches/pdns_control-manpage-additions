@@ -1,0 +1,17 @@
+Index: b/pdns/docs/pdns_control.8
+===================================================================
+--- a/pdns/docs/pdns_control.8
++++ b/pdns/docs/pdns_control.8
+@@ -10,6 +10,12 @@
+ .B ccounts
+ Show the content of the cache
+ .TP
++.B notify \fI<domain>\fR
++Adds a domain to the notification list, causing PDNS to send out notifications to the nameservers of a domain. Can be used if a slave missed previous notifications or is generally hard of hearing.
++.TP
++.B notify-host \fI<domain>\fR \fI<host>\fR
++Same as above but with operator specified IP address as destination, to be used if you know better than PowerDNS.
++.TP
+ .B cycle
+ Restart the nameserver so it reloads its configuration.
+ .TP
