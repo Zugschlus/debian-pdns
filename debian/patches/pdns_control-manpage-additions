@@ -2,7 +2,7 @@ Index: b/pdns/docs/pdns_control.8
 ===================================================================
 --- a/pdns/docs/pdns_control.8
 +++ b/pdns/docs/pdns_control.8
-@@ -10,6 +10,12 @@
+@@ -10,26 +10,38 @@
  .B ccounts
  Show the content of the cache
  .TP
@@ -15,3 +15,34 @@ Index: b/pdns/docs/pdns_control.8
  .B cycle
  Restart the nameserver so it reloads its configuration.
  .TP
+-.B list
+-????
++.B ping
++Check if the server is alive.
+ .TP
+ .B purge \fI[<record>]\fR
+ Purge entries from the packet cache. If the record name ends with a
+ dollar ($) all entries that end with that name are removed. If no record is
+ specified the entire cache is purged.
+ .TP
+-.B quit
+-Tell a running \fBpdns_server\fR to to quit.
++.B rediscover
++Instructs backends that new domains may have appeared in the database, or, in the case of the Bind backend, in named.conf.
++.TP
++.B retrieve \fI<domain>\fR
++Retrieve a slave domain from its master. Done nearly immediatly.
+ .TP
+ .B set \fI<variable> <value>\fR
+ Set the configuration parameter \fI<variable>\fR to \fI<value>\fR. Currently
+ only the \fIquery\-logging\fR can be set.
+ .TP
+ .B show \fI<variable>\fR
+-Print the value of a specific configuration variable.
++Show a single statistic, as present in the output of the list command.
++.TP
++.B quit
++Tell a running \fBpdns_server\fR to quit.
+ .TP
+ .B status
+ Show usage statistics.
