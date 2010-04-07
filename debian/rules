@@ -23,9 +23,6 @@ endif
 
 backends := ldap pipe gmysql gpgsql gsqlite gsqlite3 geo
 
-# Include quilt patch system
-include /usr/share/quilt/quilt.make
-
 # Targets
 config.status:
 	dh_testdir
@@ -55,7 +52,7 @@ endif
 		--with-pgsql-includes=`pg_config --includedir` \
 		--disable-recursor
 
-build: patch build-stamp
+build: build-stamp
 build-stamp: config.status
 	
 	# Add here commands to compile the arch part of the package.
@@ -63,8 +60,7 @@ build-stamp: config.status
 	
 	touch build-stamp
 
-clean: clean1 unpatch
-clean1:
+clean:
 	dh_testdir
 	dh_testroot
 	rm -f build-stamp config.log config.sub config.guess
