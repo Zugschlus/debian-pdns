@@ -6,8 +6,9 @@ pdns (2.9.22-4) unstable; urgency=low
   * Make lintian happy
   * Complete the pdns_control manpage (Closes: #556473)
   * Switch to dpkg-source 3.0 (quilt) format
+  * Removing Christoph Haas from uploaders, thank you for the great work.
 
- -- Matthijs Mohlmann <matthijs@cacholong.nl>  Wed, 07 Apr 2010 22:33:02 +0200
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Fri, 09 Apr 2010 17:23:24 +0200
 
 pdns (2.9.22-3) unstable; urgency=low
 
