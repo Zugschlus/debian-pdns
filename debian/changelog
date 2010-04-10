@@ -1,3 +1,9 @@
+pdns (2.9.22-5) unstable; urgency=low
+
+  * Fix FTBFS on hurd
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sat, 10 Apr 2010 16:50:58 +0200
+
 pdns (2.9.22-4) unstable; urgency=low
 
   * Add db_stop to fix an upgrade (Closes: #555311)
