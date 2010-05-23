@@ -1,8 +1,10 @@
 pdns (2.9.22-5) unstable; urgency=low
 
   * Fix FTBFS on hurd
+  * Should-Start / Should-Stop added for slapd, mysql and postgresql
+    Thanks to Petter Reinholdtsen (Closes: #580819)
 
- -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sat, 10 Apr 2010 16:50:58 +0200
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 23 May 2010 13:18:25 +0200
 
 pdns (2.9.22-4) unstable; urgency=low
 
