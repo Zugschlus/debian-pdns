@@ -19,7 +19,7 @@ NAME=pdns-server
 [ -f "$SBINARYPATH/pdns_server" ] || exit 0
 
 if [ -r /etc/default/pdns ]; then
-  . /etc/default/pdns
+	. /etc/default/pdns
 fi
 
 # Make sure that /var/run exists
@@ -42,27 +42,28 @@ doPC()
 
 do_test_running()
 {
-    doPC ping
-    NOTRUNNING=$?
+	doPC ping
+	NOTRUNNING=$?
 }
 
 do_start()
 {
-        do_test_running
-		if [ "$NOTRUNNING" = "0" ] || [ "$START" = "no" ]; then
-			echo "already running or disabled"
-		else
-			$pdns_server --daemon --guardian=yes
-			if test "$?" = "0"; then
-				echo "started"
-			fi
+	do_test_running
+	if [ "$NOTRUNNING" = "0" ] || [ "$START" = "no" ]; then
+		echo "already running or disabled"
+	else
+		$pdns_server --daemon --guardian=yes
+		if test "$?" = "0"; then
+			sleep 2
+			echo "started"
 		fi
+	fi
 }
 
 
 case "$1" in
 	status)
-        do_test_running
+		do_test_running
 		if test "$NOTRUNNING" = "0"; then
 			doPC status
 			echo $ret
@@ -72,7 +73,7 @@ case "$1" in
 	;;
 	stop)
 		echo -n "Stopping PowerDNS authoritative nameserver: "
-        do_test_running
+		do_test_running
 		if test "$NOTRUNNING" = "0"; then
 			doPC quit
 			echo $ret
@@ -87,7 +88,7 @@ case "$1" in
 	;;
 	start)
 		echo -n "Starting PowerDNS authoritative nameserver: "
-        do_start
+		do_start
 	;;
 	force-reload | restart)
 		echo -n "Restarting PowerDNS authoritative nameserver: "
@@ -95,11 +96,11 @@ case "$1" in
 		doPC quit
 		sleep 3
 		echo done
-        do_start
+		do_start
 	;;
 	reload)
 		echo -n "Reloading PowerDNS authoritative nameserver: "
-        do_test_running
+		do_test_running
 		if test "$NOTRUNNING" = "0"; then
 			doPC cycle
 			echo requested reload
@@ -109,7 +110,7 @@ case "$1" in
 		fi
 	;;
 	monitor)
-        do_test_running
+		do_test_running
 		if test "$NOTRUNNING" = "0"; then
 			echo "already running"
 		else
@@ -117,7 +118,7 @@ case "$1" in
 		fi 
 	;;		
 	dump)
-        do_test_running
+		do_test_running
 		if test "$NOTRUNNING" = "0"; then
 			doPC list
 			echo $ret
@@ -130,7 +131,7 @@ case "$1" in
 			echo Insufficient parameters
 			exit
 		fi 
-        do_test_running
+		do_test_running
 		if test "$NOTRUNNING" = "0"; then
 			echo -n "$2="
 			doPC show $2 ; echo $ret
@@ -143,7 +144,7 @@ case "$1" in
 			echo Insufficient parameters
 			exit
 		fi 
-        do_test_running
+		do_test_running
 		if test "$NOTRUNNING" = "0"; then
 			doPC show $2 ; echo $ret
 			if [ "$3x" != "x" ]; then
@@ -162,7 +163,7 @@ case "$1" in
 			echo Insufficient parameters
 			exit
 		fi 
-        do_test_running
+		do_test_running
 		if test "$NOTRUNNING" = "0"; then
 			doPC show $2 ; echo $ret
 		else

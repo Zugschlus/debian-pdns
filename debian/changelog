@@ -1,3 +1,12 @@
+pdns (2.9.22-6) unstable; urgency=high
+
+  * Provide the virtual facility $named. (Closes: #585966)
+  * Added danish translation thanks to Joe Dalton (Closes: #585572)
+  * For now add a 2 second delay before continue with the boot process to
+    ensure pdns is listening on a socket.
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Sun, 18 Jul 2010 14:42:23 +0200
+
 pdns (2.9.22-5) unstable; urgency=low
 
   * Fix FTBFS on hurd
