@@ -1,3 +1,9 @@
+pdns (2.9.22-7) unstable; urgency=low
+
+  * Provide the file now in the correct location. (Closes: #585966)
+
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Tue, 03 Aug 2010 17:55:01 +0200
+
 pdns (2.9.22-6) unstable; urgency=high
 
   * Provide the virtual facility $named. (Closes: #585966)

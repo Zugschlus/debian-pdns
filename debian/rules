@@ -88,6 +88,11 @@ install: build
 	$(MAKE) install DESTDIR=$(CURDIR)/debian/tmp
 	$(MAKE) -C pdns/docs html/index.html
 	
+	# Set up init.d virtual facility
+	mkdir -p $(CURDIR)/debian/pdns-server/etc/insserv.conf.d
+	cp $(CURDIR)/debian/pdns-server.insserv \
+		$(CURDIR)/debian/pdns-server/etc/insserv.conf.d/pdns-server
+	
 	dh_install
 
 # Build architecture independant packages.
