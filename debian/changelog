@@ -2,8 +2,9 @@ pdns (2.9.22-7) unstable; urgency=low
 
   * Provide the file now in the correct location. (Closes: #585966)
   * Update Standards-Version to 3.9.1
+  * Add new dnsdomain2.schema for LDAP (Closes: #589606)
 
- -- Matthijs Mohlmann <matthijs@cacholong.nl>  Tue, 03 Aug 2010 17:55:01 +0200
+ -- Matthijs Mohlmann <matthijs@cacholong.nl>  Tue, 03 Aug 2010 18:25:28 +0200
 
 pdns (2.9.22-6) unstable; urgency=high
 
