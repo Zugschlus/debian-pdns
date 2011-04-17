@@ -1,8 +1,9 @@
 pdns (2.9.22-9) unstable; urgency=low
 
   * My name is now spelled correctly with the ö instead of o.
+  * Reupload to fix a unresolved symbol (Closes: #623036)
 
- -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sat, 22 Jan 2011 12:19:24 +0100
+ -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sun, 17 Apr 2011 11:59:02 +0200
 
 pdns (2.9.22-8) unstable; urgency=high
 
