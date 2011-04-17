@@ -24,6 +24,7 @@ Description: extremely powerful and versatile nameserver
  the "bind" software.
 
 Package: pdns-server-dbg
+Section: debug
 Architecture: any
 Priority: extra
 Depends: pdns-server (= ${binary:Version}), ${misc:Depends}
