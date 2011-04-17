@@ -120,7 +120,7 @@ binary-arch: build install
 	dh_installexamples -a
 	dh_lintian -a
 	dh_link -a
-	dh_strip -a
+	dh_strip -a --dbg-package=pdns-server-dbg
 	dh_compress -a
 	dh_fixperms -a
 	chmod 755 $(CURDIR)/debian/pdns-server/etc/resolvconf/update.d/pdns

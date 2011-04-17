@@ -23,6 +23,19 @@ Description: extremely powerful and versatile nameserver
  allows PowerDNS to retrieve domain info from zone files as used by
  the "bind" software.
 
+Package: pdns-server-dbg
+Architecture: any
+Priority: extra
+Depends: pdns-server (= ${binary:Version}), ${misc:Depends}
+Description: debugging symbols for PowerDNS
+ PowerDNS is a versatile nameserver which supports a large number
+ of different backends ranging from simple zonefiles to relational
+ databases and load balancing/failover algorithms.
+ PowerDNS tries to emphasize speed and security.
+ .
+ This package contains debugging symbols for PowerDNS to assist in
+ debugging, such as gdb. It is not required for normal operation.
+
 Package: pdns-doc
 Section: doc
 Architecture: all
