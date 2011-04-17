@@ -1,3 +1,2 @@
 # Those are not bashism's but sql.
-pdns-backend-sqlite3: possible-bashism-in-maintainer-script postinst:33 '  type '
-pdns-backend-sqlite3: possible-bashism-in-maintainer-script postinst:44 '  type '
+pdns-backend-sqlite3: possible-bashism-in-maintainer-script
