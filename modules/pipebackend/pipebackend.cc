@@ -1,6 +1,6 @@
 // -*- sateh-c -*- 
 // File    : pdnsbackend.cc
-// Version : $Id: pipebackend.cc 1288 2008-11-16 09:10:08Z ahu $ 
+// Version : $Id: pipebackend.cc 2134 2011-04-04 07:51:32Z ahu $ 
 //
 
 #include <string>
@@ -10,7 +10,7 @@
 #include <sstream>
 #include "coprocess.hh"
 
-using namespace std;
+#include "pdns/namespaces.hh"
 
 #include <pdns/dns.hh>
 #include <pdns/dnsbackend.hh>
@@ -23,9 +23,6 @@ using namespace std;
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <boost/lexical_cast.hpp>
-
-using namespace boost;
-
 #include "pipebackend.hh"
 
 static const char *kBackendId = "[PIPEBackend]";
@@ -119,7 +116,7 @@ void PipeBackend::lookup(const QType &qtype,const string &qname, DNSPacket *pkt_
          
          if (pkt_p) {
             localIP=pkt_p->getLocal();
-	    remoteIP=pkt_p->getRemote();
+            remoteIP=pkt_p->getRemote();
          }
 
          // pipebackend-abi-version = 1
@@ -219,25 +216,25 @@ bool PipeBackend::get(DNSResourceRecord &r)
          r.qtype=parts[3];
          r.ttl=atoi(parts[4].c_str());
          r.domain_id=atoi(parts[5].c_str());
+         r.auth = 1;
  
-	 if(parts[3]!="MX") {
-	   r.content.clear();
-	   for(int n=6; n < parts.size(); ++n) {
-	     if(n!=6)
-	       r.content.append(1,' ');
-	     r.content.append(parts[n]);
-	   }
-	 }
-	 else {
-	   if(parts.size()<8) {
-            L<<Logger::Error<<kBackendId<<" coprocess returned incomplete MX line in data section for query for "<<d_qname<<endl;
-            throw AhuException("Format error communicating with coprocess in data section of MX record");
-	   }
-	   
-	   r.priority=atoi(parts[6].c_str());
-	   r.content=parts[7];
-
-	 }
+         if(parts[3]!="MX" && parts[3] != "SRV") {
+           r.content.clear();
+           for(unsigned int n=6; n < parts.size(); ++n) {
+             if(n!=6)
+               r.content.append(1,' ');
+             r.content.append(parts[n]);
+           }
+         }
+         else {
+           if(parts.size()<8) {
+            L<<Logger::Error<<kBackendId<<" coprocess returned incomplete MX/SRV line in data section for query for "<<d_qname<<endl;
+            throw AhuException("Format error communicating with coprocess in data section of MX/SRV record");
+           }
+           
+           r.priority=atoi(parts[6].c_str());
+           r.content=parts[7];
+         }
          break;
       }
       else

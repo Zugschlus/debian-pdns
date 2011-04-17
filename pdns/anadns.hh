@@ -7,8 +7,8 @@
 #include <netinet/udp.h>
 #include "dnsparser.hh"
 
-using namespace boost;
-using namespace std;
+#include "namespaces.hh"
+#include "namespaces.hh"
 
 struct QuestionIdentifier
 {

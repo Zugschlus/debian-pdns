@@ -29,7 +29,8 @@ extern StatBag S;
 StatWebServer::StatWebServer()
 {
   d_start=time(0);
-	d_min10=d_min5=d_min1=0;
+  d_min10=d_min5=d_min1=0;
+  d_ws = new WebServer(arg()["webserver-address"], arg().asNum("webserver-port"),arg()["webserver-password"]);
 }
 
 void StatWebServer::go()
@@ -76,9 +77,9 @@ void printtable(ostringstream &ret, const string &ringname, const string &title,
 {
   int tot=0;
   int entries=0;
-  vector<pair <string,int> >ring=S.getRing(ringname);
+  vector<pair <string,unsigned int> >ring=S.getRing(ringname);
 
-  for(vector<pair<string,int> >::const_iterator i=ring.begin(); i!=ring.end();++i) {  
+  for(vector<pair<string, unsigned int> >::const_iterator i=ring.begin(); i!=ring.end();++i) {  
     tot+=i->second;
     entries++;
   }
@@ -92,7 +93,7 @@ void printtable(ostringstream &ret, const string &ringname, const string &title,
     "<a href=?resetring="<<ringname<<"><font color=#ffffff>Reset</a></td>";
   ret<<"<td align=right>Resize: ";
   
-  int sizes[]={10,100,500,1000,10000,500000,0};
+  unsigned int sizes[]={10,100,500,1000,10000,500000,0};
   for(int i=0;sizes[i];++i) {
     if(S.getRingSize(ringname)!=sizes[i])
       ret<<"<a href=?resizering="<<ringname<<"&size="<<sizes[i]<<">"<<sizes[i]<<"</a> ";
@@ -103,13 +104,13 @@ void printtable(ostringstream &ret, const string &ringname, const string &title,
 
 
   int printed=0;
-  for(vector<pair<string,int> >::const_iterator i=ring.begin();limit && i!=ring.end();++i,--limit) {
-    ret<<"<tr><td>"<<i->first<<"</td><td>"<<i->second<<"</td><td align=right>"<< (boost::format("%.01f") % (i->second*100.0/tot))<<"%</td>"<<endl;
+  for(vector<pair<string,unsigned int> >::const_iterator i=ring.begin();limit && i!=ring.end();++i,--limit) {
+    ret<<"<tr><td>"<<i->first<<"</td><td>"<<i->second<<"</td><td align=right>"<< StatWebServer::makePercentage(i->second*100.0/tot)<<"</td>"<<endl;
     printed+=i->second;
   }
   ret<<"<tr><td colspan=3></td></tr>"<<endl;
   if(printed!=tot)
-    ret<<"<tr><td><b>Rest:</b></td><td><b>"<<tot-printed<<"</b></td><td align=right><b>"<< (boost::format("%.01f") % ((tot-printed)*100.0/tot))<<"%</b></td>"<<endl;
+    ret<<"<tr><td><b>Rest:</b></td><td><b>"<<tot-printed<<"</b></td><td align=right><b>"<< StatWebServer::makePercentage((tot-printed)*100.0/tot)<<"</b></td>"<<endl;
 
   ret<<"<tr><td><b>Total:</b></td><td><b>"<<tot<<"</td><td align=right><b>100%</b></td>";
   ret<<"</table><p>"<<endl;
@@ -134,6 +135,11 @@ void StatWebServer::printargs(ostringstream &ret)
   for(vector<string>::const_iterator i=entries.begin();i!=entries.end();++i) {
     ret<<"<tr><td>"<<*i<<"</td><td>"<<arg()[*i]<<"</td><td>"<<arg().getHelp(*i)<<"</td>"<<endl;
   }
+}
+
+string StatWebServer::makePercentage(const double& val)
+{
+  return (boost::format("%.01f%%") % val).str();
 }
 
 string StatWebServer::indexfunction(const map<string,string> &varmap, void *ptr, bool *custom)
@@ -171,27 +177,27 @@ string StatWebServer::indexfunction(const map<string,string> &varmap, void *ptr,
   ret<<humanDuration(passed)<<endl;
 
 
-  ret<<"Queries/second, 1, 5, 10 minute averages:  "<<setprecision(3)<<
+  ret<<"Queries/second, 1, 5, 10 minute averages:  "<<std::setprecision(3)<<
     sws->d_queries.get1()<<", "<<
     sws->d_queries.get5()<<", "<<
     sws->d_queries.get10()<<". Max queries/second: "<<sws->d_queries.getMax()<<
     "<br>"<<endl;
   
   if(sws->d_cachemisses.get10()+sws->d_cachehits.get10()>0)
-    ret<<"Cache hitrate, 1, 5, 10 minute averages: "<<setprecision(2)<<
-      (sws->d_cachehits.get1()*100.0)/((sws->d_cachehits.get1())+(sws->d_cachemisses.get1()))<<"%, "<<
-      (sws->d_cachehits.get5()*100.0)/((sws->d_cachehits.get5())+(sws->d_cachemisses.get5()))<<"%, "<<
-      (sws->d_cachehits.get10()*100.0)/((sws->d_cachehits.get10())+(sws->d_cachemisses.get10()))<<
-      "%<br>"<<endl;
+    ret<<"Cache hitrate, 1, 5, 10 minute averages: "<<
+      makePercentage((sws->d_cachehits.get1()*100.0)/((sws->d_cachehits.get1())+(sws->d_cachemisses.get1())))<<", "<<
+      makePercentage((sws->d_cachehits.get5()*100.0)/((sws->d_cachehits.get5())+(sws->d_cachemisses.get5())))<<", "<<
+      makePercentage((sws->d_cachehits.get10()*100.0)/((sws->d_cachehits.get10())+(sws->d_cachemisses.get10())))<<
+      "<br>"<<endl;
 
   if(sws->d_qcachemisses.get10()+sws->d_qcachehits.get10()>0)
-    ret<<"Backend query cache hitrate, 1, 5, 10 minute averages: "<<setprecision(2)<<
-      (sws->d_qcachehits.get1()*100.0)/((sws->d_qcachehits.get1())+(sws->d_qcachemisses.get1()))<<"%, "<<
-      (sws->d_qcachehits.get5()*100.0)/((sws->d_qcachehits.get5())+(sws->d_qcachemisses.get5()))<<"%, "<<
-      (sws->d_qcachehits.get10()*100.0)/((sws->d_qcachehits.get10())+(sws->d_qcachemisses.get10()))<<
-      "%<br>"<<endl;
+    ret<<"Backend query cache hitrate, 1, 5, 10 minute averages: "<<std::setprecision(2)<<
+      makePercentage((sws->d_qcachehits.get1()*100.0)/((sws->d_qcachehits.get1())+(sws->d_qcachemisses.get1())))<<", "<<
+      makePercentage((sws->d_qcachehits.get5()*100.0)/((sws->d_qcachehits.get5())+(sws->d_qcachemisses.get5())))<<", "<<
+      makePercentage((sws->d_qcachehits.get10()*100.0)/((sws->d_qcachehits.get10())+(sws->d_qcachemisses.get10())))<<
+      "<br>"<<endl;
 
-  ret<<"Backend query load, 1, 5, 10 minute averages: "<<setprecision(3)<<
+  ret<<"Backend query load, 1, 5, 10 minute averages: "<<std::setprecision(3)<<
     sws->d_qcachemisses.get1()<<", "<<
     sws->d_qcachemisses.get5()<<", "<<
     sws->d_qcachemisses.get10()<<". Max queries/second: "<<sws->d_qcachemisses.getMax()<<
@@ -218,10 +224,10 @@ string StatWebServer::indexfunction(const map<string,string> &varmap, void *ptr,
 void StatWebServer::launch()
 {
   try {
-    WebServer ws(arg()["webserver-address"], arg().asNum("webserver-port"),arg()["webserver-password"]);
-    ws.setCaller(this);
-    ws.registerHandler("",&indexfunction);
-    ws.go();
+    
+    d_ws->setCaller(this);
+    d_ws->registerHandler("",&indexfunction);
+    d_ws->go();
   }
   catch(...) {
     L<<Logger::Error<<"StatWebserver thread caught an exception, dying"<<endl;

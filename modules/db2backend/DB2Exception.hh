@@ -1,11 +1,11 @@
-// $Id: DB2Exception.hh 477 2005-09-03 18:15:37Z ahu $
+// $Id: DB2Exception.hh 1985 2011-02-07 09:39:22Z ahu $
 
 #ifndef DB2EXCEPTION_HH
 #define DB2EXCEPTION_HH
 
 #include <string>
 
-using namespace std;
+#include "pdns/namespaces.hh"
 
 #include <sqlcli1.h>
 

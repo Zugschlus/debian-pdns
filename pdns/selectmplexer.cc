@@ -7,8 +7,8 @@
 #include "utility.hh" 
 
 
-using namespace boost;
-using namespace std;
+#include "namespaces.hh"
+#include "namespaces.hh"
 
 static FDMultiplexer* make()
 {
@@ -65,7 +65,7 @@ int SelectFDMultiplexer::run(struct timeval* now)
   
   struct timeval tv={0,500000};
   int ret=select(fdmax + 1, &readfds, &writefds, 0, &tv);
-  Utility::gettimeofday(now, 0);
+  Utility::gettimeofday(now, 0); // MANDATORY!
   
   if(ret < 0 && errno!=EINTR)
     throw FDMultiplexerException("select returned error: "+stringerror());

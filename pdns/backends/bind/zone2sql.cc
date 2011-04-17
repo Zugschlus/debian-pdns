@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2007  PowerDNS.COM BV
+    Copyright (C) 2002 - 2011  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -16,21 +16,15 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-/* accepts a named.conf as parameter and outputs heaps of sql */
+/* accepts a named.conf or a zone as parameter and outputs heaps of sql */
 
-// $Id: zone2sql.cc 1298 2008-11-18 12:48:42Z ahu $ 
-#ifdef WIN32
-# pragma warning ( disable: 4786 )
-
-#endif // WIN32
 #include <unistd.h>
 #include <string>
 #include <map>
 
 #include <iostream>
 #include <stdio.h>
-
-using namespace std;
+#include "namespaces.hh"
 
 #include "dns.hh"
 #include "arguments.hh"
@@ -44,111 +38,116 @@ using namespace std;
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <boost/foreach.hpp>
 
-using namespace boost;
+
 StatBag S;
+static bool g_doDNSSEC;
+static int g_domainid;
 
-static const string sqlstr(const string &name)
+enum dbmode_t {MYSQL, ORACLE, POSTGRES, SQLITE};
+static dbmode_t g_mode;
+static bool g_intransaction;
+static int g_numRecords;
+
+static string sqlstr(const string &name)
 {
-  string a="\'";
+  if(g_mode == SQLITE)
+    return "'"+boost::replace_all_copy(name, "'", "''")+"'";
+  
+  string a;
 
-  for(string::const_iterator i=name.begin();i!=name.end();++i)
+  for(string::const_iterator i=name.begin();i!=name.end();++i) {
     if(*i=='\'' || *i=='\\'){
       a+='\\';
       a+=*i;
     }
     else
       a+=*i;
-  a+="\'";
-  return a;
+  }
+  return "'"+a+"'";
 }
 
-static int dirty_hack_num;
-
-enum dbmode_t {MYSQL=0,ORACLE=1,BARE=2,POSTGRES=3};
-dbmode_t mode;
-bool g_intransaction;
-
-static int num_records;
-static string lastsoa_qname;
-
-static void callback(unsigned int domain_id,const string &domain, const string &qtype, const string &ocontent, int ttl, int prio)
+static void startNewTransaction()
 {
-  static int lastsoa_domain_id=-1;
-  string content(ocontent);
-
-  num_records++;
-
-  if(qtype=="SOA") {
-    //    cerr<<"Juh: "<<dirty_hack_num<<", "<<lastsoa_domain_id<<", "<<lastsoa_qname<<", "<<domain<<endl;
-    if(dirty_hack_num==lastsoa_domain_id && lastsoa_qname!=stripDot(domain)) {
-      dirty_hack_num++;
-      cerr<<"Second SOA in zone, raised domain_id"<<endl;
-      if(mode==POSTGRES || mode==ORACLE) {
-	if(g_intransaction && ::arg().mustDo("transactions")) {
-	  cout<<"COMMIT WORK;"<<endl;
-	}
-	if(::arg().mustDo("transactions")) {
-	  if(mode==POSTGRES)
-	    cout<<"BEGIN TRANSACTION;"<<endl;
-	  g_intransaction=1;
-	}
-	
-	if(mode==POSTGRES) {
-	  cout<<"insert into domains (name,type) values ("<<toLower(sqlstr(stripDot(domain)))<<",'NATIVE');"<<endl;
-	}
-	else if(mode==ORACLE) {
-	  cout<<"insert into domains (id,name,type) values (domains_id_sequence.nextval,"<<toLower(sqlstr(domain))<<",'NATIVE');"<<endl;
-	}
-      }
+  if(!::arg().mustDo("transactions"))
+    return;
+   
+  if(g_intransaction) { 
+    if(g_mode==POSTGRES || g_mode==ORACLE) {
+      cout<<"COMMIT WORK;"<<endl;
     }
-    SOAData soadata;
-    fillSOAData(content, soadata);
-    soadata.hostmaster=stripDot(soadata.hostmaster);
-    soadata.nameserver=stripDot(soadata.nameserver);
-    content=serializeSOAData(soadata);
-
-    lastsoa_qname=stripDot(domain);
+    else if(g_mode == MYSQL || g_mode == SQLITE) {
+      cout<<"COMMIT;"<<endl;
+    }
   }
+  g_intransaction=1;
   
+  if(g_mode == MYSQL)
+    cout<<"BEGIN;"<<endl;
+  else
+    cout<<"BEGIN TRANSACTION;"<<endl;
+}
+
+static void emitRecord(const string& zoneName, const string &qname, const string &qtype, const string &ocontent, int ttl, int prio)
+{
+  g_numRecords++;
+  string content(ocontent);
   if(qtype == "MX" || qtype == "SRV") { 
     prio=atoi(content.c_str());
     
     string::size_type pos = content.find_first_not_of("0123456789");
     if(pos != string::npos)
-      erase_head(content, pos);
+      boost::erase_head(content, pos);
     trim_left(content);
   }
 
-
-  lastsoa_domain_id=dirty_hack_num;
-
-  if(mode==MYSQL) {
-    cout<<"insert into records (domain_id, name,type,content,ttl,prio) values ("<< dirty_hack_num<<", "<<
-      sqlstr(stripDot(domain))<<", "<<
-      sqlstr(qtype)<<", "<<
-      sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<<");\n";
+  bool auth = true;
+  if(qtype == "NS" && !pdns_iequals(stripDot(qname), zoneName)) {
+    auth=false;
   }
-  if(mode==POSTGRES) {
-    cout<<"insert into records (domain_id, name,type,content,ttl,prio) select id ,"<<
-      sqlstr(toLower(stripDot(domain)))<<", "<<
-      sqlstr(qtype)<<", "<<
-      sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<< 
-      " from domains where name="<<toLower(sqlstr(lastsoa_qname))<<";\n";
+
+  if(g_mode==MYSQL || g_mode==SQLITE) {
+    if(!g_doDNSSEC) {
+      cout<<"insert into records (domain_id, name,type,content,ttl,prio) select id ,"<<
+        sqlstr(toLower(stripDot(qname)))<<", "<<
+        sqlstr(qtype)<<", "<<
+        sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<< 
+        " from domains where name="<<toLower(sqlstr(zoneName))<<";\n";
+    } else
+    {
+      cout<<"insert into records (domain_id, name, ordername, auth, type,content,ttl,prio) select id ,"<<
+        sqlstr(toLower(stripDot(qname)))<<", "<<
+        sqlstr(toLower(labelReverse(makeRelative(stripDot(qname), zoneName))))<<", "<<auth<<", "<<
+        sqlstr(qtype)<<", "<<
+        sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<< 
+        " from domains where name="<<toLower(sqlstr(zoneName))<<";\n";
+    }
   }
-  else if(mode==ORACLE) {
+  else if(g_mode==POSTGRES) {
+    if(!g_doDNSSEC) {
+      cout<<"insert into records (domain_id, name,type,content,ttl,prio) select id ,"<<
+        sqlstr(toLower(stripDot(qname)))<<", "<<
+        sqlstr(qtype)<<", "<<
+        sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<< 
+        " from domains where name="<<toLower(sqlstr(zoneName))<<";\n";
+    } else
+    {
+      cout<<"insert into records (domain_id, name, ordername, auth, type,content,ttl,prio) select id ,"<<
+        sqlstr(toLower(stripDot(qname)))<<", "<<
+        sqlstr(toLower(labelReverse(makeRelative(stripDot(qname), zoneName))))<<", '"<< (auth  ? 't' : 'f') <<"', "<<
+        sqlstr(qtype)<<", "<<
+        sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<< 
+        " from domains where name="<<toLower(sqlstr(zoneName))<<";\n";
+    }
+  }
+  else if(g_mode==ORACLE) {
     cout<<"insert into Records (id,ZoneId, name,type,content,TimeToLive,Priority) select RECORDS_ID_SEQUENCE.nextval,id ,"<<
-      sqlstr(toLower(stripDot(domain)))<<", "<<
+      sqlstr(toLower(stripDot(qname)))<<", "<<
       sqlstr(qtype)<<", "<<
       sqlstr(stripDot(content))<<", "<<ttl<<", "<<prio<< 
-      " from Domains where name="<<toLower(sqlstr(lastsoa_qname))<<";\n";
+      " from Domains where name="<<toLower(sqlstr(zoneName))<<";\n";
   }
-  else if(mode==BARE) {
-    cout<< dirty_hack_num<<"\t"<<
-      sqlstr(stripDot(domain))<<"\t"<<
-      sqlstr(qtype)<<"\t"<<sqlstr(stripDot(content))<<"\t"<<prio<<"\t"<<ttl<<"\n";
-  }
-
 }
 
 
@@ -170,22 +169,23 @@ int main(int argc, char **argv)
     reportAllTypes();
     reportFancyTypes();
 #if __GNUC__ >= 3
-    ios_base::sync_with_stdio(false);
+    std::ios_base::sync_with_stdio(false);
 #endif
-    lastsoa_qname=" ";
-    ::arg().setSwitch("mysql","Output in format suitable for mysqlbackend")="yes";
-    ::arg().setCmd("gpgsql","Output in format suitable for default gpgsqlbackend");
-    ::arg().setCmd("gmysql","Output in format suitable for default gmysqlbackend");
-    ::arg().setCmd("oracle","Output in format suitable for the oraclebackend");
-    ::arg().setCmd("bare","Output in a bare format, suitable for further parsing");
+   
+    ::arg().setSwitch("gpgsql","Output in format suitable for default gpgsqlbackend")="no";
+    ::arg().setSwitch("gmysql","Output in format suitable for default gmysqlbackend")="no";
+    ::arg().setSwitch("oracle","Output in format suitable for the oraclebackend")="no";
+    ::arg().setSwitch("gsqlite","Output in format suitable for default gsqlitebackend")="no";
     ::arg().setSwitch("verbose","Verbose comments on operation")="no";
+    ::arg().setSwitch("dnssec","Add DNSSEC related data")="no";
     ::arg().setSwitch("slave","Keep BIND slaves as slaves")="no";
     ::arg().setSwitch("transactions","If target SQL supports it, use transactions")="no";
     ::arg().setSwitch("on-error-resume-next","Continue after errors")="no";
-    ::arg().set("start-id","Value of first domain-id")="0";
-    ::arg().set("zone","Zonefile with $ORIGIN to parse")="";
+    ::arg().set("start-id","Value of first domain-id when not parsing named.conf")="0";
+    ::arg().set("zone","Zonefile to parse")="";
     ::arg().set("zone-name","Specify an $ORIGIN in case it is not present")="";
     ::arg().set("named-conf","Bind 8/9 named.conf to parse")="";
+    
     ::arg().set("soa-minimum-ttl","Do not change")="0";
     ::arg().set("soa-refresh-default","Do not change")="0";
     ::arg().set("soa-retry-default","Do not change")="0";
@@ -206,20 +206,27 @@ int main(int argc, char **argv)
       exit(1);
     }
   
-    if(::arg().mustDo("mysql")) 
-      mode=MYSQL;
-    if(::arg().mustDo("gpgsql") || ::arg().mustDo("gmysql"))
-      mode=POSTGRES;
-    if(::arg().mustDo("bare"))
-      mode=BARE;
-    if(::arg().mustDo("oracle")) {
-      mode=ORACLE;
+    if(::arg().mustDo("gmysql")) 
+      g_mode=MYSQL;
+    else if(::arg().mustDo("gpgsql"))
+      g_mode=POSTGRES;
+    else if(::arg().mustDo("gsqlite"))
+      g_mode=SQLITE;
+    else if(::arg().mustDo("oracle")) {
+      g_mode=ORACLE;
       if(!::arg().mustDo("transactions"))
-	cout<<"set autocommit on;"<<endl;
+        cout<<"set autocommit on;"<<endl;
+    }
+    else {
+      cerr<<"Unknown SQL mode!\n\n";
+      cerr<<"syntax:"<<endl<<endl;
+      cerr<<::arg().helpstring()<<endl;
+      exit(1);
     }
 
-
-    dirty_hack_num=::arg().asNum("start-id");
+    g_doDNSSEC=::arg().mustDo("dnssec");
+      
+    g_domainid=::arg().asNum("start-id");
     namedfile=::arg()["named-conf"];
     zonefile=::arg()["zone"];
 
@@ -233,90 +240,91 @@ int main(int argc, char **argv)
       vector<BindDomainInfo> domains=BP.getDomains();
       struct stat st;
       for(vector<BindDomainInfo>::iterator i=domains.begin(); i!=domains.end(); ++i) {
-	if(stat(i->filename.c_str(), &st) == 0) {
-	  i->d_dev = st.st_dev;
-	  i->d_ino = st.st_ino;
-	}
+        if(stat(i->filename.c_str(), &st) == 0) {
+          i->d_dev = st.st_dev;
+          i->d_ino = st.st_ino;
+        }
       }
       
       sort(domains.begin(), domains.end()); // put stuff in inode order
 
       int numdomains=domains.size();
       int tick=numdomains/100;
-      //      ZP.setDirectory(BP.getDirectory());
     
       for(vector<BindDomainInfo>::const_iterator i=domains.begin();
-	  i!=domains.end();
-	  ++i)
-	{
-	  try {
-	    if(mode==POSTGRES || mode==ORACLE) {
-	      if(g_intransaction && ::arg().mustDo("transactions")) {
-		cout<<"COMMIT WORK;"<<endl;
-	      }
-	      if(::arg().mustDo("transactions")) {
-		if(mode==POSTGRES)
-		  cout<<"BEGIN TRANSACTION;"<<endl;
-		g_intransaction=1;
-	      }
+          i!=domains.end();
+          ++i)
+        {
+          if(i->type!="master" && i->type!="slave") {
+            cerr<<" Warning! Skipping '"<<i->type<<"' zone '"<<i->name<<"'"<<endl;
+            continue;
+          }
+          try {
+            startNewTransaction();
+            
+            if(!::arg().mustDo("slave")) {
+              if(g_mode==POSTGRES || g_mode==MYSQL) {
+                cout<<"insert into domains (name,type) values ("<<toLower(sqlstr(stripDot(i->name)))<<",'NATIVE');"<<endl;
+              }
+              else if(g_mode==ORACLE) {
+                cout<<"insert into domains (id,name,type) values (domains_id_sequence.nextval,"<<toLower(sqlstr(i->name))<<",'NATIVE');"<<endl;
+              }
+              else if(g_mode==ORACLE) {
+                cout<<"insert into domains (id,name,type) values (domains_id_sequence.nextval,"<<toLower(sqlstr(i->name))<<",'NATIVE');"<<endl;
+              }
+            }
+            else 
+            {
+              if(g_mode==POSTGRES || g_mode==MYSQL || g_mode==SQLITE) {
+                if(i->masters.empty())
+                  cout<<"insert into domains (name,type) values ("<<sqlstr(i->name)<<",'NATIVE');"<<endl;
+                else {
+                  string masters;
+                  BOOST_FOREACH(const string& mstr, i->masters) {
+                    masters.append(mstr);
+                    masters.append(1, ' ');
+                  }                  
+                  cout<<"insert into domains (name,type,master) values ("<<sqlstr(i->name)<<",'SLAVE'"<<", '"<<masters<<"');"<<endl;
+                }
+              }
+            }
+            
+            
+            ZoneParserTNG zpt(i->filename, i->name, BP.getDirectory());
+            DNSResourceRecord rr;
+            while(zpt.get(rr)) 
+              emitRecord(i->name, rr.qname, rr.qtype.getName(), rr.content, rr.ttl, rr.priority);
+            num_domainsdone++;
+          }
+          catch(std::exception &ae) {
+            if(!::arg().mustDo("on-error-resume-next"))
+              throw;
+            else
+              cerr<<endl<<ae.what()<<endl;
+          }
+          catch(AhuException &ae) {
+            if(!::arg().mustDo("on-error-resume-next"))
+              throw;
+            else
+              cerr<<ae.reason<<endl;
+          }
 
-	      if(mode==POSTGRES) {
-		if(::arg().mustDo("slave")) {
-		  if(i->masters.empty())
-		    cout<<"insert into domains (name,type) values ("<<sqlstr(i->name)<<",'NATIVE');"<<endl;
-		  else {
-		    string masters;
-		    for(vector<string>::const_iterator iter = i->masters.begin(); iter != i->masters.end(); ++iter) {
-		      if(iter != i->masters.begin())
-			masters.append(1, ' ');
-		      masters+=*iter;
-		    }
-		    cout<<"insert into domains (name,type,master) values ("<<sqlstr(i->name)<<",'SLAVE'"<<", '"<<masters<<"');"<<endl;
-		  }
-		}
-		else
-		  cout<<"insert into domains (name,type) values ("<<sqlstr(i->name)<<",'NATIVE');"<<endl;
-	      }
-	      else if(mode==ORACLE) {
-		cout<<"insert into domains (id,name,type) values (domains_id_sequence.nextval,"<<toLower(sqlstr(i->name))<<",'NATIVE');"<<endl;
-	      }
-	      lastsoa_qname=i->name;
-	    }
-	    ZoneParserTNG zpt(i->filename, i->name, BP.getDirectory());
-	    DNSResourceRecord rr;
-	    while(zpt.get(rr)) 
-	      callback(0, rr.qname, rr.qtype.getName(), rr.content, rr.ttl, rr.priority);
-	    num_domainsdone++;
-	  }
-	  catch(std::exception &ae) {
-	    if(!::arg().mustDo("on-error-resume-next"))
-	      throw;
-	    else
-	      cerr<<endl<<ae.what()<<endl;
-	  }
-
-	  catch(AhuException &ae) {
-	    if(!::arg().mustDo("on-error-resume-next"))
-	      throw;
-	    else
-	      cerr<<ae.reason<<endl;
-	  }
-
-	  dirty_hack_num++;
-	  if(!tick || !((count++)%tick))
-	    cerr<<"\r"<<count*100/numdomains<<"% done ("<<i->filename<<")\033\133\113";
-	}
+          
+          if(!tick || !((count++)%tick))
+            cerr<<"\r"<<count*100/numdomains<<"% done ("<<i->filename<<")\033\133\113";
+        }
       cerr<<"\r100% done\033\133\113"<<endl;
     }
     else {
       ZoneParserTNG zpt(zonefile, ::arg()["zone-name"]);
       DNSResourceRecord rr;
-      dirty_hack_num=-1; // trigger first SOA output
+      g_domainid=::arg().asNum("start-id"); // trigger first SOA output
+      startNewTransaction();
       while(zpt.get(rr)) 
-	callback(0, rr.qname, rr.qtype.getName(), rr.content, rr.ttl, rr.priority);
+        emitRecord(::arg()["zone-name"], rr.qname, rr.qtype.getName(), rr.content, rr.ttl, rr.priority);
       num_domainsdone=1;
     }
-    cerr<<num_domainsdone<<" domains were fully parsed, containing "<<num_records<<" records\n";
+    cerr<<num_domainsdone<<" domains were fully parsed, containing "<<g_numRecords<<" records\n";
     
   }
   catch(AhuException &ae) {
@@ -332,7 +340,7 @@ int main(int argc, char **argv)
     exit(0);
   }
   
-  if((mode==POSTGRES || mode==ORACLE) && ::arg().mustDo("transactions") && g_intransaction)
+  if(::arg().mustDo("transactions") && g_intransaction)
     cout<<"COMMIT WORK;"<<endl;
   return 1;
 

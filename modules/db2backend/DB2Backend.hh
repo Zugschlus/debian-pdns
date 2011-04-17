@@ -1,4 +1,4 @@
-// $Id: DB2Backend.hh 477 2005-09-03 18:15:37Z ahu $
+// $Id: DB2Backend.hh 1985 2011-02-07 09:39:22Z ahu $
 
 #ifndef DB2BACKEND_HH
 #define DB2BACKEND_HH
@@ -6,7 +6,7 @@
 #include <string>
 #include <map>
 
-using namespace std;
+#include "pdns/namespaces.hh"
 
 #include <sqlcli1.h>
 

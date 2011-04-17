@@ -2,8 +2,9 @@
 #define PDNS_REC_CHANNEL
 #include <string>
 #include <map>
+#include <inttypes.h>
 #if !defined SOLARIS8 && !defined WIN32
-#include <stdint.h>
+
 #elif defined WIN32
 #include "utility.hh"
 #endif
@@ -29,7 +30,7 @@ public:
   uint64_t getStat(const std::string& name);
 
   void send(const std::string& msg, const std::string* remote=0);
-  std::string recv(std::string* remote=0);
+  std::string recv(std::string* remote=0, unsigned int timeout=5);
 
   int d_fd;
 private:

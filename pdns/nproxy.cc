@@ -16,9 +16,9 @@
 #include "dnsrecords.hh"
 #include "mplexer.hh"
 
-using namespace boost;
+#include "namespaces.hh"
 using namespace ::boost::multi_index;
-using namespace std;
+#include "namespaces.hh"
 
 namespace po = boost::program_options;
 po::variables_map g_vm;
@@ -137,7 +137,7 @@ try
   //  cerr<<"Inside notification response for: "<<mdp.d_qname<<endl;
 
   if(!g_nifs.count(mdp.d_header.id)) {
-    syslogFmt(boost::format("Response from inner PowerDNS with unkown ID %1%") % (uint16_t)mdp.d_header.id);
+    syslogFmt(boost::format("Response from inner PowerDNS with unknown ID %1%") % (uint16_t)mdp.d_header.id);
     return;
   }
   
@@ -315,11 +315,6 @@ int Utility::inet_pton( int af, const char *src, void *dst )
   return ::inet_pton(af, src, dst);
 }
 
-// Compares two string, ignoring the case.
-int Utility::strcasecmp( const char *s1, const char *s2 )
-{
-  return ::strcasecmp( s1, s2 );
-}
 
 // Returns the current time.
 int Utility::gettimeofday( struct timeval *tv, void *tz )

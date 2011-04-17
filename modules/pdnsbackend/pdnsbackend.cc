@@ -1,4 +1,4 @@
-// $Id: pdnsbackend.cc 1317 2008-11-28 15:00:33Z ahu $ 
+// $Id: pdnsbackend.cc 2145 2011-04-05 08:01:34Z ahu $ 
 
 #include <string>
 #include <map>
@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <sstream>
 
-using namespace std;
+#include "pdns/namespaces.hh"
 
 #include <pdns/dns.hh>
 #include <pdns/dnsbackend.hh>
@@ -39,17 +39,18 @@ PdnsBackend::PdnsBackend(const string &suffix)
    : d_result(NULL)
 {
    mysql_init(&d_database);
+   mysql_options(&d_database, MYSQL_READ_DEFAULT_GROUP, "client");
    d_suffix=suffix;
    MYSQL* theDatabase = mysql_real_connect
       (
-	 &d_database,
-	 arg()["pdns-"+suffix+"host"].c_str(),
-	 arg()["pdns-"+suffix+"user"].c_str(),
-	 arg()["pdns-"+suffix+"password"].c_str(),
-	 arg()["pdns-"+suffix+"dbname"].c_str(),
-	 0,
-	 arg()["pdns-"+suffix+"socket"].empty() ? NULL : arg()["pdns-"+suffix+"socket"].c_str(),
-	 0
+         &d_database,
+         arg()["pdns-"+suffix+"host"].c_str(),
+         arg()["pdns-"+suffix+"user"].c_str(),
+         arg()["pdns-"+suffix+"password"].c_str(),
+         arg()["pdns-"+suffix+"dbname"].c_str(),
+         0,
+         arg()["pdns-"+suffix+"socket"].empty() ? NULL : arg()["pdns-"+suffix+"socket"].c_str(),
+         0
       );
 
    if (theDatabase == NULL) {
@@ -167,7 +168,7 @@ bool PdnsBackend::getSOA(const string& inZoneName, SOAData& outSoaData, DNSPacke
    //cout << "PdnsBackend::getSOA" << endl;
 
    ostringstream o;
-   o << "select Id,Hostmaster,Serial from Zones where Active = 1 and Name = '" << sqlEscape(inZoneName) << "'";
+   o << "select Id,Hostmaster,Serial,TimeToLive from Zones where Active = 1 and Name = '" << sqlEscape(inZoneName) << "'";
 
    this->Query(o.str());
       
@@ -179,6 +180,7 @@ bool PdnsBackend::getSOA(const string& inZoneName, SOAData& outSoaData, DNSPacke
       outSoaData.nameserver = arg()["default-soa-name"];
       outSoaData.hostmaster = theRow[1];
       outSoaData.serial = atoi(theRow[2]);
+      outSoaData.ttl = atoi(theRow[3]);      
       
       outSoaData.refresh = arg()["pdns-"+d_suffix+"soa-refresh"].empty() ? 10800 : atoi(arg()["pdns-"+d_suffix+"soa-refresh"].c_str());
       outSoaData.retry = 3600;
@@ -269,7 +271,7 @@ bool PdnsBackend::getDomainInfo(const string &domain, DomainInfo &di)
       
       /* We have to store record in local variabel... theRow[2] == NULL makes it empty in di.master = theRow[2]???? */
       if(theRow[2] != NULL)
-	 stringtok(masters, theRow[2], " ,\t");
+         stringtok(masters, theRow[2], " ,\t");
       
       if (masters.empty())
       {
@@ -300,11 +302,13 @@ bool PdnsBackend::getDomainInfo(const string &domain, DomainInfo &di)
 
 bool PdnsBackend::startTransaction(const string &qname, int domain_id)
 {
+   
    ostringstream o;
    o << "delete from Records where ZoneId=" << domain_id;
 
    this->Execute("begin");
-   this->Execute(o.str());
+   if(domain_id >= 0)
+     this->Execute(o.str());
    
    d_axfrcount = 0;
    
@@ -365,20 +369,20 @@ bool PdnsBackend::feedRecord(const DNSResourceRecord &rr)
 
 bool PdnsBackend::commitTransaction()
 {
-	 this->Execute("commit");
-	 
-	 d_axfrcount = 0;
-	 
-	 return true;
+         this->Execute("commit");
+         
+         d_axfrcount = 0;
+         
+         return true;
 }
 
 bool PdnsBackend::abortTransaction()
 {
-	 this->Execute("rollback");
-	 
-	 d_axfrcount = 0;
-	 
-	 return true;
+         this->Execute("rollback");
+         
+         d_axfrcount = 0;
+         
+         return true;
 }
 
 void PdnsBackend::setFresh(u_int32_t domain_id)
@@ -418,12 +422,12 @@ bool PdnsBackend::get(DNSResourceRecord& r)
       r.content=row[0];  // content
   
       if(!row[1])  // ttl
-	 r.ttl=0;
+         r.ttl=0;
       else
-	 r.ttl=atoi(row[1]);
+         r.ttl=atoi(row[1]);
         
       if(row[2])
-	 r.priority=atoi(row[2]);;
+         r.priority=atoi(row[2]);;
 
       r.qname=row[5];
    
@@ -431,9 +435,9 @@ bool PdnsBackend::get(DNSResourceRecord& r)
       
       r.domain_id=atoi(row[4]);
       if(!row[6])
-	 r.last_modified=0;
+         r.last_modified=0;
       else
-	 r.last_modified=atoi(row[6]);
+         r.last_modified=atoi(row[6]);
    
       theResult = true;
    }
@@ -449,18 +453,18 @@ class PDNSFactory : public BackendFactory
   
       void declareArguments(const string &suffix="")
       {
-	 declare(suffix,"dbname","Pdns backend database name to connect to","powerdns");
-	 declare(suffix,"user","Pdns backend user to connect as","powerdns");
-	 declare(suffix,"host","Pdns backend host to connect to","");
-	 declare(suffix,"password","Pdns backend password to connect with","");
-	 declare(suffix,"socket","Pdns backend socket to connect to","");
-	 declare(suffix,"soa-refresh","Pdns SOA refresh in seconds","");
-	 declare(suffix,"max-slave-records","Pdns backend maximal records to transfer", "100");
+         declare(suffix,"dbname","Pdns backend database name to connect to","powerdns");
+         declare(suffix,"user","Pdns backend user to connect as","powerdns");
+         declare(suffix,"host","Pdns backend host to connect to","");
+         declare(suffix,"password","Pdns backend password to connect with","");
+         declare(suffix,"socket","Pdns backend socket to connect to","");
+         declare(suffix,"soa-refresh","Pdns SOA refresh in seconds","");
+         declare(suffix,"max-slave-records","Pdns backend maximal records to transfer", "100");
       }
       
       DNSBackend *make(const string &suffix="")
       {
-	 return new PdnsBackend(suffix);
+         return new PdnsBackend(suffix);
       }
 };
 
@@ -472,8 +476,8 @@ class PdnsBeLoader
 
       PdnsBeLoader()
       {
-	 BackendMakers().report(new PDNSFactory);
-	 L<<Logger::Notice<<backendName<<" This is the pdns module version "VERSION" ("__DATE__", "__TIME__") reporting"<<endl;
+         BackendMakers().report(new PDNSFactory);
+         L<<Logger::Notice<<backendName<<" This is the pdns module version "VERSION" ("__DATE__", "__TIME__") reporting"<<endl;
       }
 };
 

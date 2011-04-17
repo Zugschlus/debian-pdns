@@ -9,8 +9,8 @@
 #include <sys/epoll.h>
 #endif
 
-using namespace boost;
-using namespace std;
+#include "namespaces.hh"
+#include "namespaces.hh"
 
 class EpollFDMultiplexer : public FDMultiplexer
 {
@@ -109,7 +109,7 @@ int EpollFDMultiplexer::run(struct timeval* now)
   }
   
   int ret=epoll_wait(d_epollfd, d_eevents.get(), s_maxevents, 500);
-  gettimeofday(now,0);
+  gettimeofday(now,0); // MANDATORY
   
   if(ret < 0 && errno!=EINTR)
     throw FDMultiplexerException("epoll returned error: "+stringerror());

@@ -22,7 +22,8 @@
 #include <string>
 
 
-using namespace std;
+#include "namespaces.hh"
+class Server;
 
 class WebServer
 {
@@ -41,5 +42,6 @@ private:
   static map<string,HandlerFunction *>d_functions;
   static void *d_that;
   static string d_password;
+  Server* d_server;
 };
 #endif /* WEBSERVER_HH */

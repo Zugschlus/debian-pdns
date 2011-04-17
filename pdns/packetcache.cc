@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2008  PowerDNS.COM BV
+    Copyright (C) 2002 - 2011  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -28,7 +28,7 @@ extern StatBag S;
 PacketCache::PacketCache()
 {
   pthread_rwlock_init(&d_mut,0);
-  d_hit=d_miss=0;
+  d_ops = 0;
 
   d_ttl=-1;
   d_recursivettl=-1;
@@ -42,27 +42,31 @@ PacketCache::PacketCache()
   d_statnumentries=S.getPointer("packetcache-size");
 }
 
+PacketCache::~PacketCache()
+{
+  WriteLock l(&d_mut);
+}
+
 int PacketCache::get(DNSPacket *p, DNSPacket *cached)
 {
   extern StatBag S;
-  if(!((d_hit+d_miss)%150000)) {
-    cleanup();
-  }
 
   if(d_ttl<0) 
     getTTLS();
 
+  if(!((d_ops++) % 300000)) {
+    cleanup();
+  }
+
   if(d_doRecursion && p->d.rd) { // wants recursion
     if(!d_recursivettl) {
       (*d_statnummiss)++;
-      d_miss++;
       return 0;
     }
   }
   else { // does not
     if(!d_ttl) {
       (*d_statnummiss)++;
-      d_miss++;
       return 0;
     }
   }
@@ -80,14 +84,11 @@ int PacketCache::get(DNSPacket *p, DNSPacket *cached)
       return 0;
     }
 
-    if(!((d_hit+d_miss)%30000)) {
-      *d_statnumentries=d_map.size(); // needs lock
-    }
-    haveSomething=getEntry(p->qdomain, p->qtype, PacketCache::PACKETCACHE, value, -1, packetMeritsRecursion);
+    uint16_t maxReplyLen = p->d_tcp ? 0xffff : p->getMaxReplyLen();
+    haveSomething=getEntryLocked(p->qdomain, p->qtype, PacketCache::PACKETCACHE, value, -1, packetMeritsRecursion, maxReplyLen, p->d_dnssecOk);
   }
   if(haveSomething) {
     (*d_statnumhit)++;
-    d_hit++;
     if(cached->noparse(value.c_str(), value.size()) < 0) {
       return 0;
     }
@@ -97,7 +98,6 @@ int PacketCache::get(DNSPacket *p, DNSPacket *cached)
 
   //  cerr<<"Packet cache miss for '"<<p->qdomain<<"', merits: "<<packetMeritsRecursion<<endl;
   (*d_statnummiss)++;
-  d_miss++;
   return 0; // bummer
 }
 
@@ -119,18 +119,27 @@ void PacketCache::insert(DNSPacket *q, DNSPacket *r)
     return; // do not try to cache packets with multiple questions
   }
 
-  bool packetMeritsRecursion=d_doRecursion && q->d.rd;
+  if(q->qclass != QClass::IN) // we only cache the INternet
+    return;
 
-  insert(q->qdomain, q->qtype, PacketCache::PACKETCACHE, r->getString(), packetMeritsRecursion ? d_recursivettl : d_ttl, -1, packetMeritsRecursion);
+  bool packetMeritsRecursion=d_doRecursion && q->d.rd;
+  uint16_t maxReplyLen = q->d_tcp ? 0xffff : q->getMaxReplyLen();
+  insert(q->qdomain, q->qtype, PacketCache::PACKETCACHE, r->getString(), packetMeritsRecursion ? d_recursivettl : d_ttl, -1, packetMeritsRecursion, 
+    maxReplyLen, q->d_dnssecOk);
 }
 
 // universal key appears to be: qname, qtype, kind (packet, query cache), optionally zoneid, meritsRecursion
-void PacketCache::insert(const string &qname, const QType& qtype, CacheEntryType cet, const string& value, unsigned int ttl, int zoneID, bool meritsRecursion)
+void PacketCache::insert(const string &qname, const QType& qtype, CacheEntryType cet, const string& value, unsigned int ttl, int zoneID, 
+  bool meritsRecursion, unsigned int maxReplyLen, bool dnssecOk)
 {
+  if(!((d_ops++) % 300000)) {
+    cleanup();
+  }
+
   if(!ttl)
     return;
   
-  //  cerr<<"Inserting qname '"<<qname<<"', cet: "<<(int)cet<<", value: '"<< (cet ? value : "PACKET") <<"', qtype: "<<qtype.getName()<<", ttl: "<<ttl<<endl;
+  //cerr<<"Inserting qname '"<<qname<<"', cet: "<<(int)cet<<", value: '"<< (cet ? value : "PACKET") <<"', qtype: "<<qtype.getName()<<", ttl: "<<ttl<<", maxreplylen: "<<maxReplyLen<<endl;
   CacheEntry val;
   val.ttd=time(0)+ttl;
   val.qname=qname;
@@ -138,7 +147,9 @@ void PacketCache::insert(const string &qname, const QType& qtype, CacheEntryType
   val.value=value;
   val.ctype=cet;
   val.meritsRecursion=meritsRecursion;
-
+  val.maxReplyLen = maxReplyLen;
+  val.dnssecOk = dnssecOk;
+  
   TryWriteLock l(&d_mut);
   if(l.gotIt()) { 
     bool success;
@@ -220,13 +231,13 @@ int PacketCache::purge(const vector<string> &matches)
       string dotsuffix = "."+suffix;
 
       for(; iter != d_map.end(); ++iter) {
-	if(!iequals(iter->qname, suffix) && !iends_with(iter->qname, dotsuffix)) {
-	  //	cerr<<"Stopping!"<<endl;
-	  break;
-	}
-	//	cerr<<"Will erase '"<<iter->qname<<"'\n";
+        if(!pdns_iequals(iter->qname, suffix) && !iends_with(iter->qname, dotsuffix)) {
+          //	cerr<<"Stopping!"<<endl;
+          break;
+        }
+        //	cerr<<"Will erase '"<<iter->qname<<"'\n";
 
-	delcount++;
+        delcount++;
       }
       //    cerr<<"End dump!"<<endl;
       d_map.erase(start, iter);
@@ -240,23 +251,37 @@ int PacketCache::purge(const vector<string> &matches)
   *d_statnumentries=d_map.size();
   return delcount;
 }
-
-bool PacketCache::getEntry(const string &qname, const QType& qtype, CacheEntryType cet, string& value, int zoneID, bool meritsRecursion)
+// called from ueberbackend
+bool PacketCache::getEntry(const string &qname, const QType& qtype, CacheEntryType cet, string& value, int zoneID, bool meritsRecursion, 
+  unsigned int maxReplyLen, bool dnssecOk)
 {
+  if(d_ttl<0) 
+    getTTLS();
+
+  if(!((d_ops++) % 300000)) {
+    cleanup();
+  }
+
   TryReadLock l(&d_mut); // take a readlock here
   if(!l.gotIt()) {
     S.inc( "deferred-cache-lookup");
     return false;
   }
 
+  return getEntryLocked(qname, qtype, cet, value, zoneID, meritsRecursion, maxReplyLen, dnssecOk);
+}
+
+
+bool PacketCache::getEntryLocked(const string &qname, const QType& qtype, CacheEntryType cet, string& value, int zoneID, bool meritsRecursion,
+  unsigned int maxReplyLen, bool dnssecOK)
+{
   uint16_t qt = qtype.getCode();
-  cmap_t::const_iterator i=d_map.find(tie(qname, qt, cet, zoneID, meritsRecursion));
+  //cerr<<"Lookup for maxReplyLen: "<<maxReplyLen<<endl;
+  cmap_t::const_iterator i=d_map.find(tie(qname, qt, cet, zoneID, meritsRecursion, maxReplyLen, dnssecOK));
   time_t now=time(0);
   bool ret=(i!=d_map.end() && i->ttd > now);
   if(ret)
     value = i->value;
-  
-  //  cerr<<"Cache hit: "<<(int)cet<<", "<<ret<<endl;
   
   return ret;
 }
@@ -271,14 +296,14 @@ map<char,int> PacketCache::getCounts()
   for(cmap_t::const_iterator iter = d_map.begin() ; iter != d_map.end(); ++iter) {
     if(iter->ctype == PACKETCACHE)
       if(iter->meritsRecursion)
-	recursivePackets++;
+        recursivePackets++;
       else
-	nonRecursivePackets++;
+        nonRecursivePackets++;
     else if(iter->ctype == QUERYCACHE) {
       if(iter->value.empty())
-	negQueryCacheEntries++;
+        negQueryCacheEntries++;
       else
-	queryCacheEntries++;
+        queryCacheEntries++;
     }
   }
   ret['!']=negQueryCacheEntries;
@@ -311,7 +336,7 @@ void PacketCache::cleanup()
   }
 
   unsigned int lookAt=0;
-  // two modes - if toTrim is 0, just look through 10000 records and nuke everything that is expired
+  // two modes - if toTrim is 0, just look through 10%  of the cache and nuke everything that is expired
   // otherwise, scan first 5*toTrim records, and stop once we've nuked enough
   if(toTrim)
     lookAt=5*toTrim;
@@ -327,8 +352,8 @@ void PacketCache::cleanup()
 
   typedef cmap_t::nth_index<1>::type sequence_t;
   sequence_t& sidx=d_map.get<1>();
-  unsigned int erased=0;
-  for(sequence_t::iterator i=sidx.begin(); i != sidx.end();) {
+  unsigned int erased=0, lookedAt=0;
+  for(sequence_t::iterator i=sidx.begin(); i != sidx.end(); lookedAt++) {
     if(i->ttd < now) {
       sidx.erase(i++);
       erased++;
@@ -339,6 +364,8 @@ void PacketCache::cleanup()
     if(toTrim && erased > toTrim)
       break;
 
+    if(lookedAt > lookAt)
+      break;
   }
   //  cerr<<"erased: "<<erased<<endl;
   *d_statnumentries=d_map.size();

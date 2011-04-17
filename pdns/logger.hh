@@ -36,7 +36,7 @@ typedef int pthread_mutex_t;
 typedef int pthread_t;
 #endif // WIN32
 
-using namespace std;
+#include "namespaces.hh"
 
 //! The Logger class can be used to log messages in various ways.
 class Logger
@@ -47,7 +47,7 @@ public:
 
   //! The urgency of a log message
   enum Urgency {All=99999,NTLog=12345,Alert=LOG_ALERT, Critical=LOG_CRIT, Error=LOG_ERR, Warning=LOG_WARNING,
-		Notice=LOG_NOTICE,Info=LOG_INFO, Debug=LOG_DEBUG, None=-1};
+        	Notice=LOG_NOTICE,Info=LOG_INFO, Debug=LOG_DEBUG, None=-1};
 
 #else
   Logger( const string &, int facility = 0 ); //!< pass the identification you wish to appear in the log
@@ -61,7 +61,7 @@ public:
     Critical= EVENTLOG_ERROR_TYPE, 
     Error   = EVENTLOG_ERROR_TYPE, 
     Warning = EVENTLOG_WARNING_TYPE,
-		Notice  = EVENTLOG_INFORMATION_TYPE,
+        	Notice  = EVENTLOG_INFORMATION_TYPE,
     Info    = EVENTLOG_INFORMATION_TYPE, 
     Debug   = EVENTLOG_INFORMATION_TYPE, 
     None    = -1
@@ -110,6 +110,7 @@ public:
   */
   Logger& operator<<(const string &s);   //!< log a string
   Logger& operator<<(int);   //!< log an int
+  Logger& operator<<(double);   //!< log a double
   Logger& operator<<(unsigned int);   //!< log an unsigned int
   Logger& operator<<(long);   //!< log an unsigned int
   Logger& operator<<(unsigned long);   //!< log an unsigned int
@@ -117,7 +118,7 @@ public:
   Logger& operator<<(Urgency);    //!< set the urgency, << style
 
 #ifndef WIN32
-  Logger& operator<<(ostream & (&)(ostream &)); //!< this is to recognise the endl, and to commit the log
+  Logger& operator<<(std::ostream & (&)(std::ostream &)); //!< this is to recognise the endl, and to commit the log
 #else
   // This is a hack to keep MSVC from generating a internal compiler error.
   Logger& operator<<(ostream & (hack)(ostream &)); //!< this is to recognise the endl, and to commit the log

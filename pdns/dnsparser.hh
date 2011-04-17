@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005  PowerDNS.COM BV
+    Copyright (C) 2005 - 2011 PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -47,8 +47,8 @@
     And we might be able to reverse 2 -> 3 as well
 */
     
-using namespace std;
-using namespace boost;
+#include "namespaces.hh"
+#include "namespaces.hh"
 
 class MOADNSException : public runtime_error
 {
@@ -81,6 +81,7 @@ public:
   void xfrIP(uint32_t& val)
   {
     xfr32BitInt(val);
+    val=htonl(val);
   }
 
   void xfrTime(uint32_t& val)
@@ -118,7 +119,7 @@ public:
 
   void xfrBlob(string& blob);
   void xfrBlob(string& blob, int length);
-  void xfrHexBlob(string& blob);
+  void xfrHexBlob(string& blob, bool keepReading=false);
 
   static uint16_t get16BitInt(const vector<unsigned char>&content, uint16_t& pos);
   static void getLabelFromContent(const vector<uint8_t>& content, uint16_t& frompos, string& ret, int recurs);
@@ -149,12 +150,17 @@ public:
   virtual std::string getZoneRepresentation() const = 0;
   virtual ~DNSRecordContent() {}
   virtual void toPacket(DNSPacketWriter& pw)=0;
-  virtual string serialize(const string& qname)
+  virtual string serialize(const string& qname, bool canonic=false, bool lowerCase=false) // it would rock if this were const, but it is too hard
   {
     vector<uint8_t> packet;
     string empty;
     DNSPacketWriter pw(packet, empty, 1);
-    
+    if(canonic)
+      pw.setCanonic(true);
+
+    if(lowerCase)
+      pw.setLowercase(true);
+
     pw.startRecord(qname, d_qtype);
     this->toPacket(pw);
     pw.commit();
@@ -181,7 +187,8 @@ public:
     if(z)
       getZmakermap()[make_pair(cl,ty)]=z;
 
-    getNamemap()[make_pair(cl,ty)]=name;
+    getT2Namemap().insert(make_pair(make_pair(cl,ty), name));
+    getN2Typemap().insert(make_pair(name, make_pair(cl,ty)));
   }
 
   static void unregist(uint16_t cl, uint16_t ty) 
@@ -193,32 +200,48 @@ public:
 
   static uint16_t TypeToNumber(const string& name)
   {
-    for(namemap_t::const_iterator i=getNamemap().begin(); i!=getNamemap().end();++i)
-      if(!Utility::strcasecmp(i->second.c_str(), name.c_str()))
-	return i->first.second;
-
+    n2typemap_t::const_iterator iter = getN2Typemap().find(name);
+    if(iter != getN2Typemap().end())
+      return iter->second.second;
+    
+    if(boost::starts_with(name, "TYPE"))
+        return atoi(name.c_str()+4);
+    
     throw runtime_error("Unknown DNS type '"+name+"'");
   }
 
-  static const string NumberToType(uint16_t num)
+  static const string NumberToType(uint16_t num, uint16_t classnum=1)
   {
-    if(!getNamemap().count(make_pair(1,num)))
-      return "#" + lexical_cast<string>(num);
+    t2namemap_t::const_iterator iter = getT2Namemap().find(make_pair(classnum, num));
+    if(iter == getT2Namemap().end()) 
+      return "TYPE" + lexical_cast<string>(num);
       //      throw runtime_error("Unknown DNS type with numerical id "+lexical_cast<string>(num));
-    return getNamemap()[make_pair(1,num)];
+    return iter->second;
   }
 
   explicit DNSRecordContent(uint16_t type) : d_qtype(type)
   {}
+  
+  
+  DNSRecordContent& operator=(const DNSRecordContent& orig) 
+  {
+    const_cast<uint16_t&>(d_qtype) = orig.d_qtype; // **COUGH**
+    label = orig.label;
+    header = orig.header;
+    return *this;
+  }
+
+  
   const uint16_t d_qtype;
 
 protected:
   typedef std::map<std::pair<uint16_t, uint16_t>, makerfunc_t* > typemap_t;
   typedef std::map<std::pair<uint16_t, uint16_t>, zmakerfunc_t* > zmakermap_t;
-  typedef std::map<std::pair<uint16_t, uint16_t>, string > namemap_t;
-
+  typedef std::map<std::pair<uint16_t, uint16_t>, string > t2namemap_t;
+  typedef std::map<string, std::pair<uint16_t, uint16_t> > n2typemap_t;
   static typemap_t& getTypemap();
-  static namemap_t& getNamemap();
+  static t2namemap_t& getT2Namemap();
+  static n2typemap_t& getN2Typemap();
   static zmakermap_t& getZmakermap();
 };
 
@@ -266,17 +289,17 @@ struct DNSRecord
 };
 
 //! This class can be used to parse incoming packets, and is copyable
-class MOADNSParser
+class MOADNSParser : public boost::noncopyable
 {
 public:
   //! Parse from a string
-  MOADNSParser(const string& buffer) 
+  MOADNSParser(const string& buffer)  : d_tsigPos(0)
   {
     init(buffer.c_str(), (unsigned int)buffer.size());
   }
 
   //! Parse from a pointer and length
-  MOADNSParser(const char *packet, unsigned int len)
+  MOADNSParser(const char *packet, unsigned int len) : d_tsigPos(0)
   {
     init(packet, len);
   }
@@ -284,7 +307,7 @@ public:
   dnsheader d_header;
   string d_qname;
   uint16_t d_qclass, d_qtype;
-  uint8_t d_rcode;
+  //uint8_t d_rcode;
 
   typedef vector<pair<DNSRecord, uint16_t > > answers_t;
   
@@ -298,14 +321,18 @@ public:
     return pr;
   }
 
-  
+  uint16_t getTSIGPos()
+  {
+    return d_tsigPos;
+  }
 private:
   void getDnsrecordheader(struct dnsrecordheader &ah);
   void init(const char *packet, unsigned int len);
   vector<uint8_t> d_content;
+  uint16_t d_tsigPos;
 };
 
 string simpleCompress(const string& label, const string& root="");
 void simpleExpandTo(const string& label, unsigned int frompos, string& ret);
-
+void ageDNSPacket(std::string& packet, uint32_t seconds);
 #endif

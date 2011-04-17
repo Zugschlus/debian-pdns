@@ -14,6 +14,7 @@
 #include <boost/utility.hpp>
 #include "sstuff.hh"
 #include "recursor_cache.hh"
+#include "recpacketcache.hh"
 #include <boost/tuple/tuple.hpp>
 #include <boost/optional.hpp>
 #include <boost/tuple/tuple_comparison.hpp>
@@ -28,10 +29,14 @@ struct NegCacheEntry
   QType d_qtype;
   string d_qname;
   uint32_t d_ttd;
+  uint32_t getTTD() const
+  {
+    return d_ttd;
+  }
 };
 
 
-template<class Thing> class Throttle
+template<class Thing> class Throttle : public boost::noncopyable
 {
 public:
   Throttle()
@@ -43,13 +48,14 @@ public:
   bool shouldThrottle(time_t now, const Thing& t)
   {
     if(now > d_last_clean + 300 ) {
+
       d_last_clean=now;
       for(typename cont_t::iterator i=d_cont.begin();i!=d_cont.end();) {
-	if( i->second.ttd < now) {
-	  d_cont.erase(i++);
-	}
-	else
-	  ++i;
+        if( i->second.ttd < now) {
+          d_cont.erase(i++);
+        }
+        else
+          ++i;
       }
     }
 
@@ -58,6 +64,7 @@ public:
       return false;
     if(now > i->second.ttd || i->second.count-- < 0) {
       d_cont.erase(i);
+      return false;
     }
 
     return true; // still listed, still blocked
@@ -159,60 +166,11 @@ private:
 };
 
 
-class PulseRate
+class SyncRes : public boost::noncopyable
 {
 public:
-  PulseRate() :  d_val(0.0) 
-  {
-    Utility::gettimeofday(&d_last, 0);
-  }
+  explicit SyncRes(const struct timeval& now);
 
-  PulseRate(const PulseRate& orig) : d_last(orig.d_last), d_val(orig.d_val)
-  {
-  }
-
-  void pulse(const struct timeval& now)
-  {
-    //    cout<<"about to submit: "<< 1000.0*makeFloat(now - d_last)<<"\n";
-    submit((int)(1000.0*(makeFloat(now-d_last))), now);
-  }
-
-  optional<float> get(struct timeval& now, unsigned int limit) const
-  {
-    optional<float> ret;
-    float diff=makeFloat(now - d_last);
-    if(diff < limit)
-      ret=d_val;
-    return ret;
-  }
-
-  bool stale(time_t limit) const
-  {
-    return limit > d_last.tv_sec;
-  }
-
-private:
-  void submit(int val, const struct timeval& now)
-  {
-    float diff= makeFloat(d_last - now);
-
-    d_last=now;
-    double factor=exp(diff/2.0)/2.0; // might be '0.5', or 0.0001
-    d_val=(float)((1-factor)*val+ (float)factor*d_val); 
-  }
-
-  PulseRate& operator=(const PulseRate&);
-  struct timeval d_last;          // stores time
-  float d_val;
-};
-
-
-class SyncRes
-{
-public:
-  explicit SyncRes(const struct timeval& now) :  d_outqueries(0), d_tcpoutqueries(0), d_throttledqueries(0), d_timeouts(0), d_unreachables(0),
-						 d_now(now),
-						 d_cacheonly(false), d_nocache(false), d_doEDNS0(false) { }
   int beginResolve(const string &qname, const QType &qtype, uint16_t qclass, vector<DNSResourceRecord>&ret);
   void setId(int id)
   {
@@ -237,9 +195,14 @@ public:
     d_doEDNS0=state;
   }
 
+  int asyncresolveWrapper(const ComboAddress& ip, const string& domain, int type, bool doTCP, bool sendRDQuery, struct timeval* now, LWResult* res);
+  
+  static void doEDNSDumpAndClose(int fd);
+
   static unsigned int s_queries;
   static unsigned int s_outgoingtimeouts;
   static unsigned int s_throttledqueries;
+  static unsigned int s_dontqueries;
   static unsigned int s_outqueries;
   static unsigned int s_tcpoutqueries;
   static unsigned int s_nodelegated;
@@ -264,13 +227,10 @@ public:
            >,
            composite_key_compare<CIStringCompare, std::less<QType> >
        >,
-       ordered_non_unique<
-           member<NegCacheEntry, uint32_t, &NegCacheEntry::d_ttd>
-       >
+       sequenced<> 
     >
-  >negcache_t;
-  static negcache_t s_negcache;    
-
+  > negcache_t;
+  
   //! This represents a number of decaying Ewmas, used to store performance per namerserver-name. 
   /** Modelled to work mostly like the underlying DecayingEwma. After you've called get,
       d_best is filled out with the best address for this collection */
@@ -280,29 +240,29 @@ public:
     {
       collection_t::iterator pos;
       for(pos=d_collection.begin(); pos != d_collection.end(); ++pos)
-	if(pos->first==remote)
-	  break;
+        if(pos->first==remote)
+          break;
       if(pos!=d_collection.end()) {
-	pos->second.submit(usecs, now);
+        pos->second.submit(usecs, now);
       }
       else {
-	DecayingEwma de;
-	de.submit(usecs, now);
-	d_collection.push_back(make_pair(remote, de));
+        DecayingEwma de;
+        de.submit(usecs, now);
+        d_collection.push_back(make_pair(remote, de));
       }
     }
 
     double get(struct timeval* now)
     {
       if(d_collection.empty())
-	return 0;
-      double ret=numeric_limits<double>::max();
+        return 0;
+      double ret=std::numeric_limits<double>::max();
       double tmp;
       for(collection_t::iterator pos=d_collection.begin(); pos != d_collection.end(); ++pos) {
-	if((tmp=pos->second.get(now)) < ret) {
-	  ret=tmp;
-	  d_best=pos->first;
-	}
+        if((tmp=pos->second.get(now)) < ret) {
+          ret=tmp;
+          d_best=pos->first;
+        }
       }
       
       return ret;
@@ -311,8 +271,8 @@ public:
     bool stale(time_t limit) const
     {
       for(collection_t::const_iterator pos=d_collection.begin(); pos != d_collection.end(); ++pos) 
-	if(!pos->second.stale(limit))
-	  return false;
+        if(!pos->second.stale(limit))
+          return false;
       return true;
     }
 
@@ -321,19 +281,35 @@ public:
     ComboAddress d_best;
   };
 
-  typedef map<string, DecayingEwmaCollection , CIStringCompare> nsspeeds_t;
-  static nsspeeds_t s_nsSpeeds;
+  typedef map<string, DecayingEwmaCollection, CIStringCompare> nsspeeds_t;
+  
+
+  struct EDNSStatus
+  {
+    EDNSStatus() : mode(UNKNOWN), modeSetAt(0), EDNSPingHitCount(0) {}
+    enum EDNSMode { CONFIRMEDPINGER=-1, UNKNOWN=0, EDNSNOPING=1, EDNSPINGOK=2, EDNSIGNORANT=3, NOEDNS=4 } mode;
+    time_t modeSetAt;
+    int EDNSPingHitCount;
+  };
+
+  typedef map<ComboAddress, EDNSStatus> ednsstatus_t;
+
+  
+
+  static bool s_noEDNSPing;
+  static bool s_noEDNS;
 
   struct AuthDomain
   {
     vector<ComboAddress> d_servers;
+    bool d_rdForward;
     typedef multi_index_container <
       DNSResourceRecord,
       indexed_by < 
         ordered_non_unique< 
           composite_key< DNSResourceRecord,
-		         member<DNSResourceRecord, string, &DNSResourceRecord::qname>,
-		         member<DNSResourceRecord, QType, &DNSResourceRecord::qtype>
+        	         member<DNSResourceRecord, string, &DNSResourceRecord::qname>,
+        	         member<DNSResourceRecord, QType, &DNSResourceRecord::qtype>
                        >,
           composite_key_compare<CIStringCompare, std::less<QType> >
         >
@@ -344,17 +320,30 @@ public:
   
 
   typedef map<string, AuthDomain, CIStringCompare> domainmap_t;
-  static domainmap_t s_domainmap;
+  
 
   typedef Throttle<tuple<ComboAddress,string,uint16_t> > throttle_t;
-  static throttle_t s_throttle;
+  
   struct timeval d_now;
   static unsigned int s_maxnegttl;
+  static unsigned int s_maxcachettl;
+  static unsigned int s_packetcachettl;
+  static unsigned int s_packetcacheservfailttl;
+  static bool s_nopacketcache;
   static string s_serverID;
+
+  struct StaticStorage {
+    negcache_t negcache;    
+    nsspeeds_t nsSpeeds;
+    ednsstatus_t ednsstatus;
+    throttle_t throttle;
+    domainmap_t* domainmap;
+  };
+
 private:
   struct GetBestNSAnswer;
   int doResolveAt(set<string, CIStringCompare> nameservers, string auth, bool flawedNSSet, const string &qname, const QType &qtype, vector<DNSResourceRecord>&ret,
-		  int depth, set<GetBestNSAnswer>&beenthere);
+        	  int depth, set<GetBestNSAnswer>&beenthere);
   int doResolve(const string &qname, const QType &qtype, vector<DNSResourceRecord>&ret, int depth, set<GetBestNSAnswer>& beenthere);
   bool doOOBResolve(const string &qname, const QType &qtype, vector<DNSResourceRecord>&ret, int depth, int &res);
   domainmap_t::const_iterator getBestAuthZone(string* qname);
@@ -368,10 +357,6 @@ private:
   inline vector<string> shuffleInSpeedOrder(set<string, CIStringCompare> &nameservers, const string &prefix);
   bool moreSpecificThan(const string& a, const string &b);
   vector<ComboAddress> getAs(const string &qname, int depth, set<GetBestNSAnswer>& beenthere);
-
-  SyncRes(const SyncRes&);
-  SyncRes& operator=(const SyncRes&);
-
 
 private:
   string d_prefix;
@@ -387,14 +372,16 @@ private:
     bool operator<(const GetBestNSAnswer &b) const
     {
       if(qname<b.qname)
-	return true;
+        return true;
       if(qname==b.qname)
-	return bestns<b.bestns;
+        return bestns<b.bestns;
       return false;
     }
   };
 
 };
+extern __thread SyncRes::StaticStorage* t_sstorage;
+
 class Socket;
 /* external functions, opaque to us */
 int asendtcp(const string& data, Socket* sock);
@@ -434,17 +421,16 @@ struct PacketID
     if( tie(remote, ourSock, type) > tie(b.remote, bSock, b.type))
       return false;
 
-    int cmp=Utility::strcasecmp(domain.c_str(), b.domain.c_str());
-    if(cmp < 0)
+    if(pdns_ilexicographical_compare(domain, b.domain))
       return true;
-    if(cmp > 0)
+    if(pdns_ilexicographical_compare(b.domain, domain))
       return false;
 
     return tie(fd, id) < tie(b.fd, b.id);
   }
 };
 
-struct PacketIDBirthdayCompare: public binary_function<PacketID, PacketID, bool>  
+struct PacketIDBirthdayCompare: public std::binary_function<PacketID, PacketID, bool>  
 {
   bool operator()(const PacketID& a, const PacketID& b) const
   {
@@ -455,20 +441,20 @@ struct PacketIDBirthdayCompare: public binary_function<PacketID, PacketID, bool>
     if( tie(a.remote, ourSock, a.type) > tie(b.remote, bSock, b.type))
       return false;
 
-    int cmp=Utility::strcasecmp(a.domain.c_str(), b.domain.c_str());
-    return cmp < 0;
+    return pdns_ilexicographical_compare(a.domain, b.domain);
   }
 };
-extern MemRecursorCache RC;
+extern __thread MemRecursorCache* t_RC;
+extern __thread RecursorPacketCache* t_packetCache;
 typedef MTasker<PacketID,string> MT_t;
-extern MT_t* MT;
+extern __thread MT_t* MT;
+
 
 struct RecursorStats
 {
   uint64_t servFails;
   uint64_t nxDomains;
   uint64_t noErrors;
-  PulseRate queryrate;
   uint64_t answers0_1, answers1_10, answers10_100, answers100_1000, answersSlow;
   uint64_t avgLatencyUsec;
   uint64_t qcounter;
@@ -482,13 +468,45 @@ struct RecursorStats
   uint64_t caseMismatchCount;
   uint64_t spoofCount;
   uint64_t resourceLimits;
+  uint64_t overCapacityDrops;
   uint64_t ipv6queries;
   uint64_t chainResends;
   uint64_t nsSetInvalidations;
-  uint64_t shunted;
-  uint64_t noShuntCNAME, noShuntExpired, noShuntSize, noShuntNoMatch, noShuntWrongType, noShuntWrongQuestion;
+  uint64_t ednsPingMatches;
+  uint64_t ednsPingMismatches;
+  uint64_t noPingOutQueries, noEdnsOutQueries;
+  uint64_t packetCacheHits;
+  uint64_t noPacketError;
   time_t startupTime;
+  unsigned int maxMThreadStackUsage;
+};
 
+//! represents a running TCP/IP client session
+class TCPConnection : public boost::noncopyable
+{
+public:
+  TCPConnection(int fd, const ComboAddress& addr);
+  ~TCPConnection();
+  
+  int getFD()
+  {
+    return d_fd;
+  }
+  enum stateenum {BYTE0, BYTE1, GETQUESTION, DONE} state;
+  int qlen;
+  int bytesread;
+  const ComboAddress d_remote;
+  char data[65535]; // damn
+
+  static unsigned int getCurrentConnections() { return s_currentConnections; }
+private:
+  const int d_fd;
+  static AtomicCounter s_currentConnections; //!< total number of current TCP connections
+};
+
+
+struct RemoteKeeper
+{
   typedef vector<ComboAddress> remotes_t;
   remotes_t remotes;
   int d_remotepos;
@@ -500,21 +518,35 @@ struct RecursorStats
     remotes[(d_remotepos++) % remotes.size()]=remote;
   }
 };
-
-string doReloadLuaScript(vector<string>::const_iterator begin, vector<string>::const_iterator end);
-
+extern __thread RemoteKeeper* t_remotes;
+string doQueueReloadLuaScript(vector<string>::const_iterator begin, vector<string>::const_iterator end);
+void parseACLs();
 extern RecursorStats g_stats;
+extern unsigned int g_numThreads;
 
-
-template<typename Index>
-std::pair<typename Index::iterator,bool>
-replacing_insert(Index& i,const typename Index::value_type& x)
-{
-  std::pair<typename Index::iterator,bool> res=i.insert(x);
-  if(!res.second)res.second=i.replace(res.first,x);
-  return res;
-}
 
 
 std::string reloadAuthAndForwards();
+ComboAddress parseIPAndPort(const std::string& input, uint16_t port);
+ComboAddress getQueryLocalAddress(int family, uint16_t port);
+typedef boost::function<void*(void)> pipefunc_t;
+void broadcastFunction(const pipefunc_t& func, bool skipSelf = false);
+void distributeAsyncFunction(const pipefunc_t& func);
+
+
+template<class T> T broadcastAccFunction(const boost::function<T*()>& func, bool skipSelf=false);
+
+SyncRes::domainmap_t* parseAuthAndForwards();
+
+uint64_t* pleaseGetNsSpeedsSize();
+uint64_t* pleaseGetCacheSize();
+uint64_t* pleaseGetNegCacheSize();
+uint64_t* pleaseGetCacheHits();
+uint64_t* pleaseGetCacheMisses();
+uint64_t* pleaseGetConcurrentQueries();
+uint64_t* pleaseGetThrottleSize();
+uint64_t* pleaseGetPacketCacheHits();
+uint64_t* pleaseGetPacketCacheSize();
+uint64_t* pleaseWipeCache(const std::string& canon);
+
 #endif

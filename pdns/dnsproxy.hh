@@ -31,7 +31,7 @@
 #include "lock.hh"
 #include "iputils.hh"
 
-using namespace std;
+#include "namespaces.hh"
 
 /**
 
@@ -76,8 +76,7 @@ private:
   struct ConntrackEntry
   {
     uint16_t id;
-    char remote[sizeof(sockaddr_in6)];
-    Utility::socklen_t addrlen;
+    ComboAddress remote;
     int outsock;
     time_t created;
   };

@@ -151,7 +151,7 @@ void BackendMakerClass::launch(const string &instr)
       // this is *so* userfriendly
       load(module);
       if(d_repository.find(module)==d_repository.end())
-	throw ArgException("Trying to launch unknown backend '"+module+"'");
+        throw ArgException("Trying to launch unknown backend '"+module+"'");
     }
     d_repository[module]->declareArguments(name);
     d_instances.push_back(make_pair(module,name));
@@ -163,7 +163,7 @@ int BackendMakerClass::numLauncheable()
   return d_instances.size();
 }
 
-vector<DNSBackend *>BackendMakerClass::all()
+vector<DNSBackend *>BackendMakerClass::all(bool skipBIND)
 {
   vector<DNSBackend *>ret;
   if(d_instances.empty())
@@ -171,9 +171,11 @@ vector<DNSBackend *>BackendMakerClass::all()
 
   try {
     for(vector<pair<string,string> >::const_iterator i=d_instances.begin();i!=d_instances.end();++i) {
+      if(skipBIND && i->first=="bind")
+        continue;
       DNSBackend *made=d_repository[i->first]->make(i->second);
       if(!made)
-	throw AhuException("Unable to launch backend '"+i->first+"'");
+        throw AhuException("Unable to launch backend '"+i->first+"'");
 
       ret.push_back(made);
     }
@@ -206,8 +208,9 @@ vector<DNSBackend *>BackendMakerClass::all()
 bool DNSBackend::getSOA(const string &domain, SOAData &sd, DNSPacket *p)
 {
   this->lookup(QType(QType::SOA),domain,p);
-
+  
   DNSResourceRecord rr;
+  rr.auth = true; 
 
   int hits=0;
 
@@ -220,7 +223,7 @@ bool DNSBackend::getSOA(const string &domain, SOAData &sd, DNSPacket *p)
 
   if(!hits)
     return false;
-
+  sd.qname = domain;
   if(sd.nameserver.empty())
     sd.nameserver=arg()["default-soa-name"];
   
@@ -242,7 +245,7 @@ bool DNSBackend::getSOA(const string &domain, SOAData &sd, DNSPacket *p)
   
     while(this->get(i)) {
       if(i.last_modified>newest)
-	newest=i.last_modified;
+        newest=i.last_modified;
     }
 
     sd.serial=newest; // +arg().asNum("soa-serial-offset");
@@ -253,3 +256,16 @@ bool DNSBackend::getSOA(const string &domain, SOAData &sd, DNSPacket *p)
   return true;
 }
 
+bool DNSBackend::getBeforeAndAfterNames(uint32_t id, const std::string& zonename, const std::string& qname, std::string& before, std::string& after)
+{
+  string lcqname=toLower(qname);
+  lcqname=makeRelative(qname, zonename);
+  
+  lcqname=labelReverse(lcqname);
+  string dnc;
+  bool ret = this->getBeforeAndAfterNamesAbsolute(id, lcqname, dnc, before, after);
+  
+  before=dotConcat(labelReverse(before), zonename);
+  after=dotConcat(labelReverse(after), zonename);
+  return ret;
+}

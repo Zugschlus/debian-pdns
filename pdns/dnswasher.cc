@@ -15,8 +15,8 @@ otherwise, obfuscate the response IP address
 #include "statbag.hh"
 #include "dnspcap.hh"
 
-using namespace boost;
-using namespace std;
+#include "namespaces.hh"
+#include "namespaces.hh"
 
 StatBag S;
 
@@ -62,9 +62,9 @@ try
       uint32_t *dst=(uint32_t*)&pr.d_ip->ip_dst;
       
       if(dh->qr)
-	*dst=htonl(ipo.obf(*dst));
+        *dst=htonl(ipo.obf(*dst));
       else
-	*src=htonl(ipo.obf(*src));
+        *src=htonl(ipo.obf(*src));
       
       pr.d_ip->ip_sum=0;
       

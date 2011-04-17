@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005  PowerDNS.COM BV
+    Copyright (C) 2005 - 2011  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -41,14 +41,18 @@ void declareArguments()
   ::arg().set("local-port","The port on which we listen")="53";
   ::arg().setSwitch("log-failed-updates","If PDNS should log failed update requests")="";
   ::arg().setSwitch("log-dns-details","If PDNS should log DNS non-erroneous details")="";
+  ::arg().setSwitch("log-dns-queries","If PDNS should log all incoming DNS queries")="no";
   ::arg().setSwitch("allow-recursion-override","Set this so that local data fully overrides the recursor")="no";
   ::arg().set("urlredirector","Where we send hosts to that need to be url redirected")="127.0.0.1";
   ::arg().set("smtpredirector","Our smtpredir MX host")="a.misconfigured.powerdns.smtp.server";
   ::arg().set("local-address","Local IP addresses to which we bind")="0.0.0.0";
   ::arg().set("local-ipv6","Local IP address to which we bind")="";
-  ::arg().set("query-local-address","Source IP address for sending queries")="";
+  ::arg().set("query-local-address","Source IP address for sending queries")="0.0.0.0";
+  ::arg().set("query-local-address6","Source IPv6 address for sending queries")="::";
   ::arg().set("max-queue-length","Maximum queuelength before considering situation lost")="5000";
   ::arg().set("soa-serial-offset","Make sure that no SOA serial is less than this number")="0";
+  
+  ::arg().set("retrieval-threads", "Number of AXFR-retrieval threads for slave operation")="2";
 
   ::arg().setCmd("help","Provide a helpful message");
   ::arg().setCmd("version","Output version and compilation date");
@@ -64,6 +68,7 @@ void declareArguments()
   ::arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
   ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
   ::arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
+  ::arg().set("signing-threads","Default number of signer threads to start")="3";
   ::arg().set("receiver-threads","Default number of Distributor (backend) threads to start")="1";
   ::arg().set("queue-limit","Maximum number of milliseconds to queue a query")="1500"; 
   ::arg().set("recursor","If recursion is desired, IP address of a recursing nameserver")="no"; 
@@ -79,7 +84,7 @@ void declareArguments()
   ::arg().set("load-modules","Load this module - supply absolute or relative path")="";
   ::arg().set("launch","Which backends to launch and order to query them in")="";
   ::arg().setSwitch("disable-axfr","Disable zonetransfers but do allow TCP queries")="no";
-  ::arg().set("allow-axfr-ips","Allow zonetransfers only to these subnets")="0.0.0.0/0";
+  ::arg().set("allow-axfr-ips","Allow zonetransfers only to these subnets")="0.0.0.0/0,::/0";
   ::arg().set("slave-cycle-interval","Reschedule failed SOA serial checks once every .. seconds")="60";
 
   ::arg().set("tcp-control-address","If set, PowerDNS can be controlled over TCP on this address")="";
@@ -115,10 +120,12 @@ void declareArguments()
   ::arg().set("soa-expire-default","Default SOA expire")="604800";
 
   ::arg().set("trusted-notification-proxy", "IP address of incoming notification proxy")="";
+  ::arg().set("slave-renotify", "If we should send out notifications for slaved updates")="no";
 
   ::arg().set("default-ttl","Seconds a result is valid if not set otherwise")="3600";
   ::arg().set("max-tcp-connections","Maximum number of TCP connections")="10";
   ::arg().setSwitch("no-shuffle","Set this to prevent random shuffling of answers - for regression testing")="off";
+  ::arg().setSwitch("per-zone-axfr-acls","When set, backends that implement it perform per-zone AXFL ACL checks")="off";
 
   ::arg().setSwitch( "use-logfile", "Use a log file (Windows only)" )= "no";
   ::arg().set( "logfile", "Logfile to use (Windows only)" )= "pdns.log";
@@ -225,14 +232,14 @@ void *qthread(void *number)
   unsigned int &numanswered6=*S.getPointer("udp6-answers");
   numreceived=-1;
   int diff;
-
+  bool logDNSQueries = ::arg().mustDo("log-dns-queries");
   for(;;) {
-    if(number==0) {
-      if(!((numreceived++)%50)) { // maintenance tasks
-	S.set("latency",(int)avg_latency);
-	int qcount, acount;
-	g_distributor->getQueueSizes(qcount, acount);
-	S.set("qsize-q",qcount);
+    if(number==0) { // only run on main thread
+      if(!((numreceived++)%250)) { // maintenance tasks
+        S.set("latency",(int)avg_latency);
+        int qcount, acount;
+        g_distributor->getQueueSizes(qcount, acount);
+        S.set("qsize-q",qcount);
       }
     }
 
@@ -247,13 +254,18 @@ void *qthread(void *number)
 
     S.ringAccount("queries", P->qdomain+"/"+P->qtype.getName());
     S.ringAccount("remotes",P->getRemote());
+    if(logDNSQueries) 
+      L << Logger::Notice<<"Remote "<< P->remote.toString() <<" wants '" << P->qdomain<<"|"<<P->qtype.getName() << 
+        "', do = " <<P->d_dnssecOk <<", bufsize = "<< P->getMaxReplyLen()<<": ";
 
     if((P->d.opcode != Opcode::Notify) && P->couldBeCached() && PC.get(P, &cached)) { // short circuit - does the PacketCache recognize this question?
+      if(logDNSQueries)
+        L<<"packetcache HIT"<<endl;
       cached.setRemote(&P->remote);  // inlined
       cached.setSocket(P->getSocket());                               // inlined
-      cached.spoofID(P->d.id);                                        // inlined 
       cached.setMaxReplyLen(P->getMaxReplyLen());
       cached.d.rd=P->d.rd; // copy in recursion desired bit 
+      cached.d.id=P->d.id;
       cached.commitD(); // commit d to the packet                        inlined
 
       N->send(&cached);   // answer it then                              inlined
@@ -262,12 +274,14 @@ void *qthread(void *number)
       
       numanswered++;
       if(P->remote.sin4.sin_family==AF_INET)
-	numanswered4++;
+        numanswered4++;
       else
-	numanswered6++;
+        numanswered6++;
 
       continue;
     }
+    if(logDNSQueries)
+        L<<"packetcache MISS"<<endl;
     if(g_mustlockdistributor) {
       Lock l(&d_distributorlock);
       g_distributor->question(P, &sendout); // otherwise, give to the distributor
@@ -277,7 +291,6 @@ void *qthread(void *number)
   }
   return 0;
 }
-
 
 void mainthread()
 {
@@ -293,7 +306,7 @@ void mainthread()
 
    if(!::arg()["chroot"].empty()) {  
      if(::arg().mustDo("master") || ::arg().mustDo("slave"))
-	gethostbyname("a.root-servers.net"); // this forces all lookup libraries to be loaded
+        gethostbyname("a.root-servers.net"); // this forces all lookup libraries to be loaded
      if(chroot(::arg()["chroot"].c_str())<0 || chdir("/")<0) {
        L<<Logger::Error<<"Unable to chroot to '"+::arg()["chroot"]+"': "<<strerror(errno)<<", exiting"<<endl; 
        exit(1);
@@ -302,8 +315,8 @@ void mainthread()
        L<<Logger::Error<<"Chrooted to '"<<::arg()["chroot"]<<"'"<<endl;      
    }  
 #endif
-
-   Utility::dropPrivs(newuid, newgid);
+  StatWebServer sws;
+  Utility::dropPrivs(newuid, newgid);
 
   if(::arg().mustDo("recursor")){
     DP=new DNSProxy(::arg()["recursor"]);
@@ -314,7 +327,7 @@ void mainthread()
   dl->go();
 
   pthread_t qtid;
-  StatWebServer sws;
+
 
   if(::arg().mustDo("webserver"))
     sws.go();

@@ -37,8 +37,8 @@
 #include "config.h"
 #include "statbag.hh"
 #include "misc.hh"
-using namespace std;
-using namespace boost;
+#include "namespaces.hh"
+#include "namespaces.hh"
 
 ArgvMap &arg()
 {
@@ -101,11 +101,11 @@ int main(int argc, char **argv)
     else {
       uint16_t port;
       try {
-	port  = lexical_cast<uint16_t>(::arg()["remote-port"]);
+        port  = lexical_cast<uint16_t>(::arg()["remote-port"]);
       }
       catch(...) {
-	cerr<<"Unable to convert '"<<::arg()["remote-port"]<<"' to a port number for connecting to remote PowerDNS\n";
-	exit(99);
+        cerr<<"Unable to convert '"<<::arg()["remote-port"]<<"' to a port number for connecting to remote PowerDNS\n";
+        exit(99);
       }
       
       D=shared_ptr<DynMessenger>(new DynMessenger(ComboAddress(::arg()["remote-address"], port), ::arg()["secret"]));
@@ -114,15 +114,15 @@ int main(int argc, char **argv)
     string message;
     for(vector<string>::const_iterator i=commands.begin();i!=commands.end();++i) {
       if(i!=commands.begin())
-	message+=" ";
+        message+=" ";
       message+=*i;
     }
     
     if(command=="show") {
       message="SHOW ";
       for(unsigned int n=1;n<commands.size();n++) {
-	message+=commands[n];
-	message+=" ";
+        message+=commands[n];
+        message+=" ";
       }
     }
     else if(command=="list") {

@@ -5,12 +5,12 @@
 #include <vector>
 #include <map>
 #if !defined SOLARIS8 && !defined WIN32
-#include <stdint.h>
+
 #elif defined WIN32
 #include "utility.hh"
 #endif
 #include "dns.hh"
-using namespace std;
+#include "namespaces.hh"
 
 /** this class can be used to write DNS packets. It knows about DNS in the sense that it makes 
     the packet header and record headers.
@@ -38,7 +38,7 @@ using namespace std;
 
 */
 
-class DNSPacketWriter
+class DNSPacketWriter : public boost::noncopyable
 {
 
 public:
@@ -61,7 +61,7 @@ public:
    */
   void commit();
 
-  uint16_t size();
+  uint32_t size(); // needs to be 32 bit because otherwise we don't see the wrap coming when it happened!
 
   /** Should the packet have grown too big for the writer's liking, rollback removes the record currently being written */
   void rollback();
@@ -87,15 +87,30 @@ public:
   void xfrLabel(const string& label, bool compress=false);
   void xfrText(const string& text, bool multi=false);
   void xfrBlob(const string& blob, int len=-1);
-  void xfrHexBlob(const string& blob);
+  void xfrHexBlob(const string& blob, bool keepReading=false);
 
   uint16_t d_pos;
   
   dnsheader* getHeader();
   void getRecords(string& records);
+  const vector<uint8_t>& getRecordBeingWritten() { return d_record; }
+
+  void setCanonic(bool val) 
+  {
+    d_canonic=val;
+  }
+
+  void setLowercase(bool val) 
+  {
+    d_lowerCase=val;
+  }
+  vector <uint8_t>& getContent()
+  {
+    return d_content;
+  }
 
 private:
-  vector<uint8_t>& d_content;
+  vector <uint8_t>& d_content;
   vector <uint8_t> d_record;
   string d_qname;
   uint16_t d_qtype, d_qclass;
@@ -107,5 +122,10 @@ private:
   uint16_t d_sor;
   uint16_t d_rollbackmarker; // start of last complete packet, for rollback
   Place d_recordplace;
+  bool d_canonic, d_lowerCase;
 };
+
+typedef vector<pair<string::size_type, string::size_type> > labelparts_t;
+bool labeltokUnescape(labelparts_t& parts, const string& label);
+std::vector<string> segmentDNSText(const string& text); // from dnslabeltext.rl
 #endif

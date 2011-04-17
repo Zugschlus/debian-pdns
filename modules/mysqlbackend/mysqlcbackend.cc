@@ -1,11 +1,11 @@
-// $Id: mysqlcbackend.cc 477 2005-09-03 18:15:37Z ahu $ 
+// $Id: mysqlcbackend.cc 1980 2011-02-07 08:50:00Z ahu $ 
 #include <string>
 #include <map>
 #include <unistd.h>
 #include <stdlib.h>
 #include <sstream>
 
-using namespace std;
+#include "pdns/namespaces.hh"
 
 #include <pdns/dns.hh>
 #include <pdns/dnsbackend.hh>
@@ -40,12 +40,12 @@ MySQLBackend::MySQLBackend(const string &suffix)
   L<<Logger::Error<<backendName<<" *** THIS BACKEND IS DEPRECATED - USE GMYSQL! ***"<<endl;
   setArgPrefix("mysql"+suffix);
   if (!mysql_real_connect(&db,getArg("host").c_str(),
-			  getArg("user").c_str(),
-			  getArg("password").c_str(),
-			  getArg("dbname").c_str(),
-			  0,
-			  getArg("socket").empty() ? 
-			  NULL : getArg("socket").c_str(),0)) {
+        		  getArg("user").c_str(),
+        		  getArg("password").c_str(),
+        		  getArg("dbname").c_str(),
+        		  0,
+        		  getArg("socket").empty() ? 
+        		  NULL : getArg("socket").c_str(),0)) {
     L<<Logger::Error<<backendName<<" Failed to connect to database: Error: "<<mysql_error(&db)<<endl;
     throw(AhuException(backendName+string(" Failed to connect to database: Error: ")+mysql_error(&db)));
   }

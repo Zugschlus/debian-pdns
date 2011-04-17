@@ -29,7 +29,7 @@
 #include <sys/types.h>
 
 
-#if DARWIN || _AIX
+#if DARWIN || _AIX || __APPLE__ 
 
 // Darwin 6.0 Compatible implementation, uses pthreads so it portable across more platforms.
 
@@ -156,7 +156,11 @@ int Semaphore::post()
 
 int Semaphore::wait()
 {
-  return sem_wait(m_pSemaphore);
+  int ret;
+  do
+    ret = sem_wait(m_pSemaphore);
+  while (ret == -1 && errno == EINTR);
+  return ret;
 }
 int Semaphore::tryWait()
 {

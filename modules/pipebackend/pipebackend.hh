@@ -1,6 +1,6 @@
 //
 // File    : pdnsbackend.hh
-// Version : $Id: pipebackend.hh 525 2005-10-28 22:34:49Z ahu $
+// Version : $Id: pipebackend.hh 1976 2011-02-06 11:11:34Z ahu $
 //
 
 #ifndef PIPEBACKEND_HH
@@ -11,9 +11,8 @@
 #include <sys/types.h>
 #include <regex.h>
 #include <boost/shared_ptr.hpp>
-using namespace boost;
 
-using namespace std;
+#include "pdns/namespaces.hh"
 
 /** very small regex wrapper */
 class Regex

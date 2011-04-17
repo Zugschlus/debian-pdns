@@ -120,7 +120,7 @@ void DynListener::listenOnTCP(const ComboAddress& local)
     for(vector<string>::const_iterator i = ips.begin(); i!= ips.end(); ++i) {
       d_tcprange.addMask(*i);
       if(i!=ips.begin())
-	L<<Logger::Warning<<", ";
+        L<<Logger::Warning<<", ";
       L<<Logger::Warning<<*i;
     }
     L<<Logger::Warning<<endl;
@@ -182,52 +182,54 @@ string DynListener::getLine()
     for(;;) {
       d_client=accept(d_s,(sockaddr*)&remote,&remlen);
       if(d_client<0) {
-	if(errno!=EINTR)
-	  L<<Logger::Error<<"Unable to accept controlsocket connection ("<<d_s<<"): "<<strerror(errno)<<endl;
-	continue;
+        if(errno!=EINTR)
+          L<<Logger::Error<<"Unable to accept controlsocket connection ("<<d_s<<"): "<<strerror(errno)<<endl;
+        continue;
       }
 
-      if(!d_tcp && d_tcprange.match(&remote)) {
-	writen2(d_client, "Access denied to "+remote.toString()+"\n");
-	close(d_client);
-	continue;
+      if(d_tcp && !d_tcprange.match(&remote)) { // ????
+        L<<Logger::Error<<"Access denied to remote "<<remote.toString()<<" because not allowed"<<endl;
+        writen2(d_client, "Access denied to "+remote.toString()+"\n");
+        close(d_client);
+        continue;
       }
 
       boost::shared_ptr<FILE> fp=boost::shared_ptr<FILE>(fdopen(dup(d_client), "r"), fclose);
       if(d_tcp) {
-	if(!fgets(&mesg[0], mesg.size(), fp.get())) {
-	  L<<Logger::Error<<"Unable to receive password from controlsocket ("<<d_client<<"): "<<strerror(errno)<<endl;
-	  close(d_client);
-	  continue;
-	}
-	string password(&mesg[0]);
-	boost::trim(password);
-	if(password.empty() || password!=arg()["tcp-control-secret"]) {
-	  L<<Logger::Error<<"Wrong password on TCP control socket"<<endl;
-	  writen2(d_client, "Wrong password");
+        if(!fgets(&mesg[0], mesg.size(), fp.get())) {
+          L<<Logger::Error<<"Unable to receive password from controlsocket ("<<d_client<<"): "<<strerror(errno)<<endl;
+          close(d_client);
+          continue;
+        }
+        string password(&mesg[0]);
+        boost::trim(password);
+        if(password.empty() || password!=arg()["tcp-control-secret"]) {
+          L<<Logger::Error<<"Wrong password on TCP control socket"<<endl;
+          writen2(d_client, "Wrong password");
 
-	  close(d_client);
-	  continue;
-	}
+          close(d_client);
+          continue;
+        }
       }
       if(!fgets(&mesg[0], mesg.size(), fp.get())) {
-	L<<Logger::Error<<"Unable to receive line from controlsocket ("<<d_client<<"): "<<strerror(errno)<<endl;
-	close(d_client);
-	continue;
+        L<<Logger::Error<<"Unable to receive line from controlsocket ("<<d_client<<"): "<<strerror(errno)<<endl;
+        close(d_client);
+        continue;
       }
       
       if(strlen(&mesg[0]) == mesg.size()) {
-	L<<Logger::Error<<"Line on controlsocket ("<<d_client<<") was too long"<<endl;
-	close(d_client);
-	continue;
+        L<<Logger::Error<<"Line on controlsocket ("<<d_client<<") was too long"<<endl;
+        close(d_client);
+        continue;
       }
       break;
     }
   }
   else {
     if(isatty(0))
-      write(1, "% ", 2);
-    if((len= read(0, &mesg[0], mesg.size())) < 0) 
+      if(write(1, "% ", 2) !=2)
+        throw AhuException("Writing to console: "+stringerror());
+    if((len=read(0, &mesg[0], mesg.size())) < 0) 
       throw AhuException("Reading from the control pipe: "+stringerror());
     else if(len==0)
       throw AhuException("Guardian exited - going down as well");
@@ -250,8 +252,8 @@ void DynListener::sendLine(const string &l)
       ret=send(d_client, l.c_str()+sent, l.length()-sent, 0); 
 
       if(ret<0 || !ret) {
-	L<<Logger::Error<<"Error sending data to pdns_control: "<<stringerror()<<endl;
-	break;
+        L<<Logger::Error<<"Error sending data to pdns_control: "<<stringerror()<<endl;
+        break;
       }
       sent+=ret;
     }
@@ -262,7 +264,9 @@ void DynListener::sendLine(const string &l)
     if(!line.empty() && line[line.length()-1]!='\n')
       line.append("\n");
     line.append("\n");
-    write(1,line.c_str(),line.length());
+    if(write(1,line.c_str(),line.length()) != line.length())
+      L<<Logger::Error<<"Error sending data to console: "<<stringerror()<<endl;
+      
   }
 }
 
@@ -280,6 +284,7 @@ void DynListener::theListener()
 {
   try {
     map<string,string> parameters;
+    signal(SIGPIPE,SIG_IGN);
 
     for(int n=0;;++n) {
       //      cerr<<"Reading new line, "<<d_client<<endl;
@@ -289,16 +294,16 @@ void DynListener::theListener()
       vector<string>parts;
       stringtok(parts,line," ");
       if(parts.empty()) {
-	sendLine("Empty line");
-	continue;
+        sendLine("Empty line");
+        continue;
       }
       parts[0] = toUpper( parts[0] );
       if(!s_funcdb[parts[0]]) {
-	if(s_restfunc) 
-	  sendLine((*s_restfunc)(parts,d_ppid));
-	else
-	  sendLine("Unknown command: '"+parts[0]+"'");
-	continue;
+        if(s_restfunc) 
+          sendLine((*s_restfunc)(parts,d_ppid));
+        else
+          sendLine("Unknown command: '"+parts[0]+"'");
+        continue;
       }
 
       sendLine((*s_funcdb[parts[0]])(parts,d_ppid));

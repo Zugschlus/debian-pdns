@@ -11,32 +11,39 @@
 #include <algorithm>
 #include "anadns.hh"
 
-using namespace boost;
-using namespace std;
+#include "namespaces.hh"
+#include "namespaces.hh"
 
 StatBag S;
 
+struct tm* pdns_localtime_r(const uint32_t* then, struct tm* tm)
+{
+  time_t t = *then;
+  
+  return localtime_r(&t, tm);
+}
+
 int32_t g_clientQuestions, g_clientResponses, g_serverQuestions, g_serverResponses, g_skipped;
-struct timeval g_lastanswerTime, g_lastquestionTime;
-void makeReport(const struct timeval& tv)
+struct pdns_timeval g_lastanswerTime, g_lastquestionTime;
+void makeReport(const struct pdns_timeval& tv)
 {
   int64_t clientdiff = g_clientQuestions - g_clientResponses;
   int64_t serverdiff = g_serverQuestions - g_serverResponses;
 
   if(clientdiff > 5 && clientdiff > 0.02*g_clientQuestions) {
     char tmp[80];
-    struct tm tm=*localtime_r(&tv.tv_sec, &tm);
+    struct tm tm=*pdns_localtime_r(&tv.tv_sec, &tm);
     strftime(tmp, sizeof(tmp) - 1, "%F %H:%M:%S", &tm);
 
     cout << tmp << ": Resolver dropped too many questions (" 
-	 << g_clientQuestions <<" vs " << g_clientResponses << "), diff: " <<clientdiff<<endl;
+         << g_clientQuestions <<" vs " << g_clientResponses << "), diff: " <<clientdiff<<endl;
 
-    tm=*localtime_r(&g_lastanswerTime.tv_sec, &tm);
+    tm=*pdns_localtime_r(&g_lastanswerTime.tv_sec, &tm);
     strftime(tmp, sizeof(tmp) - 1, "%F %H:%M:%S", &tm);
     
     cout<<"Last answer: "<<tmp<<"."<<g_lastanswerTime.tv_usec/1000000.0<<endl;
 
-    tm=*localtime_r(&g_lastquestionTime.tv_sec, &tm);
+    tm=*pdns_localtime_r(&g_lastquestionTime.tv_sec, &tm);
     strftime(tmp, sizeof(tmp) - 1, "%F %H:%M:%S", &tm);
     
     cout<<"Last question: "<<tmp<<"."<<g_lastquestionTime.tv_usec/1000000.0<<endl;
@@ -44,18 +51,18 @@ void makeReport(const struct timeval& tv)
 
   if(serverdiff > 5 && serverdiff > 0.02*g_serverQuestions) {
     char tmp[80];
-    struct tm tm=*localtime_r(&tv.tv_sec, &tm);
+    struct tm tm=*pdns_localtime_r(&tv.tv_sec, &tm);
     strftime(tmp, sizeof(tmp) - 1, "%F %H:%M:%S", &tm);
 
     cout << tmp << ": Auth server dropped too many questions (" 
-	 << g_serverQuestions <<" vs " << g_serverResponses << "), diff: " <<serverdiff<<endl;
+         << g_serverQuestions <<" vs " << g_serverResponses << "), diff: " <<serverdiff<<endl;
 
-    tm=*localtime_r(&g_lastanswerTime.tv_sec, &tm);
+    tm=*pdns_localtime_r(&g_lastanswerTime.tv_sec, &tm);
     strftime(tmp, sizeof(tmp) - 1, "%F %H:%M:%S", &tm);
     
     cout<<"Last answer: "<<tmp<<"."<<g_lastanswerTime.tv_usec/1000000.0<<endl;
 
-    tm=*localtime_r(&g_lastquestionTime.tv_sec, &tm);
+    tm=*pdns_localtime_r(&g_lastquestionTime.tv_sec, &tm);
     strftime(tmp, sizeof(tmp) - 1, "%F %H:%M:%S", &tm);
     
     cout<<"Last question: "<<tmp<<"."<<g_lastquestionTime.tv_usec/1000000.0<<endl;
@@ -88,7 +95,7 @@ try
     /* we measure every 60 seconds, each interval with 10% less answers than questions is interesting */
     /* report chunked */
     
-    struct timeval lastreport={0, 0};
+    struct pdns_timeval lastreport={0, 0};
     
     typedef set<pair<string, uint16_t> > queries_t;
     queries_t questions, answers;
@@ -99,65 +106,65 @@ try
 
     while(pr.getUDPPacket()) {
       if((ntohs(pr.d_udp->uh_dport)==5300 || ntohs(pr.d_udp->uh_sport)==5300 ||
-	  ntohs(pr.d_udp->uh_dport)==53   || ntohs(pr.d_udp->uh_sport)==53) &&
-	 pr.d_len > 12) {
-	try {
-	  MOADNSParser mdp((const char*)pr.d_payload, pr.d_len);
-	  if(mdp.d_header.id==htons(4575)) {
-//	    cerr << ntohl(*(uint32_t*)&pr.d_ip->ip_src)<<endl;
-	    g_skipped++;
-	    continue;
-	  }
-	  if(iequals(mdp.d_qname,"ycjnakisys1m.post.yamaha.co.jp."))
-	    cerr<<"hit: "<<mdp.d_qtype<<", rd="<<mdp.d_header.rd<< ", id="<<mdp.d_header.id<<", qr="<<mdp.d_header.qr<<"\n";
+          ntohs(pr.d_udp->uh_dport)==53   || ntohs(pr.d_udp->uh_sport)==53) &&
+         pr.d_len > 12) {
+        try {
+          MOADNSParser mdp((const char*)pr.d_payload, pr.d_len);
+          if(mdp.d_header.id==htons(4575)) {
+//            cerr << ntohl(*(uint32_t*)&pr.d_ip->ip_src)<<endl;
+            g_skipped++;
+            continue;
+          }
+          if(pdns_iequals(mdp.d_qname,"ycjnakisys1m.post.yamaha.co.jp."))
+            cerr<<"hit: "<<mdp.d_qtype<<", rd="<<mdp.d_header.rd<< ", id="<<mdp.d_header.id<<", qr="<<mdp.d_header.qr<<"\n";
 
-	  if(lastreport.tv_sec == 0) {
-	    lastreport = pr.d_pheader.ts;
-	  }
-	  
-	  //	  if(pr.d_pheader.ts.tv_sec > 1176897290 && pr.d_pheader.ts.tv_sec < 1176897310 ) 
-	  //	    pw.write();
+          if(lastreport.tv_sec == 0) {
+            lastreport = pr.d_pheader.ts;
+          }
+          
+          //	  if(pr.d_pheader.ts.tv_sec > 1176897290 && pr.d_pheader.ts.tv_sec < 1176897310 ) 
+          //	    pw.write();
 
-	  if(mdp.d_header.rd && !mdp.d_header.qr) {
-	    g_lastquestionTime=pr.d_pheader.ts;
-	    g_clientQuestions++;
-	    totalQueries++;
-	    counts[make_pair(mdp.d_qname, mdp.d_qtype)]++;
-	    questions.insert(make_pair(mdp.d_qname, mdp.d_qtype));
-	  }
-	  else if(mdp.d_header.rd && mdp.d_header.qr) {
-	    g_lastanswerTime=pr.d_pheader.ts;
-	    g_clientResponses++;
-	    answers.insert(make_pair(mdp.d_qname, mdp.d_qtype));
-	  }
-	  else if(!mdp.d_header.rd && !mdp.d_header.qr) {
-	    g_lastquestionTime=pr.d_pheader.ts;
-	    g_serverQuestions++;
-	    counts[make_pair(mdp.d_qname, mdp.d_qtype)]++;
-	    questions.insert(make_pair(mdp.d_qname, mdp.d_qtype));
-	    totalQueries++;
-	  }
-	  else if(!mdp.d_header.rd && mdp.d_header.qr) {
-	    answers.insert(make_pair(mdp.d_qname, mdp.d_qtype));
-	    g_serverResponses++;
-	  }
-	  
-	  if(pr.d_pheader.ts.tv_sec - lastreport.tv_sec > 5) {
-	    makeReport(pr.d_pheader.ts);
-	    lastreport = pr.d_pheader.ts;
+          if(mdp.d_header.rd && !mdp.d_header.qr) {
+            g_lastquestionTime=pr.d_pheader.ts;
+            g_clientQuestions++;
+            totalQueries++;
+            counts[make_pair(mdp.d_qname, mdp.d_qtype)]++;
+            questions.insert(make_pair(mdp.d_qname, mdp.d_qtype));
+          }
+          else if(mdp.d_header.rd && mdp.d_header.qr) {
+            g_lastanswerTime=pr.d_pheader.ts;
+            g_clientResponses++;
+            answers.insert(make_pair(mdp.d_qname, mdp.d_qtype));
+          }
+          else if(!mdp.d_header.rd && !mdp.d_header.qr) {
+            g_lastquestionTime=pr.d_pheader.ts;
+            g_serverQuestions++;
+            counts[make_pair(mdp.d_qname, mdp.d_qtype)]++;
+            questions.insert(make_pair(mdp.d_qname, mdp.d_qtype));
+            totalQueries++;
+          }
+          else if(!mdp.d_header.rd && mdp.d_header.qr) {
+            answers.insert(make_pair(mdp.d_qname, mdp.d_qtype));
+            g_serverResponses++;
+          }
+          
+          if(pr.d_pheader.ts.tv_sec - lastreport.tv_sec > 5) {
+            makeReport(pr.d_pheader.ts);
+            lastreport = pr.d_pheader.ts;
 
-	  }
-	  
-	}
-	catch(MOADNSException& mde) {
-	  //	cerr<<"error parsing packet: "<<mde.what()<<endl;
-	  parseErrors++;
-	  continue;
-	}
-	catch(std::exception& e) {
-	  cerr << e.what() << endl;
-	  continue;
-	}
+          }
+          
+        }
+        catch(MOADNSException& mde) {
+          //	cerr<<"error parsing packet: "<<mde.what()<<endl;
+          parseErrors++;
+          continue;
+        }
+        catch(std::exception& e) {
+          cerr << e.what() << endl;
+          continue;
+        }
       }
 
     }

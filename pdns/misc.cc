@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2006  PowerDNS.COM BV
+    Copyright (C) 2002 - 2010  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -44,6 +44,8 @@
 #include "utility.hh"
 #include <boost/algorithm/string.hpp>
 
+bool g_singleThreaded;
+
 int writen2(int fd, const void *buf, size_t count)
 {
   const char *ptr = (char*)buf;
@@ -54,9 +56,9 @@ int writen2(int fd, const void *buf, size_t count)
     res = ::write(fd, ptr, eptr - ptr);
     if(res < 0) {
       if (errno == EAGAIN)
-	throw std::runtime_error("used writen2 on non-blocking socket, got EAGAIN");
+        throw std::runtime_error("used writen2 on non-blocking socket, got EAGAIN");
       else
-	unixDie("failed in writen2");
+        unixDie("failed in writen2");
     }
     else if (res == 0)
       throw std::runtime_error("could not write all bytes, got eof in writen2");
@@ -233,15 +235,15 @@ int sendData(const char *buffer, int replen, int outsock)
     while (replen) {
       ret = write(outsock, buffer, replen);
       if(ret < 0) {
-	if(errno==EAGAIN) { // wait, we might've exhausted the window
-	  while(waitForRWData(outsock, false, 1, 0)==0)
-	    ;
-	  continue;
-	}
-	return ret;
+        if(errno==EAGAIN) { // wait, we might've exhausted the window
+          while(waitForRWData(outsock, false, 1, 0)==0)
+            ;
+          continue;
+        }
+        return ret;
       }
       if(!ret)
-	return -1; // "EOF == error"
+        return -1; // "EOF == error"
       replen -= ret;
       buffer += ret;
     }
@@ -315,9 +317,43 @@ int waitForRWData(int fd, bool waitForRead, int seconds, int useconds)
 
   ret = poll(&pfd, 1, seconds * 1000 + useconds/1000);
   if ( ret == -1 )
-    errno = ETIMEDOUT;
+    errno = ETIMEDOUT; // ???
 
   return ret;
+}
+
+// returns -1 in case if error, 0 if no data is available, 1 if there is. In the first two cases, errno is set
+int waitFor2Data(int fd1, int fd2, int seconds, int useconds, int*fd)
+{
+  int ret;
+
+  struct pollfd pfds[2];
+  memset(&pfds[0], 0, 2*sizeof(struct pollfd));
+  pfds[0].fd = fd1;
+  pfds[1].fd = fd2;
+  
+  pfds[0].events= pfds[1].events = POLLIN;
+
+  int nsocks = 1 + (fd2 >= 0); // fd2 can optionally be -1
+
+  if(seconds >= 0)
+    ret = poll(pfds, nsocks, seconds * 1000 + useconds/1000);
+  else
+    ret = poll(pfds, nsocks, -1);
+  if(!ret || ret < 0)
+    return ret;
+    
+  if((pfds[0].revents & POLLIN) && !(pfds[1].revents & POLLIN))
+    *fd = pfds[0].fd;
+  else if((pfds[1].revents & POLLIN) && !(pfds[0].revents & POLLIN))
+    *fd = pfds[1].fd;
+  else if(ret == 2) {
+    *fd = pfds[random()%2].fd;
+  }
+  else
+    *fd = -1; // should never happen
+  
+  return 1;
 }
 
 
@@ -327,13 +363,13 @@ string humanDuration(time_t passed)
   if(passed<60)
     ret<<passed<<" seconds";
   else if(passed<3600)
-    ret<<setprecision(2)<<passed/60.0<<" minutes";
+    ret<<std::setprecision(2)<<passed/60.0<<" minutes";
   else if(passed<86400)
-    ret<<setprecision(3)<<passed/3600.0<<" hours";
+    ret<<std::setprecision(3)<<passed/3600.0<<" hours";
   else if(passed<(86400*30.41))
-    ret<<setprecision(3)<<passed/86400.0<<" days";
+    ret<<std::setprecision(3)<<passed/86400.0<<" days";
   else
-    ret<<setprecision(3)<<passed/(86400*30.41)<<" months";
+    ret<<std::setprecision(3)<<passed/(86400*30.41)<<" months";
 
   return ret.str();
 }
@@ -425,7 +461,7 @@ string netstringerror()
   char buf[512];
   int err=WSAGetLastError();
   if(FormatMessage (FORMAT_MESSAGE_FROM_SYSTEM, NULL, err,
-		     0, buf, sizeof(buf)-1, NULL)) {
+        	     0, buf, sizeof(buf)-1, NULL)) {
     return string(buf);
   }
   else {
@@ -471,30 +507,13 @@ string U32ToIP(uint32_t val)
 {
   char tmp[17];
   snprintf(tmp, sizeof(tmp)-1, "%u.%u.%u.%u", 
-	   (val >> 24)&0xff,
-	   (val >> 16)&0xff,
-	   (val >>  8)&0xff,
-	   (val      )&0xff);
+           (val >> 24)&0xff,
+           (val >> 16)&0xff,
+           (val >>  8)&0xff,
+           (val      )&0xff);
   return tmp;
 }
 
-
-const string sockAddrToString(struct sockaddr_in *remote) 
-{    
-  if(remote->sin_family == AF_INET) {
-    struct sockaddr_in sip;
-    memcpy(&sip,(struct sockaddr_in*)remote,sizeof(sip));
-    return inet_ntoa(sip.sin_addr);
-  }
-  else {
-    char tmp[128];
-    
-    if(!Utility::inet_ntop(AF_INET6, ( const char * ) &((struct sockaddr_in6 *)remote)->sin6_addr, tmp, sizeof(tmp)))
-      return "IPv6 untranslateable";
-
-    return tmp;
-  }
-}
 
 string makeHexDump(const string& str)
 {
@@ -508,8 +527,6 @@ string makeHexDump(const string& str)
   }
   return ret;
 }
-
-
 
 // shuffle, maintaining some semblance of order
 void shuffle(vector<DNSResourceRecord>& rrs)
@@ -618,4 +635,132 @@ string stripDot(const string& dom)
     return dom;
 
   return dom.substr(0,dom.size()-1);
+}
+
+
+string labelReverse(const std::string& qname)
+{
+  if(qname.empty())
+    return qname;
+
+  bool dotName = qname.find('.') != string::npos;
+
+  vector<string> labels;
+  stringtok(labels, qname, ". ");
+  if(labels.size()==1)
+    return qname;
+
+  string ret;  // vv const_reverse_iter http://gcc.gnu.org/bugzilla/show_bug.cgi?id=11729
+  for(vector<string>::reverse_iterator iter = labels.rbegin(); iter != labels.rend(); ++iter) {
+    if(iter != labels.rbegin())
+      ret.append(1, dotName ? ' ' : '.');
+    ret+=*iter;
+  }
+  return ret;
+}
+
+// do NOT feed trailing dots!
+// www.powerdns.com, powerdns.com -> www
+string makeRelative(const std::string& fqdn, const std::string& zone)
+{
+  if(zone.empty())
+    return fqdn;  
+  if(fqdn != zone)
+    return fqdn.substr(0, fqdn.size() - zone.length() - 1); // strip domain name
+  return "";
+}
+
+string dotConcat(const std::string& a, const std::string &b)
+{
+  if(a.empty() || b.empty())
+    return a+b;
+  else 
+    return a+"."+b;
+}
+
+int makeIPv6sockaddr(const std::string& addr, struct sockaddr_in6* ret)
+{
+  if(addr.empty())
+    return -1;
+  string ourAddr(addr);
+  int port = -1;
+  if(addr[0]=='[') { // [::]:53 style address
+    string::size_type pos = addr.find(']');
+    if(pos == string::npos || pos + 2 > addr.size() || addr[pos+1]!=':')
+      return -1;
+    ourAddr.assign(addr.c_str() + 1, pos-1);
+    port = atoi(addr.c_str()+pos+2);  
+  }
+  
+  struct addrinfo* res;
+  struct addrinfo hints;
+  memset(&hints, 0, sizeof(hints));
+  
+  hints.ai_family = AF_INET6;
+  hints.ai_flags = AI_NUMERICHOST;
+  
+  int error;
+  if((error=getaddrinfo(ourAddr.c_str(), 0, &hints, &res))) { // this is correct
+    /*
+    cerr<<"Error translating IPv6 address '"<<addr<<"': ";
+    if(error==EAI_SYSTEM)
+      cerr<<strerror(errno)<<endl;
+    else
+      cerr<<gai_strerror(error)<<endl;
+    */
+    return -1;
+  }
+  
+  memcpy(ret, res->ai_addr, res->ai_addrlen);
+  if(port >= 0)
+    ret->sin6_port = htons(port);
+  freeaddrinfo(res);
+  return 0;
+}
+
+int makeIPv4sockaddr(const string &str, struct sockaddr_in* ret)
+{
+  if(str.empty()) {
+    return -1;
+  }
+  struct in_addr inp;
+  
+  string::size_type pos = str.find(':');
+  if(pos == string::npos) { // no port specified, not touching the port
+    if(Utility::inet_aton(str.c_str(), &inp)) {
+      ret->sin_addr.s_addr=inp.s_addr;
+      return 0;
+    }
+    return -1;
+  }
+  if(!*(str.c_str() + pos + 1)) // trailing :
+    return -1; 
+    
+  char *eptr = (char*)str.c_str() + str.size();
+  int port = strtol(str.c_str() + pos + 1, &eptr, 10);
+  if(*eptr)
+    return -1;
+  
+  ret->sin_port = htons(port);
+  if(Utility::inet_aton(str.substr(0, pos).c_str(), &inp)) {
+    ret->sin_addr.s_addr=inp.s_addr;
+    return 0;
+  }
+  return -1;
+}
+
+
+//! read a line of text from a FILE* to a std::string, returns false on 'no data'
+bool stringfgets(FILE* fp, std::string& line)
+{
+  char buffer[1024];
+  line.clear();
+  
+  do {
+    if(!fgets(buffer, sizeof(buffer), fp))
+      return !line.empty();
+    
+    line.append(buffer); 
+  } while(!strchr(buffer, '\n'));
+  return true;
 }
