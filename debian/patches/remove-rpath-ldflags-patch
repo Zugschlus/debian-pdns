@@ -1,0 +1,53 @@
+--- a/pdns/Makefile.am
++++ b/pdns/Makefile.am
+@@ -45,7 +45,7 @@
+ ednssubnet.cc ednssubnet.hh
+ 
+ #
+-pdns_server_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@  -Lext/polarssl/library $(BOOST_SERIALIZATION_LDFLAGS)  -rdynamic
++pdns_server_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@  -Lext/polarssl/library -rdynamic
+ pdns_server_LDADD= -lpolarssl $(BOOST_SERIALIZATION_LIBS) $(LUA_LIBS)
+ 
+ 
+@@ -76,7 +76,7 @@
+ 	dynlistener.cc dns.cc randombackend.cc dnssecsigner.cc polarrsakeyinfra.cc md5.cc \
+ 	signingpipe.cc dnslabeltext.cc ednssubnet.cc
+ 
+-pdnssec_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@ -Lext/polarssl/library/ $(BOOST_PROGRAM_OPTIONS_LDFLAGS) $(BOOST_SERIALIZATION_LDFLAGS)
++pdnssec_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@ -Lext/polarssl/library/
+ pdnssec_LDADD= -lpolarssl $(BOOST_PROGRAM_OPTIONS_LIBS) $(BOOST_SERIALIZATION_LIBS)
+ 
+ if BOTAN19
+@@ -155,14 +155,14 @@
+ 	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnslabeltext.cc dnswriter.hh \
+ 	unix_utility.cc utility.hh sillyrecords.cc nsecrecords.cc base32.cc
+ 
+-dnsreplay_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@ $(BOOST_PROGRAM_OPTIONS_LDFLAGS)
++dnsreplay_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@
+ dnsreplay_LDADD= $(BOOST_PROGRAM_OPTIONS_LIBS)
+ 
+ nproxy_SOURCES=nproxy.cc dnsparser.cc dnsrecords.cc dnsparser.hh  \
+ 	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnslabeltext.cc dnswriter.hh \
+ 	sillyrecords.cc selectmplexer.cc   mplexer.hh
+ 
+-nproxy_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@ $(BOOST_PROGRAM_OPTIONS_LDFLAGS)
++nproxy_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@
+ nproxy_LDADD= $(BOOST_PROGRAM_OPTIONS_LIBS)
+ 
+ notify_SOURCES=notify.cc dnsparser.cc dnsrecords.cc dnsparser.hh  \
+@@ -170,7 +170,7 @@
+ 	sillyrecords.cc selectmplexer.cc nsecrecords.cc base32.cc misc.cc unix_utility.cc \
+ 	logger.cc qtype.cc statbag.cc
+ 
+-notify_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@ $(BOOST_PROGRAM_OPTIONS_LDFLAGS)
++notify_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@
+ notify_LDADD= $(BOOST_PROGRAM_OPTIONS_LIBS)
+ 
+ dnsscope_SOURCES=dnsscope.cc misc.cc unix_utility.cc qtype.cc \
+@@ -216,4 +216,4 @@
+ 
+ dnslabeltext.cc: dnslabeltext.rl
+ 	ragel dnslabeltext.rl -o dnslabeltext.cc
+-	
+\ No newline at end of file
++	
