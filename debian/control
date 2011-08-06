@@ -126,3 +126,51 @@ Description: sqlite backend for PowerDNS
  .
  This package contains a generic SQLite backend for PowerDNS.
 
+Package: pdns-backend-lua
+Architecture: any
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
+Provides: pdns-backend
+Description: lua backend for PowerDNS
+ PowerDNS is a versatile nameserver which supports a large number
+ of different backends ranging from simple zonefiles to relational
+ databases and load balancing/failover algorithms.
+ PowerDNS tries to emphasize speed and security.
+ .
+ This package contains a lua backend for PowerDNS.
+
+Package: pdns-backend-odbc
+Architecture: any
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
+Provides: pdns-backend
+Description: odbc backend for PowerDNS
+ PowerDNS is a versatile nameserver which supports a large number
+ of different backends ranging from simple zonefiles to relational
+ databases and load balancing/failover algorithms.
+ PowerDNS tries to emphasize speed and security.
+ .
+ This package contains a generic odbc backend for PowerDNS.
+
+Package: pdns-backend-mongodb
+Architecture: any
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
+Provides: pdns-backend
+Description: mongodb backend for PowerDNS
+ PowerDNS is a versatile nameserver which supports a large number
+ of different backends ranging from simple zonefiles to relational
+ databases and load balancing/failover algorithms.
+ PowerDNS tries to emphasize speed and security.
+ .
+ This package contains a mongodb backend for PowerDNS.
+
+Package: pdns-backend-opendbx
+Architecture: any
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
+Provides: pdns-backend
+Description: opendbx backend for PowerDNS
+ PowerDNS is a versatile nameserver which supports a large number
+ of different backends ranging from simple zonefiles to relational
+ databases and load balancing/failover algorithms.
+ PowerDNS tries to emphasize speed and security.
+ .
+ This package contains a opendbx backend for PowerDNS.
+

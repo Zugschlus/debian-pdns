@@ -2,8 +2,9 @@ pdns (3.0-1) unstable; urgency=low
 
   * New upstream version
   * Update Standards-Version to 3.9.2
+  * Add lua, godbc, mongodb and opendbx backend.
 
- -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sat, 06 Aug 2011 11:33:41 +0200
+ -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sat, 06 Aug 2011 13:31:26 +0200
 
 pdns (2.9.22-9) unstable; urgency=low
 
