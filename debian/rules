@@ -21,7 +21,7 @@ else
 	CXXFLAGS += -O2
 endif
 
-backends := ldap pipe gmysql gpgsql godbc gsqlite gsqlite3 geo lua mongodb
+backends := ldap pipe gmysql gpgsql gsqlite gsqlite3 geo lua mongodb
 
 # Targets
 config.status:

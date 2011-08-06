@@ -1,0 +1,2 @@
+debian/tmp/usr/lib/powerdns/libmongodbbackend.so* usr/lib/powerdns/
+debian/tmp/usr/lib/powerdns/libmongodbbackend.a usr/lib/powerdns/

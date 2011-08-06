@@ -3,7 +3,7 @@ Section: net
 Priority: extra
 Standards-Version: 3.9.2
 Maintainer: Matthijs Möhlmann <matthijs@cacholong.nl>
-Build-Depends: debhelper (>= 6.0.7), po-debconf, libtool, flex, bison, libmysqlclient-dev, libpq-dev, libssl-dev, tdb-dev, libgdbm-dev, libldap2-dev, libsqlite0-dev, libsqlite3-dev, dpkg-dev (>= 1.10.17), libboost-dev, libboost-serialization-dev, libboost-program-options-dev, autotools-dev, automake, autoconf, liblua5.1-0-dev, pkg-config, unixodbc-dev, libcrypto++-dev, mongodb-dev
+Build-Depends: debhelper (>= 6.0.7), po-debconf, libtool, flex, bison, libmysqlclient-dev, libpq-dev, libssl-dev, tdb-dev, libgdbm-dev, libldap2-dev, libsqlite0-dev, libsqlite3-dev, dpkg-dev (>= 1.10.17), libboost-dev, libboost-serialization-dev, libboost-program-options-dev, autotools-dev, automake, autoconf, liblua5.1-0-dev, pkg-config, libcrypto++-dev, mongodb-dev
 Vcs-Git: git://github.com/Signum/debian-pdns.git
 
 Package: pdns-server
@@ -137,18 +137,6 @@ Description: lua backend for PowerDNS
  PowerDNS tries to emphasize speed and security.
  .
  This package contains a lua backend for PowerDNS.
-
-Package: pdns-backend-odbc
-Architecture: any
-Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
-Provides: pdns-backend
-Description: odbc backend for PowerDNS
- PowerDNS is a versatile nameserver which supports a large number
- of different backends ranging from simple zonefiles to relational
- databases and load balancing/failover algorithms.
- PowerDNS tries to emphasize speed and security.
- .
- This package contains a generic odbc backend for PowerDNS.
 
 Package: pdns-backend-mongodb
 Architecture: any

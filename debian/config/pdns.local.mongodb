@@ -1,0 +1,18 @@
+# Configuration for the mongodb backend
+#mongodb-host = localhost:27017
+#mongodb-database = dns
+
+# Set the following parameter for the first startup of powerdns with the mongodb
+# backend so that it can generate the indexes. After that set it to no.
+#mongodb-checkindex=yes
+
+# Tables in Mongo DB is called collection:
+# collection-domains = domains
+# collection-records = records
+# collection-domainmetadata = domainmetadata
+# collection-cryptokeys = cryptokeys
+# collection-tsigkeys = tsigkeys
+#
+# DNSSEC is set to yes as default since you don't have to convert anything to get
+# this functionallity. Only if don't want dnssec you should set "mongodb-dnssec"
+# to "no".
