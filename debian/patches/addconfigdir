@@ -1,5 +1,3 @@
-Index: b/pdns/arguments.cc
-===================================================================
 --- a/pdns/arguments.cc
 +++ b/pdns/arguments.cc
 @@ -312,9 +312,12 @@
@@ -15,7 +13,7 @@ Index: b/pdns/arguments.cc
 +	  }
 +	} else
        if(!lax)
- 	throw ArgException("Trying to set unexisting parameter '"+var+"'");
+         throw ArgException("Trying to set unexisting parameter '"+var+"'");
    }
 @@ -341,6 +344,31 @@
    }
@@ -46,11 +44,9 @@ Index: b/pdns/arguments.cc
 +	return true;
 +}
 +
- bool ArgvMap::preParseFile(const char *fname, const string &arg)
+ bool ArgvMap::preParseFile(const char *fname, const string &arg, const string& theDefault)
  {
-   params[arg].clear();
-Index: b/pdns/arguments.hh
-===================================================================
+   params[arg]=theDefault;
 --- a/pdns/arguments.hh
 +++ b/pdns/arguments.hh
 @@ -24,6 +24,7 @@
@@ -64,16 +60,14 @@ Index: b/pdns/arguments.hh
 @@ -83,6 +84,7 @@
    }
    void preParse(int &argc, char **argv, const string &arg); //!< use this to preparse a single var
-   bool preParseFile(const char *fname, const string &arg); //!< use this to preparse a single var in configuration
+   bool preParseFile(const char *fname, const string &arg, const string& theDefault=""); //!< use this to preparse a single var in configuration
 +  bool preParseDir(const string dir, const string &arg, bool lax); //!< use this to include a directory
  
    bool file(const char *fname, bool lax=false); //!< Parses a file with parameters
    bool laxFile(const char *fname) 
-Index: b/pdns/common_startup.cc
-===================================================================
 --- a/pdns/common_startup.cc
 +++ b/pdns/common_startup.cc
-@@ -61,6 +61,7 @@
+@@ -66,6 +66,7 @@
    ::arg().set("fancy-records","Process URL and MBOXFW records")="no";
    ::arg().set("wildcard-url","Process URL and MBOXFW records")="no";
    ::arg().set("wildcards","Honor wildcards in the database")="";
@@ -81,18 +75,3 @@ Index: b/pdns/common_startup.cc
    ::arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
    ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
    ::arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
-Index: b/pdns/docs/pdns.sgml
-===================================================================
---- a/pdns/docs/pdns.sgml
-+++ b/pdns/docs/pdns.sgml
-@@ -9549,6 +9549,10 @@
- 	    <listitem><para>
- 		Provide a helpful message
- 	      </para></listitem></varlistentry>
-+	  <varlistentry><term>include</term>
-+	  	<listitem><para>
-+			Include a directory with configuration files. This adds support for pdns.d or config.d constructions.
-+		</para></listitem></varlistentry>
- 	  <varlistentry><term>launch=...</term>
- 	    <listitem><para>
- 		Which backends to launch and order to query them in. See <xref linkend="modules">.

@@ -1,8 +1,6 @@
-Index: b/pdns/misc.cc
-===================================================================
 --- a/pdns/misc.cc
 +++ b/pdns/misc.cc
-@@ -391,6 +391,9 @@
+@@ -427,6 +427,9 @@
  #ifdef WIN32
  # define MAXHOSTNAMELEN 1025
  #endif // WIN32
