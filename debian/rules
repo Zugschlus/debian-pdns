@@ -73,7 +73,6 @@ clean:
 	[ ! -f modules/goraclebackend/Makefile ] || $(MAKE) -C modules/goraclebackend/ distclean
 	[ ! -f modules/opendbxbackend/Makefile ] || $(MAKE) -C modules/opendbxbackend/ distclean
 	[ ! -f Makefile ] || $(MAKE) distclean
-	[ ! -f pdns/docs/Makefile ] || $(MAKE) -C pdns/docs clean
 	
 	dh_clean 
 
@@ -86,7 +85,6 @@ install: build
 	
 	# Install the stuff
 	$(MAKE) install DESTDIR=$(CURDIR)/debian/tmp
-	$(MAKE) -C pdns/docs html/index.html
 	
 	# Set up init.d virtual facility
 	mkdir -p $(CURDIR)/debian/pdns-server/etc/insserv.conf.d
