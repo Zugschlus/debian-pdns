@@ -50,6 +50,7 @@ endif
 		--with-dynmodules="$(backends)" \
 		--with-modules="" \
 		--with-pgsql-includes=`pg_config --includedir` \
+		--with-boost=/usr/lib \
 		--enable-cryptopp \
 		--disable-recursor
 
