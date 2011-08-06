@@ -10,7 +10,6 @@ Package: pdns-server
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, ucf (>= 0.28), adduser
 Replaces: pdns
-Recommends: pdns-doc
 Suggests: pdns-backend, pdns-recursor
 Description: extremely powerful and versatile nameserver
  PowerDNS is a versatile nameserver which supports a large number
@@ -36,19 +35,6 @@ Description: debugging symbols for PowerDNS
  .
  This package contains debugging symbols for PowerDNS to assist in
  debugging, such as gdb. It is not required for normal operation.
-
-Package: pdns-doc
-Section: doc
-Architecture: all
-Depends: ${misc:Depends}
-Description: PowerDNS manual
- PowerDNS is a versatile nameserver which supports a large number
- of different backends ranging from simple zonefiles to relational
- databases and load balancing/failover algorithms.
- PowerDNS tries to emphasize speed and security.
- .
- This is the complete manual for PowerDNS, documenting both how to
- install and configure it as well as how to write new backend modules.
 
 Package: pdns-backend-pipe
 Architecture: any
