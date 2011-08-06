@@ -1,0 +1,46 @@
+--- a/codedocs/Makefile
++++ b/codedocs/Makefile
+@@ -181,7 +181,7 @@
+ mandir = ${datarootdir}/man
+ mkdir_p = /bin/mkdir -p
+ moduledirs =  mysqlbackend mydnsbackend gmysqlbackend mongodbbackend luabackend gpgsqlbackend xdbbackend pipebackend oraclebackend pipebackend pdnsbackend db2backend odbcbackend ldapbackend gsqlitebackend gsqlite3backend geobackend goraclebackend opendbxbackend godbcbackend
+-modulelibs =  -lmysqlclient -lz -lmysqlclient -lz -lmysqlclient -L/opt/mongo/lib64/ -lmongoclient -lboost_thread -lboost_filesystem -lboost_system -llua5.1 -lpq -lssl -lcrypto  -lcrypt   -lresolv -lnsl -ltdb  -L$(ORACLE_HOME)/lib -lclntsh  -lmysqlclient   -lldap_r -lsqlite -lsqlite3  -L$(ORACLE_HOME)/lib -lclient9  -lclntst9 -lopendbx 
++modulelibs =  -lmysqlclient -lz -lmysqlclient -lz -lmysqlclient -lmongoclient -lboost_thread -lboost_filesystem -lboost_system -llua5.1 -lpq -lssl -lcrypto  -lcrypt   -lresolv -lnsl -ltdb  -L$(ORACLE_HOME)/lib -lclntsh  -lmysqlclient   -lldap_r -lsqlite -lsqlite3  -L$(ORACLE_HOME)/lib -lclient9  -lclntst9 -lopendbx 
+ moduleobjects =  ../modules/mysqlbackend/mysqlcbackend.o ../modules/mydnsbackend/mydnsbackend.o ../modules/gmysqlbackend/gmysqlbackend.o ../modules/gmysqlbackend/smysql.o ../modules/mongodbbackend/mongodbbackend.o ../modules/mongodbbackend/minimal.o ../modules/mongodbbackend/slave.o ../modules/mongodbbackend/master.o ../modules/mongodbbackend/reload.o ../modules/mongodbbackend/private.o ../modules/mongodbbackend/dnssec.o ../modules/mongodbbackend/supermaster.o ../modules/mongodbbackend/crc32.o ../modules/luabackend/luabackend.o ../modules/luabackend/minimal.o ../modules/luabackend/reload.o ../modules/luabackend/lua_functions.o ../modules/luabackend/master.o ../modules/luabackend/private.o ../modules/luabackend/slave.o ../modules/luabackend/supermaster.o ../modules/luabackend/dnssec.o ../modules/gpgsqlbackend/gpgsqlbackend.o ../modules/gpgsqlbackend/spgsql.o ../modules/xdbbackend/xdbbackend.o ../modules/xdbbackend/xtdb.o ../modules/pipebackend/coprocess.o ../modules/pipebackend/pipebackend.o ../modules/oraclebackend/oraclebackend.o ../modules/pipebackend/coprocess.o ../modules/pipebackend/pipebackend.o ../modules/pdnsbackend/pdnsbackend.o ../modules/db2backend/DB2Backend.o ../modules/ldapbackend/ldapbackend.o ../modules/ldapbackend/powerldap.o ../modules/gsqlitebackend/gsqlitebackend.o ../modules/gsqlitebackend/ssqlite.o ../modules/gsqlite3backend/gsqlite3backend.o ../modules/gsqlite3backend/ssqlite3.o ../modules/geobackend/geobackend.o ../modules/geobackend/ippreftree.o ../modules/goraclebackend/goraclebackend.o ../modules/goraclebackend/soracle.o ../modules/opendbxbackend/odbxbackend.o ../modules/opendbxbackend/odbxprivate.o
+ oldincludedir = /usr/include
+ pdfdir = ${docdir}
+--- a/modules/mongodbbackend/Makefile.am
++++ b/modules/mongodbbackend/Makefile.am
+@@ -1,10 +1,10 @@
+ AM_CPPFLAGS=@THREADFLAGS@
+ EXTRA_DIST=OBJECTFILES OBJECTLIBS 
+ 
+-INCLUDES=-I/opt/mongo/include/mongo/
++INCLUDES=-I/usr/include/mongo/
+ 
+ lib_LTLIBRARIES = libmongodbbackend.la
+ 
+ libmongodbbackend_la_SOURCES=mongodbbackend.cc mongodbbackend.hh minimal.cc slave.cc master.cc reload.cc private.cc dnssec.cc supermaster.cc crc32.cc
+-libmongodbbackend_la_LDFLAGS=-module -avoid-version -L/opt/mongo/lib64 $(BOOST_THREAD_LDFLAGS) $(BOOST_FILESYSTEM_LDFLAGS) $(BOOST_SYSTEM_LDFLAGS)  -lmongoclient $(BOOST_THREAD_LIBS) $(BOOST_FILESYSTEM_LIBS) $(BOOST_SYSTEM_LIBS) 
++libmongodbbackend_la_LDFLAGS=-module -avoid-version $(BOOST_THREAD_LDFLAGS) $(BOOST_FILESYSTEM_LDFLAGS) $(BOOST_SYSTEM_LDFLAGS)  -lmongoclient $(BOOST_THREAD_LIBS) $(BOOST_FILESYSTEM_LIBS) $(BOOST_SYSTEM_LIBS) 
+ 
+--- a/modules/mongodbbackend/Makefile.in
++++ b/modules/mongodbbackend/Makefile.in
+@@ -256,10 +256,10 @@
+ top_srcdir = @top_srcdir@
+ AM_CPPFLAGS = @THREADFLAGS@
+ EXTRA_DIST = OBJECTFILES OBJECTLIBS 
+-INCLUDES = -I/opt/mongo/include/mongo/
++INCLUDES = -I/usr/include/mongo/
+ lib_LTLIBRARIES = libmongodbbackend.la
+ libmongodbbackend_la_SOURCES = mongodbbackend.cc mongodbbackend.hh minimal.cc slave.cc master.cc reload.cc private.cc dnssec.cc supermaster.cc crc32.cc
+-libmongodbbackend_la_LDFLAGS = -module -avoid-version -L/opt/mongo/lib64 $(BOOST_THREAD_LDFLAGS) $(BOOST_FILESYSTEM_LDFLAGS) $(BOOST_SYSTEM_LDFLAGS)  -lmongoclient $(BOOST_THREAD_LIBS) $(BOOST_FILESYSTEM_LIBS) $(BOOST_SYSTEM_LIBS) 
++libmongodbbackend_la_LDFLAGS = -module -avoid-version $(BOOST_THREAD_LDFLAGS) $(BOOST_FILESYSTEM_LDFLAGS) $(BOOST_SYSTEM_LDFLAGS)  -lmongoclient $(BOOST_THREAD_LIBS) $(BOOST_FILESYSTEM_LIBS) $(BOOST_SYSTEM_LIBS) 
+ all: all-am
+ 
+ .SUFFIXES:
+--- a/modules/mongodbbackend/OBJECTLIBS
++++ b/modules/mongodbbackend/OBJECTLIBS
+@@ -1 +1 @@
+--L/opt/mongo/lib64/ -lmongoclient -lboost_thread -lboost_filesystem -lboost_system
++-lmongoclient -lboost_thread -lboost_filesystem -lboost_system
