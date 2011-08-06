@@ -1,6 +1,6 @@
 dnl intro
 AC_INIT(pdns/receiver.cc)
-AM_INIT_AUTOMAKE(pdns, 3.0-rc2.20110417.2165)
+AM_INIT_AUTOMAKE(pdns, 3.0)
 AC_CANONICAL_HOST
 AM_CONFIG_HEADER(config.h)
 AC_C_BIGENDIAN 
@@ -373,7 +373,7 @@ then
 	    [  --with-pgsql=<path>     root directory path of PgSQL installation],
 	    [PGSQL_lib_check="$withval/lib/pgsql $with_pgsql/lib"
 	PGSQL_inc_check="$withval/include/pgsql"],
-	    [PGSQL_lib_check="/usr/local/pgsql/lib/pgsql /usr/local/lib/pgsql /opt/pgsql/lib/pgsql /usr/lib/pgsql /usr/local/pgsql/lib /usr/local/lib /opt/pgsql/lib /usr/lib"
+	    [PGSQL_lib_check="/usr/local/pgsql/lib/pgsql /usr/local/lib/pgsql /opt/pgsql/lib/pgsql /usr/lib/pgsql /usr/local/pgsql/lib /usr/local/lib /opt/pgsql/lib /usr/lib /usr/lib64"
 	PGSQL_inc_check="/usr/local/pgsql/include/pgsql /usr/include /usr/local/include/postgresql/ /usr/local/include /opt/pgsql/include/pgsql /opt/pgsql/include /usr/include/pgsql/ /usr/include/postgresql"])
 		AC_ARG_WITH(pgsql-lib,
 	    [  --with-pgsql-lib=<path> directory path of PgSQL library installation],
@@ -396,7 +396,8 @@ then
 	        AC_MSG_ERROR([Didn't find the pgsql library dir in '$PGSQL_lib_check'])
 	fi
 	case "$PGSQL_libdir" in
-           /usr/lib ) PGSQL_lib="" ;;
+	  /usr/lib ) PGSQL_lib="" ;;
+	  /usr/lib64 ) PGSQL_lib="" ;;
 	  /* ) PGSQL_lib="-L$PGSQL_libdir -Wl,-rpath,$PGSQL_libdir" 
 	       LDFLAGS="$PGSQL_lib $LDFLAGS"
                ;;
@@ -430,11 +431,12 @@ fi
 
 if test "$needsqlite"
 then
+
         AC_ARG_WITH(sqlite,
             [  --with-sqlite=<path>     root directory path of SQLite installation],
             [SQLITE_lib_check="$withval/lib/sqlite $with_sqlite/lib"
         SQLITE_inc_check="$withval/include/sqlite"],
-            [SQLITE_lib_check="/usr/local/sqlite/lib/sqlite /usr/local/lib/sqlite /opt/pgsql/lib/sqlite /usr/lib/sqlite /usr/local/sqlite/lib /usr/local/lib /opt/sqlite/lib /usr/lib"
+            [SQLITE_lib_check="/usr/local/sqlite/lib/sqlite /usr/local/lib/sqlite /opt/pgsql/lib/sqlite /usr/lib/sqlite /usr/local/sqlite/lib /usr/local/lib /opt/sqlite/lib /usr/lib /usr/lib64"
         SQLITE_inc_check="/usr/local/sqlite/include/sqlite /usr/local/include/sqlite/ /usr/local/include /opt/sqlite/include/sqlite /opt/sqlite/include /usr/include/ /usr/include/sqlite"])
                 AC_ARG_WITH(sqlite-lib,
             [  --with-sqlite-lib=<path> directory path of SQLite library installation],
@@ -457,7 +459,8 @@ then
                 AC_MSG_ERROR([Didn't find the sqlite library dir in '$SQLITE_lib_check'])
         fi
         case "$SQLITE_libdir" in
-           /usr/lib ) SQLITE_lib="" ;;
+          /usr/lib ) SQLITE_lib="" ;;
+          /usr/lib64 ) SQLITE_lib="" ;;
           /* ) SQLITE_lib="-L$SQLITE_libdir -Wl,-rpath,$SQLITE_libdir"
                LDFLAGS="$SQLITE_lib $LDFLAGS"
                ;;
@@ -490,61 +493,9 @@ fi
 
 if test "$needsqlite3"
 then
-        AC_ARG_WITH(sqlite3,
-            [  --with-sqlite3=<path>     root directory path of SQLite3 installation],
-            [SQLITE3_lib_check="$withval/lib/sqlite3 $with_sqlite3/lib"
-             SQLITE3_inc_check="$withval/include/sqlite3"],
-            [SQLITE3_lib_check="/usr/local/sqlite3/lib/sqlite3 /usr/local/lib/sqlite3 /usr/lib/sqlite3 /usr/local/sqlite3/lib /usr/local/lib /opt/sqlite3/lib /usr/lib"
-             SQLITE3_inc_check="/usr/local/sqlite3/include/sqlite3 /usr/local/include/sqlite3/ /usr/local/include /opt/sqlite3/include/sqlite3 /opt/sqlite3/include /usr/include/ /usr/include/sqlite3"])
-        AC_ARG_WITH(sqlite3-lib,
-            [  --with-sqlite3-lib=<path> directory path of SQLite3 library installation],
-            [SQLITE3_lib_check="$withval/lib/sqlite3 $withval/sqlite3 $withval"])
-        AC_ARG_WITH(sqlite3-includes,
-            [  --with-sqlite3-includes=<path> directory path of SQLite3 header installation],
-            [SQLITE3_inc_check="$withval/include/sqlite3 $withval/sqlite3 $withval"])
-        AC_MSG_CHECKING([for SQLite3 library directory])
-        SQLITE3_libdir=
-        for m in $SQLITE3_lib_check; do
-                if test -d "$m" && \
-                   (test -f "$m/libsqlite3.so" || test -f "$m/libsqlite3.a")
-                then
-                        SQLITE3_libdir=$m
-                        break
-                fi
-        done
-                if test -z "$SQLITE3_libdir"; then
-                AC_MSG_ERROR([Didn't find the sqlite3 library dir in '$SQLITE3_lib_check'])
-        fi
-        case "$SQLITE3_libdir" in
-           /usr/lib ) SQLITE3_lib="" ;;
-          /* ) SQLITE3_lib="-L$SQLITE3_libdir -Wl,-rpath,$SQLITE3_libdir"
-               LDFLAGS="$SQLITE3_lib $LDFLAGS"
-               ;;
-          * )  AC_MSG_ERROR([The SQLite3 library directory ($SQLITE3_libdir) must be an absolute path.]) ;;
-        esac
-
-        AC_SUBST(SQLITE3_lib)
-        AC_MSG_RESULT([$SQLITE3_libdir])
-        AC_MSG_CHECKING([for SQLite3 include directory])
-        SQLITE3_incdir=
-        for m in $SQLITE3_inc_check; do
-                if test -d "$m" && test -f "$m/sqlite3.h"
-                then
-                        SQLITE3_incdir=$m
-                        break
-                fi
-        done
-                if test -z "$SQLITE3_incdir"; then
-                AC_MSG_ERROR([Didn't find the SQLite3 include dir in '$SQLITE3_inc_check'])
-        fi
-        case "$SQLITE3_incdir" in
-          /* ) ;;
-          * )  AC_MSG_ERROR([The SQLite3 include directory ($SQLITE3_incdir) must be an absolute path.]) ;;
-        esac
-        AC_SUBST(SQLITE3_incdir)
-        AC_MSG_RESULT([$SQLITE3_incdir])
-
-#       LIBS="$LIBS -lsqlite3"
+	PKG_CHECK_MODULES(SQLITE3, sqlite3, HAVE_SQLITE=yes, AC_MSG_ERROR([+Could not find sqlite3]))
+        AC_SUBST(SQLITE3_LIBS)
+        AC_SUBST(SQLITE3_CFLAGS)
 fi
 
 if test "$needunixodbc"
@@ -644,6 +595,7 @@ modules/geobackend/Makefile modules/opendbxbackend/Makefile \
 modules/pipebackend/Makefile modules/oraclebackend/Makefile \
 modules/xdbbackend/Makefile modules/godbcbackend/Makefile \
 modules/odbcbackend/Makefile modules/mongodbbackend/Makefile \
-modules/gpgsqlbackend/Makefile modules/ldapbackend/Makefile 
-modules/gsqlitebackend/Makefile modules/gsqlite3backend/Makefile
-modules/goraclebackend/Makefile modules/mydnsbackend/Makefile)
+modules/gpgsqlbackend/Makefile modules/ldapbackend/Makefile \
+modules/gsqlitebackend/Makefile modules/gsqlite3backend/Makefile \
+modules/goraclebackend/Makefile modules/mydnsbackend/Makefile \
+modules/luabackend/Makefile )

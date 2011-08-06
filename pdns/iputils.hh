@@ -200,6 +200,25 @@ inline ComboAddress makeComboAddress(const string& str)
 class Netmask
 {
 public:
+  Netmask()
+  {
+	d_network.sin4.sin_family=0; // disable this doing anything useful
+  }
+  
+  Netmask(const ComboAddress& network, uint8_t bits=0xff)
+  {
+    d_network = network;
+    
+    if(bits == 0xff)
+      bits = (network.sin4.sin_family == AF_INET) ? 32 : 128;
+    
+    d_bits = bits;
+    if(d_bits<32)
+      d_mask=~(0xFFFFFFFF>>d_bits);
+    else
+      d_mask=0xFFFFFFFF; // not actually used for IPv6
+  }
+  
   //! Constructor supplies the mask, which cannot be changed 
   Netmask(const string &mask) 
   {
@@ -271,9 +290,21 @@ public:
 
   string toString() const
   {
-    return d_network.toString()+"/"+boost::lexical_cast<string>(d_bits);
+    return d_network.toString()+"/"+boost::lexical_cast<string>((unsigned int)d_bits);
   }
 
+  string toStringNoMask() const
+  {
+    return d_network.toString();
+  }
+  const ComboAddress& getNetwork() const
+  {
+    return d_network;
+  }
+  int getBits() const
+  {
+    return d_bits;
+  }
 private:
   ComboAddress d_network;
   uint32_t d_mask;

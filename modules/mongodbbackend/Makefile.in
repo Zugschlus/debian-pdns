@@ -181,14 +181,12 @@ PATH_SEPARATOR = @PATH_SEPARATOR@
 PGSQL_incdir = @PGSQL_incdir@
 PGSQL_lib = @PGSQL_lib@
 PKG_CONFIG = @PKG_CONFIG@
-PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
-PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
-SQLITE3_incdir = @SQLITE3_incdir@
-SQLITE3_lib = @SQLITE3_lib@
+SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
+SQLITE3_LIBS = @SQLITE3_LIBS@
 SQLITE_incdir = @SQLITE_incdir@
 SQLITE_lib = @SQLITE_lib@
 STRIP = @STRIP@
@@ -261,7 +259,7 @@ EXTRA_DIST = OBJECTFILES OBJECTLIBS
 INCLUDES = -I/opt/mongo/include/mongo/
 lib_LTLIBRARIES = libmongodbbackend.la
 libmongodbbackend_la_SOURCES = mongodbbackend.cc mongodbbackend.hh minimal.cc slave.cc master.cc reload.cc private.cc dnssec.cc supermaster.cc crc32.cc
-libmongodbbackend_la_LDFLAGS = -module -avoid-version -L/opt/mongo/lib64 -lmongoclient -lboost_thread -lboost_filesystem -lboost_system
+libmongodbbackend_la_LDFLAGS = -module -avoid-version -L/opt/mongo/lib64 $(BOOST_THREAD_LDFLAGS) $(BOOST_FILESYSTEM_LDFLAGS) $(BOOST_SYSTEM_LDFLAGS)  -lmongoclient $(BOOST_THREAD_LIBS) $(BOOST_FILESYSTEM_LIBS) $(BOOST_SYSTEM_LIBS) 
 all: all-am
 
 .SUFFIXES:

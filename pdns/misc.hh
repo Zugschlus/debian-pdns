@@ -66,7 +66,6 @@ struct TSCTimer
 #include <string>
 #include <ctype.h>
 #include <vector>
-#include <boost/optional.hpp>
 
 #include "namespaces.hh"
 bool chopOff(string &domain);
@@ -77,7 +76,6 @@ bool dottedEndsOn(const string &domain, const string &suffix);
 string nowTime();
 const string unquotify(const string &item);
 string humanDuration(time_t passed);
-void chomp(string &line, const string &delim);
 bool stripDomainSuffix(string *qname, const string &domain);
 void stripLine(string &line);
 string getHostname();
@@ -89,7 +87,7 @@ uint16_t getShort(const unsigned char *p);
 uint16_t getShort(const char *p);
 uint32_t getLong(const unsigned char *p);
 uint32_t getLong(const char *p);
-boost::optional<int> logFacilityToLOG(unsigned int facility);
+int logFacilityToLOG(unsigned int facility);
 
 struct ServiceTuple
 {

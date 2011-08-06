@@ -32,10 +32,10 @@ string DNSBackend::getRemote(DNSPacket *p)
 
 bool DNSBackend::getRemote(DNSPacket *p, struct sockaddr *sa, Utility::socklen_t *len)
 {
-  if(p->remote.getSocklen() < *len)
+  if(p->d_remote.getSocklen() < *len)
     return false;
-  *len=p->remote.getSocklen();
-  memcpy(sa,&p->remote,*len);
+  *len=p->d_remote.getSocklen();
+  memcpy(sa,&p->d_remote,*len);
   return true;
 }
 
@@ -219,6 +219,7 @@ bool DNSBackend::getSOA(const string &domain, SOAData &sd, DNSPacket *p)
     fillSOAData(rr.content, sd);
     sd.domain_id=rr.domain_id;
     sd.ttl=rr.ttl;
+    sd.scopeMask = rr.scopeMask;
   }
 
   if(!hits)

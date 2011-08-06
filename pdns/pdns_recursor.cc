@@ -1593,9 +1593,9 @@ int serviceMain(int argc, char*argv[])
   L.setLoglevel((Logger::Urgency)(6)); // info and up
 
   if(!::arg()["logging-facility"].empty()) {
-    boost::optional<int> val=logFacilityToLOG(::arg().asNum("logging-facility") );
-    if(val)
-      theL().setFacility(*val);
+    int val=logFacilityToLOG(::arg().asNum("logging-facility") );
+    if(val >= 0)
+      theL().setFacility(val);
     else
       L<<Logger::Error<<"Unknown logging facility "<<::arg().asNum("logging-facility") <<endl;
   }
@@ -1972,7 +1972,7 @@ int main(int argc, char **argv)
     ::arg().set("packetcache-servfail-ttl", "maximum number of seconds to keep a cached servfail entry in packetcache")="60";
     ::arg().set("server-id", "Returned when queried for 'server.id' TXT or NSID, defaults to hostname")="";
     ::arg().set("remotes-ringbuffer-entries", "maximum number of packets to store statistics for")="0";
-    ::arg().set("version-string", "string reported on version.pdns or version.bind")="PowerDNS Recursor "VERSION" $Id: pdns_recursor.cc 2150 2011-04-11 16:06:41Z ahu $";
+    ::arg().set("version-string", "string reported on version.pdns or version.bind")="PowerDNS Recursor "VERSION" $Id: pdns_recursor.cc 2175 2011-04-19 13:31:46Z ahu $";
     ::arg().set("allow-from", "If set, only allow these comma separated netmasks to recurse")=LOCAL_NETS;
     ::arg().set("allow-from-file", "If set, load allowed netmasks from this file")="";
     ::arg().set("entropy-source", "If set, read entropy from this file")="/dev/urandom";

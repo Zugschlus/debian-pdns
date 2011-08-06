@@ -42,6 +42,9 @@
 #include "dnsrecords.hh"
 #include "dnssecinfra.hh" 
 #include "base64.hh"
+#include "ednssubnet.hh"
+
+bool DNSPacket::s_doEDNSSubnetProcessing;
 
 DNSPacket::DNSPacket() 
 {
@@ -49,6 +52,7 @@ DNSPacket::DNSPacket()
   d_compress=true;
   d_tcp=false;
   d_wantsnsid=false;
+  d_haveednssubnet = false;
   d_dnssecOk=false;
 }
 
@@ -62,19 +66,19 @@ const string& DNSPacket::getString()
 
 string DNSPacket::getRemote() const
 {
-  return remote.toString();
+  return d_remote.toString();
 }
 
 uint16_t DNSPacket::getRemotePort() const
 {
-  return remote.sin4.sin_port;
+  return d_remote.sin4.sin_port;
 }
 
 DNSPacket::DNSPacket(const DNSPacket &orig)
 {
   DLOG(L<<"DNSPacket copy constructor called!"<<endl);
   d_socket=orig.d_socket;
-  remote=orig.remote;
+  d_remote=orig.d_remote;
   d_qlen=orig.d_qlen;
   d_dt=orig.d_dt;
   d_compress=orig.d_compress;
@@ -85,6 +89,10 @@ DNSPacket::DNSPacket(const DNSPacket &orig)
   d_maxreplylen = orig.d_maxreplylen;
   d_ednsping = orig.d_ednsping;
   d_wantsnsid = orig.d_wantsnsid;
+  
+  d_eso = orig.d_eso;
+  d_haveednssubnet = orig.d_haveednssubnet;
+  
   d_dnssecOk = orig.d_dnssecOk;
   d_rrs=orig.d_rrs;
   
@@ -259,10 +267,13 @@ void DNSPacket::wrapup()
   if(!d_ednsping.empty()) {
     opts.push_back(make_pair(4, d_ednsping));
   }
-
-  if(!d_rrs.empty() || !opts.empty()) {
+  
+  
+  if(!d_rrs.empty() || !opts.empty() || d_haveednssubnet) {
     try {
+      uint8_t maxScopeMask=0;
       for(pos=d_rrs.begin(); pos < d_rrs.end(); ++pos) {
+        maxScopeMask = max(maxScopeMask, pos->scopeMask);
         // this needs to deal with the 'prio' mismatch:
         if(pos->qtype.getCode()==QType::MX || pos->qtype.getCode() == QType::SRV) {  
           pos->content = lexical_cast<string>(pos->priority) + " " + pos->content;
@@ -284,6 +295,15 @@ void DNSPacket::wrapup()
           }
           goto noCommit;
         }
+      }
+      
+      if(d_haveednssubnet) {
+        string makeEDNSSubnetOptsString(const EDNSSubnetOpts& eso);
+        EDNSSubnetOpts eso = d_eso;
+        eso.scope = Netmask(eso.source.getNetwork(), maxScopeMask);
+    
+        string opt = makeEDNSSubnetOptsString(eso);
+        opts.push_back(make_pair(::arg().asNum("edns-subnet-option-number"), opt));
       }
 
       if(!opts.empty() || d_dnssecOk)
@@ -324,7 +344,7 @@ DNSPacket *DNSPacket::replyPacket() const
   DNSPacket *r=new DNSPacket;
   r->setSocket(d_socket);
 
-  r->setRemote(&remote);
+  r->setRemote(&d_remote);
   r->setAnswer(true);  // this implies the allocation of the header
   r->setA(true); // and we are authoritative
   r->setRA(0); // no recursion available
@@ -342,6 +362,8 @@ DNSPacket *DNSPacket::replyPacket() const
   r->d_ednsping = d_ednsping;
   r->d_wantsnsid = d_wantsnsid;
   r->d_dnssecOk = d_dnssecOk;
+  r->d_eso = d_eso;
+  r->d_haveednssubnet = d_haveednssubnet;
   
   if(!d_tsigkeyname.empty()) {
     r->d_tsigkeyname = d_tsigkeyname;
@@ -357,9 +379,15 @@ DNSPacket *DNSPacket::replyPacket() const
 void DNSPacket::spoofQuestion(const string &qd)
 {
   string label=simpleCompress(qd);
-  for(string::size_type i=0;i<label.size();++i)
-    d_rawpacket[i+sizeof(d)]=label[i];
   d_wrapped=true; // if we do this, don't later on wrapup
+  
+  if(label.size() + sizeof(d) > d_rawpacket.size()) { // probably superfluous
+    return; 
+  }
+    
+  for(string::size_type i=0; i < label.size(); ++i)
+    d_rawpacket[i+sizeof(d)]=label[i];
+  
 }
 
 int DNSPacket::noparse(const char *mesg, int length)
@@ -420,7 +448,7 @@ int DNSPacket::parse(const char *mesg, int length)
 try
 {
   d_rawpacket.assign(mesg,length); 
-
+  d_wrapped=true;
   if(length < 12) { 
     L << Logger::Warning << "Ignoring packet: too short from "
       << getRemote() << endl;
@@ -436,6 +464,7 @@ try
   d_dnssecOk=false;
   d_ednsping.clear();
   d_havetsig = mdp.getTSIGPos();
+  d_haveednssubnet = false;
 
 
   if(getEDNSOpts(mdp, &edo)) {
@@ -453,8 +482,15 @@ try
       else if(iter->first == 5) {// 'EDNS PING'
         d_ednsping = iter->second;
       }
-      else
-        ; // cerr<<"Have an option #"<<iter->first<<endl;
+      else if(s_doEDNSSubnetProcessing && iter->first == ::arg().asNum("edns-subnet-option-number")) { // 'EDNS SUBNET'
+        if(getEDNSSubnetOptsFromString(iter->second, &d_eso)) {
+          //cerr<<"Parsed, source: "<<d_eso.source.toString()<<", scope: "<<d_eso.scope.toString()<<", family = "<<d_eso.scope.getNetwork().sin4.sin_family<<endl;
+          d_haveednssubnet=true;
+        } 
+      }
+      else {
+        // cerr<<"Have an option #"<<iter->first<<": "<<makeHexDump(iter->second)<<endl;
+      }
     }
   }
   else  {
@@ -494,7 +530,14 @@ void DNSPacket::setMaxReplyLen(int bytes)
 //! Use this to set where this packet was received from or should be sent to
 void DNSPacket::setRemote(const ComboAddress *s)
 {
-  remote=*s;
+  d_remote=*s;
+}
+
+Netmask DNSPacket::getRealRemote() const
+{
+  if(d_haveednssubnet)
+    return d_eso.source;
+  return Netmask(d_remote);
 }
 
 void DNSPacket::setSocket(Utility::sock_t sock)

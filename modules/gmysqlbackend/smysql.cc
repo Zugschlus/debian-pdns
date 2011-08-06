@@ -1,6 +1,6 @@
 /* Copyright 2001 Netherlabs BV, bert.hubert@netherlabs.nl. See LICENSE 
    for more information.
-   $Id: smysql.cc 2084 2011-03-22 14:13:27Z ahu $  */
+   $Id: smysql.cc 2199 2011-05-23 19:12:22Z ahu $  */
 #include "smysql.hh"
 #include <string>
 #include <iostream>
@@ -18,6 +18,12 @@ SMySQL::SMySQL(const string &database, const string &host, uint16_t port, const 
   mysql_options(&d_db, MYSQL_READ_DEFAULT_GROUP, "client");
   my_bool reconnect = 1;
   mysql_options(&d_db, MYSQL_OPT_RECONNECT, &reconnect);
+
+#if MYSQL_VERSION_ID > 51000
+  unsigned int timeout = 10;
+  mysql_options(&d_db, MYSQL_OPT_READ_TIMEOUT, &timeout);
+  mysql_options(&d_db, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
+#endif
   
   if (!mysql_real_connect(&d_db, host.empty() ? 0 : host.c_str(), 
         		  user.empty() ? 0 : user.c_str(), 

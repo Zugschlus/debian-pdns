@@ -83,7 +83,8 @@ static const int dnstext_en_main = 1;
 
 #line 25 "../../dnslabeltext.rl"
 
-
+	(void)dnstext_error;  // silence warnings
+	(void)dnstext_en_main;
         const char *p = input.c_str(), *pe = input.c_str() + input.length();
         const char* eof = pe;
         int cs;
@@ -93,12 +94,12 @@ static const int dnstext_en_main = 1;
         vector<string> ret;
 
         
-#line 97 "dnslabeltext.cc"
+#line 98 "dnslabeltext.cc"
 	{
 	cs = dnstext_start;
 	}
 
-#line 102 "dnslabeltext.cc"
+#line 103 "dnslabeltext.cc"
 	{
 	int _klen;
 	unsigned int _trans;
@@ -172,27 +173,27 @@ _match:
 		switch ( *_acts++ )
 		{
 	case 0:
-#line 36 "../../dnslabeltext.rl"
+#line 37 "../../dnslabeltext.rl"
 	{ 
                         ret.push_back(segment);
                         segment.clear();
                 }
 	break;
 	case 1:
-#line 40 "../../dnslabeltext.rl"
+#line 41 "../../dnslabeltext.rl"
 	{ 
                         segment.clear();
                 }
 	break;
 	case 2:
-#line 44 "../../dnslabeltext.rl"
+#line 45 "../../dnslabeltext.rl"
 	{
                   char c = *p;
                   appendSplit(ret, segment, c);
                 }
 	break;
 	case 3:
-#line 48 "../../dnslabeltext.rl"
+#line 49 "../../dnslabeltext.rl"
 	{
                   char c = *p;
                   val *= 10;
@@ -201,19 +202,19 @@ _match:
                 }
 	break;
 	case 4:
-#line 54 "../../dnslabeltext.rl"
+#line 55 "../../dnslabeltext.rl"
 	{
                   appendSplit(ret, segment, val);
                   val=0;
                 }
 	break;
 	case 5:
-#line 59 "../../dnslabeltext.rl"
+#line 60 "../../dnslabeltext.rl"
 	{
                   appendSplit(ret, segment, *(p));
                 }
 	break;
-#line 217 "dnslabeltext.cc"
+#line 218 "dnslabeltext.cc"
 		}
 	}
 
@@ -230,13 +231,13 @@ _again:
 	while ( __nacts-- > 0 ) {
 		switch ( *__acts++ ) {
 	case 0:
-#line 36 "../../dnslabeltext.rl"
+#line 37 "../../dnslabeltext.rl"
 	{ 
                         ret.push_back(segment);
                         segment.clear();
                 }
 	break;
-#line 240 "dnslabeltext.cc"
+#line 241 "dnslabeltext.cc"
 		}
 	}
 	}
@@ -244,7 +245,7 @@ _again:
 	_out: {}
 	}
 
-#line 72 "../../dnslabeltext.rl"
+#line 73 "../../dnslabeltext.rl"
 
 
         if ( cs < dnstext_first_final ) {
@@ -256,7 +257,7 @@ _again:
 string segmentDNSLabel(const string& input )
 {
 
-#line 260 "dnslabeltext.cc"
+#line 261 "dnslabeltext.cc"
 static const char _dnslabel_actions[] = {
 	0, 1, 0, 1, 1, 1, 2, 1, 
 	3, 1, 4, 2, 3, 0, 2, 3, 
@@ -304,9 +305,10 @@ static const int dnslabel_error = 0;
 static const int dnslabel_en_main = 1;
 
 
-#line 85 "../../dnslabeltext.rl"
+#line 86 "../../dnslabeltext.rl"
 
-
+	(void)dnslabel_error;  // silence warnings
+	(void)dnslabel_en_main;
         const char *p = input.c_str(), *pe = input.c_str() + input.length();
         //const char* eof = pe;
         int cs;
@@ -316,12 +318,12 @@ static const int dnslabel_en_main = 1;
         string segment;
 
         
-#line 320 "dnslabeltext.cc"
+#line 322 "dnslabeltext.cc"
 	{
 	cs = dnslabel_start;
 	}
 
-#line 325 "dnslabeltext.cc"
+#line 327 "dnslabeltext.cc"
 	{
 	int _klen;
 	unsigned int _trans;
@@ -395,7 +397,7 @@ _match:
 		switch ( *_acts++ )
 		{
 	case 0:
-#line 96 "../../dnslabeltext.rl"
+#line 98 "../../dnslabeltext.rl"
 	{ 
                         printf("Segment end, segment = '%s'\n", segment.c_str());
                         ret.append(1, (unsigned char)segment.size());
@@ -404,14 +406,14 @@ _match:
                 }
 	break;
 	case 1:
-#line 103 "../../dnslabeltext.rl"
+#line 105 "../../dnslabeltext.rl"
 	{
                   printf("'\\%c' ", *p);
                   segment.append(1, *p);
                 }
 	break;
 	case 2:
-#line 107 "../../dnslabeltext.rl"
+#line 109 "../../dnslabeltext.rl"
 	{
                   char c = *p;
                   val *= 10;
@@ -420,7 +422,7 @@ _match:
                 }
 	break;
 	case 3:
-#line 113 "../../dnslabeltext.rl"
+#line 115 "../../dnslabeltext.rl"
 	{
                   printf("_%c_ ", val);
                   segment.append(1, val);
@@ -428,13 +430,13 @@ _match:
                 }
 	break;
 	case 4:
-#line 119 "../../dnslabeltext.rl"
+#line 121 "../../dnslabeltext.rl"
 	{
                   printf("'%c' ", *p);
                   segment.append(1, *p);
                 }
 	break;
-#line 438 "dnslabeltext.cc"
+#line 440 "dnslabeltext.cc"
 		}
 	}
 
@@ -447,12 +449,13 @@ _again:
 	_out: {}
 	}
 
-#line 134 "../../dnslabeltext.rl"
+#line 136 "../../dnslabeltext.rl"
 
 
         if ( cs < dnslabel_first_final ) {
                 throw runtime_error("Unable to parse DNS Label '"+input+"'");
         }
+	
         if(ret.empty() || ret[0] != 0)
           ret.append(1, 0);
         return ret;

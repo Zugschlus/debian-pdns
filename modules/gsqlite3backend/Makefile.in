@@ -179,14 +179,12 @@ PATH_SEPARATOR = @PATH_SEPARATOR@
 PGSQL_incdir = @PGSQL_incdir@
 PGSQL_lib = @PGSQL_lib@
 PKG_CONFIG = @PKG_CONFIG@
-PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
-PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
-SQLITE3_incdir = @SQLITE3_incdir@
-SQLITE3_lib = @SQLITE3_lib@
+SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
+SQLITE3_LIBS = @SQLITE3_LIBS@
 SQLITE_incdir = @SQLITE_incdir@
 SQLITE_lib = @SQLITE_lib@
 STRIP = @STRIP@
@@ -257,7 +255,7 @@ top_srcdir = @top_srcdir@
 AM_CPPFLAGS = @THREADFLAGS@
 lib_LTLIBRARIES = libgsqlite3backend.la
 EXTRA_DIST = OBJECTFILES OBJECTLIBS
-INCLUDES = -I@SQLITE3_incdir@
+INCLUDES = -I@SQLITE3_CFLAGS@
 libgsqlite3backend_la_SOURCES = gsqlite3backend.cc gsqlite3backend.hh \
                 ssqlite3.hh ssqlite3.cc
 

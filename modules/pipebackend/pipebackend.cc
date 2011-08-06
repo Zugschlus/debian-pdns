@@ -1,6 +1,6 @@
 // -*- sateh-c -*- 
 // File    : pdnsbackend.cc
-// Version : $Id: pipebackend.cc 2134 2011-04-04 07:51:32Z ahu $ 
+// Version : $Id: pipebackend.cc 2239 2011-07-19 08:28:13Z ahu $ 
 //
 
 #include <string>
@@ -113,19 +113,22 @@ void PipeBackend::lookup(const QType &qtype,const string &qname, DNSPacket *pkt_
          ostringstream query;
          string localIP="0.0.0.0";
          string remoteIP="0.0.0.0";
-         
+         Netmask realRemote;
          if (pkt_p) {
             localIP=pkt_p->getLocal();
-            remoteIP=pkt_p->getRemote();
+            realRemote = pkt_p->getRealRemote();
+            remoteIP = pkt_p->getRemote();
          }
-
+         int abiVersion = ::arg().asNum("pipebackend-abi-version");
          // pipebackend-abi-version = 1
          // type    qname           qclass  qtype   id      remote-ip-address
          query<<"Q\t"<<qname<<"\tIN\t"<<qtype.getName()<<"\t"<<zoneId<<"\t"<<remoteIP;
 
          // add the local-ip-address if pipebackend-abi-version is set to 2
-         if (::arg().asNum("pipebackend-abi-version") == 2) 
+         if (abiVersion >= 2)
             query<<"\t"<<localIP;
+         if(abiVersion >= 3)
+           query <<"\t"<<realRemote.toString(); 
 
          if(::arg().mustDo("query-logging"))
             L<<Logger::Error<<"Query: '"<<query.str()<<"'"<<endl;
@@ -187,8 +190,13 @@ bool PipeBackend::get(DNSResourceRecord &r)
 
    // The answer format:
    // DATA    qname           qclass  qtype   ttl     id      content 
-
+   int abiVersion = ::arg().asNum("pipebackend-abi-version");
+   unsigned int extraFields = 0;
+   if(abiVersion == 3)
+     extraFields = 2;
+     
    for(;;) {
+     
       d_coproc->receive(line);
       vector<string>parts;
       stringtok(parts,line,"\t");
@@ -207,33 +215,42 @@ bool PipeBackend::get(DNSResourceRecord &r)
          continue;
       }
       else if(parts[0]=="DATA") { // yay
-         if(parts.size()<7) {
+         if(parts.size() < 7 + extraFields) {
             L<<Logger::Error<<kBackendId<<" coprocess returned incomplete or empty line in data section for query for "<<d_qname<<endl;
             throw AhuException("Format error communicating with coprocess in data section");
             // now what?
          }
-         r.qname=parts[1];
-         r.qtype=parts[3];
-         r.ttl=atoi(parts[4].c_str());
-         r.domain_id=atoi(parts[5].c_str());
-         r.auth = 1;
+         
+         if(abiVersion == 3) {
+           r.scopeMask = atoi(parts[1].c_str());
+           r.auth = atoi(parts[2].c_str());
+         } else {
+           r.scopeMask = 0;
+           r.auth = 1;
+         }
+         r.qname=parts[1+extraFields];
+         r.qtype=parts[3+extraFields];
+         r.ttl=atoi(parts[4+extraFields].c_str());
+         r.domain_id=atoi(parts[5+extraFields].c_str());
+         
+         
  
-         if(parts[3]!="MX" && parts[3] != "SRV") {
+         if(r.qtype.getCode() != QType::MX && r.qtype.getCode() != QType::SRV) {
            r.content.clear();
-           for(unsigned int n=6; n < parts.size(); ++n) {
+           for(unsigned int n= 6 + extraFields; n < parts.size(); ++n) {
              if(n!=6)
                r.content.append(1,' ');
              r.content.append(parts[n]);
            }
          }
          else {
-           if(parts.size()<8) {
+           if(parts.size()< 8 + extraFields) {
             L<<Logger::Error<<kBackendId<<" coprocess returned incomplete MX/SRV line in data section for query for "<<d_qname<<endl;
             throw AhuException("Format error communicating with coprocess in data section of MX/SRV record");
            }
            
-           r.priority=atoi(parts[6].c_str());
-           r.content=parts[7];
+           r.priority=atoi(parts[6+extraFields].c_str());
+           r.content=parts[7+extraFields];
          }
          break;
       }

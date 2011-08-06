@@ -227,8 +227,8 @@ am__pdns_server_SOURCES_DIST = dnspacket.cc nameserver.cc \
 	dnssecinfra.hh base32.hh dns.cc dnssecsigner.cc \
 	polarrsakeyinfra.cc md5.cc md5.hh signingpipe.cc \
 	signingpipe.hh dnslabeltext.cc lua-pdns-recursor.cc \
-	serialtweaker.cc botan19signers.cc botansigners.cc \
-	botan18signers.cc cryptoppsigners.cc
+	serialtweaker.cc ednssubnet.cc ednssubnet.hh botan19signers.cc \
+	botansigners.cc botan18signers.cc cryptoppsigners.cc
 @BOTAN19_TRUE@am__objects_1 = botan19signers.$(OBJEXT) \
 @BOTAN19_TRUE@	botansigners.$(OBJEXT)
 @BOTAN18_TRUE@am__objects_2 = botan18signers.$(OBJEXT) \
@@ -257,7 +257,8 @@ am_pdns_server_OBJECTS = dnspacket.$(OBJEXT) nameserver.$(OBJEXT) \
 	dnssecsigner.$(OBJEXT) polarrsakeyinfra.$(OBJEXT) \
 	md5.$(OBJEXT) signingpipe.$(OBJEXT) dnslabeltext.$(OBJEXT) \
 	lua-pdns-recursor.$(OBJEXT) serialtweaker.$(OBJEXT) \
-	$(am__objects_1) $(am__objects_2) $(am__objects_3)
+	ednssubnet.$(OBJEXT) $(am__objects_1) $(am__objects_2) \
+	$(am__objects_3)
 pdns_server_OBJECTS = $(am_pdns_server_OBJECTS)
 pdns_server_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
@@ -277,8 +278,8 @@ am__pdnssec_SOURCES_DIST = pdnssec.cc dbdnsseckeeper.cc sstuff.hh \
 	backends/gsql/gsqlbackend.hh backends/gsql/ssql.hh \
 	zoneparser-tng.cc dynlistener.cc dns.cc randombackend.cc \
 	dnssecsigner.cc polarrsakeyinfra.cc md5.cc signingpipe.cc \
-	dnslabeltext.cc botan19signers.cc botansigners.cc \
-	botan18signers.cc cryptoppsigners.cc
+	dnslabeltext.cc ednssubnet.cc botan19signers.cc \
+	botansigners.cc botan18signers.cc cryptoppsigners.cc
 am_pdnssec_OBJECTS = pdnssec.$(OBJEXT) dbdnsseckeeper.$(OBJEXT) \
 	dnsparser.$(OBJEXT) dnsrecords.$(OBJEXT) dnswriter.$(OBJEXT) \
 	misc.$(OBJEXT) rcpgenerator.$(OBJEXT) base64.$(OBJEXT) \
@@ -291,8 +292,8 @@ am_pdnssec_OBJECTS = pdnssec.$(OBJEXT) dbdnsseckeeper.$(OBJEXT) \
 	zoneparser-tng.$(OBJEXT) dynlistener.$(OBJEXT) dns.$(OBJEXT) \
 	randombackend.$(OBJEXT) dnssecsigner.$(OBJEXT) \
 	polarrsakeyinfra.$(OBJEXT) md5.$(OBJEXT) signingpipe.$(OBJEXT) \
-	dnslabeltext.$(OBJEXT) $(am__objects_1) $(am__objects_2) \
-	$(am__objects_3)
+	dnslabeltext.$(OBJEXT) ednssubnet.$(OBJEXT) $(am__objects_1) \
+	$(am__objects_2) $(am__objects_3)
 pdnssec_OBJECTS = $(am_pdnssec_OBJECTS)
 pdnssec_DEPENDENCIES = $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
@@ -326,7 +327,8 @@ am_toysdig_OBJECTS = toysdig.$(OBJEXT) dnsparser.$(OBJEXT) \
 	dnslabeltext.$(OBJEXT) misc.$(OBJEXT) rcpgenerator.$(OBJEXT) \
 	base64.$(OBJEXT) unix_utility.$(OBJEXT) logger.$(OBJEXT) \
 	statbag.$(OBJEXT) qtype.$(OBJEXT) sillyrecords.$(OBJEXT) \
-	nsecrecords.$(OBJEXT) base32.$(OBJEXT) dnslabel.$(OBJEXT)
+	nsecrecords.$(OBJEXT) base32.$(OBJEXT) dnslabel.$(OBJEXT) \
+	ednssubnet.$(OBJEXT)
 toysdig_OBJECTS = $(am_toysdig_OBJECTS)
 toysdig_LDADD = $(LDADD)
 am_tsig_tests_OBJECTS = tsig-tests.$(OBJEXT) dnsparser.$(OBJEXT) \
@@ -523,14 +525,12 @@ PATH_SEPARATOR = @PATH_SEPARATOR@
 PGSQL_incdir = @PGSQL_incdir@
 PGSQL_lib = @PGSQL_lib@
 PKG_CONFIG = @PKG_CONFIG@
-PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
-PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
 SED = @SED@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
-SQLITE3_incdir = @SQLITE3_incdir@
-SQLITE3_lib = @SQLITE3_lib@
+SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
+SQLITE3_LIBS = @SQLITE3_LIBS@
 SQLITE_incdir = @SQLITE_incdir@
 SQLITE_lib = @SQLITE_lib@
 STRIP = @STRIP@
@@ -630,8 +630,8 @@ pdns_server_SOURCES = dnspacket.cc nameserver.cc tcpreceiver.hh \
 	dnssecinfra.hh base32.hh dns.cc dnssecsigner.cc \
 	polarrsakeyinfra.cc md5.cc md5.hh signingpipe.cc \
 	signingpipe.hh dnslabeltext.cc lua-pdns-recursor.cc \
-	serialtweaker.cc $(am__append_1) $(am__append_3) \
-	$(am__append_5)
+	serialtweaker.cc ednssubnet.cc ednssubnet.hh $(am__append_1) \
+	$(am__append_3) $(am__append_5)
 
 #
 pdns_server_LDFLAGS = @moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@  -Lext/polarssl/library $(BOOST_SERIALIZATION_LDFLAGS)  -rdynamic
@@ -648,8 +648,8 @@ pdnssec_SOURCES = pdnssec.cc dbdnsseckeeper.cc sstuff.hh dnsparser.cc \
 	backends/gsql/gsqlbackend.cc backends/gsql/gsqlbackend.hh \
 	backends/gsql/ssql.hh zoneparser-tng.cc dynlistener.cc dns.cc \
 	randombackend.cc dnssecsigner.cc polarrsakeyinfra.cc md5.cc \
-	signingpipe.cc dnslabeltext.cc $(am__append_7) $(am__append_9) \
-	$(am__append_11)
+	signingpipe.cc dnslabeltext.cc ednssubnet.cc $(am__append_7) \
+	$(am__append_9) $(am__append_11)
 pdnssec_LDFLAGS = @moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@ -Lext/polarssl/library/ $(BOOST_PROGRAM_OPTIONS_LDFLAGS) $(BOOST_SERIALIZATION_LDFLAGS)
 pdnssec_LDADD = -lpolarssl $(BOOST_PROGRAM_OPTIONS_LIBS) \
 	$(BOOST_SERIALIZATION_LIBS) $(am__append_8) $(am__append_10) \
@@ -660,7 +660,8 @@ sdig_SOURCES = sdig.cc sstuff.hh dnsparser.cc dnsparser.hh dnsrecords.cc dnswrit
 
 toysdig_SOURCES = toysdig.cc sstuff.hh dnsparser.cc dnsparser.hh dnsrecords.cc dnswriter.cc dnslabeltext.cc dnswriter.hh \
 	misc.cc misc.hh rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh unix_utility.cc \
-	logger.cc statbag.cc qtype.cc sillyrecords.cc nsecrecords.cc base32.cc dnslabel.cc dnslabel.hh
+	logger.cc statbag.cc qtype.cc sillyrecords.cc nsecrecords.cc base32.cc dnslabel.cc dnslabel.hh \
+	ednssubnet.cc ednssubnet.hh
 
 
 #tcptorture_SOURCES=tcptorture.cc sstuff.hh dnsparser.cc dnsparser.hh dnsrecords.cc dnswriter.cc dnslabeltext.cc dnswriter.hh \
@@ -991,6 +992,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dynlistener.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dynloader.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dynmessenger.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ednssubnet.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/epollmplexer.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gsqlbackend.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/htimer.Po@am__quote@

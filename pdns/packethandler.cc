@@ -253,7 +253,7 @@ int PacketHandler::doVersionRequest(DNSPacket *p, DNSPacket *r, string &target)
   
   if(p->qclass == QClass::CHAOS && p->qtype.getCode()==QType::TXT && target=="version.bind") {// TXT
     if(mode.empty() || mode=="full") 
-      rr.content="Served by POWERDNS "VERSION" $Id: packethandler.cc 2136 2011-04-04 08:29:47Z ahu $";
+      rr.content="Served by POWERDNS "VERSION" $Id: packethandler.cc 2231 2011-07-11 07:25:27Z ahu $";
     else if(mode=="anonymous") {
       r->setRcode(RCode::ServFail);
       return 1;
@@ -280,6 +280,9 @@ bool PacketHandler::getAuth(DNSPacket *p, SOAData *sd, const string &target, int
   string subdomain(target);
   do {
     if( B.getSOA( subdomain, *sd, p ) ) {
+      if(p->qtype.getCode() == QType::DS && pdns_iequals(subdomain, target)) 
+        continue; // A DS question is never answered from the apex, go one zone upwards 
+      
       sd->qname = subdomain;
       if(zoneId)
         *zoneId = sd->domain_id;
@@ -418,13 +421,12 @@ int PacketHandler::doAdditionalProcessingAndDropAA(DNSPacket *p, DNSPacket *r, c
       crrs.push_back(**i);
 
     // we now have a copy, push_back on packet might reallocate!
-
     for(vector<DNSResourceRecord>::const_iterator i=crrs.begin();
         i!=crrs.end();
         ++i) {
       
       if(r->d.aa && !i->qname.empty() && i->qtype.getCode()==QType::NS && !B.getSOA(i->qname,sd,p)) { // drop AA in case of non-SOA-level NS answer, except for root referral
-        r->d.aa=false;
+        r->setA(false);
         //	i->d_place=DNSResourceRecord::AUTHORITY; // XXX FIXME
       }
 
@@ -702,7 +704,7 @@ bool PacketHandler::doDNSSECProcessing(DNSPacket *p, DNSPacket *r)
   
   return false;
 }
-
+#if 0
 /* returns 1 if everything is done & ready, 0 if the search should continue, 2 if a 'NO-ERROR' response should be generated */
 int PacketHandler::makeCanonic(DNSPacket *p, DNSPacket *r, string &target)
 {
@@ -784,6 +786,8 @@ int PacketHandler::makeCanonic(DNSPacket *p, DNSPacket *r, string &target)
   // we now have what we really search for ready in 'target'
   return 0;
 }
+
+#endif
 
 /* Semantics:
    
@@ -869,7 +873,7 @@ int PacketHandler::processNotify(DNSPacket *p)
   }
     
   // ok, we've done our checks
-  Communicator.addSlaveCheckRequest(di, p->remote);
+  Communicator.addSlaveCheckRequest(di, p->d_remote);
   return 0;
 }
 
@@ -988,6 +992,7 @@ void PacketHandler::makeNXDomain(DNSPacket* p, DNSPacket* r, const std::string& 
   rr.domain_id=sd.domain_id;
   rr.d_place=DNSResourceRecord::AUTHORITY;
   rr.auth = 1;
+  rr.scopeMask = sd.scopeMask;
   r->addRecord(rr);
   
   if(p->d_dnssecOk && d_dk.isSecuredZone(sd.qname))
@@ -1102,7 +1107,7 @@ bool PacketHandler::tryWildcard(DNSPacket *p, DNSPacket*r, SOAData& sd, string &
       r->addRecord(rr);
     }
   }
-  if(p->d_dnssecOk) {
+  if(p->d_dnssecOk && d_dk.isSecuredZone(sd.qname)) {
     addNSECX(p, r, p->qdomain, sd.qname, 3);
   }
   return true;
@@ -1184,9 +1189,7 @@ DNSPacket *PacketHandler::questionOrRecurse(DNSPacket *p, bool *shouldRecurse)
 
     // L<<Logger::Warning<<"Query for '"<<p->qdomain<<"' "<<p->qtype.getName()<<" from "<<p->getRemote()<<endl;
     
-    
-    if(p->d.rd && d_doRecursion && DP->recurseFor(p))  // make sure we set ra if rd was set, and we'll do it
-      r->d.ra=true;
+    r->d.ra = (p->d.rd && d_doRecursion && DP->recurseFor(p));  // make sure we set ra if rd was set, and we'll do it
 
     if(p->qtype.getCode()==QType::IXFR) {
       r->setRcode(RCode::NotImp);
@@ -1201,7 +1204,6 @@ DNSPacket *PacketHandler::questionOrRecurse(DNSPacket *p, bool *shouldRecurse)
     
     string target=p->qdomain;
     
-
     if(doVersionRequest(p,r,target)) // catch version.bind requests
       goto sendit;
 
@@ -1217,20 +1219,22 @@ DNSPacket *PacketHandler::questionOrRecurse(DNSPacket *p, bool *shouldRecurse)
     }
     
     if(!getAuth(p, &sd, target, 0)) {
+      DLOG(L<<Logger::Error<<"We have no authority over zone '"<<target<<"'"<<endl);
       if(r->d.ra) {
+        DLOG(L<<Logger::Error<<"Recursion is available for this remote, doing that"<<endl);
         *shouldRecurse=true;
         delete r;
         return 0;
       }
-       
-      r->setA(false);
+      
+      if(!retargetcount)
+		r->setA(false); // drop AA if we never had a SOA in the first place
       if(::arg().mustDo("send-root-referral")) {
         DLOG(L<<Logger::Warning<<"Adding root-referral"<<endl);
         addRootReferral(r);
       }
       else {
-        DLOG(L<<Logger::Warning<<"Adding SERVFAIL"<<endl);
-        r->setRcode(RCode::ServFail);  // 'sorry' 
+        DLOG(L<<Logger::Warning<<"setting 'No Error'"<<endl);
       }
       goto sendit;
     }
@@ -1258,13 +1262,13 @@ DNSPacket *PacketHandler::questionOrRecurse(DNSPacket *p, bool *shouldRecurse)
     }
 
     // this TRUMPS a cname!
-    if(p->qtype.getCode() == QType::NSEC && p->d_dnssecOk && !d_dk.getNSEC3PARAM(sd.qname, 0)) {
+    if(p->qtype.getCode() == QType::NSEC && p->d_dnssecOk && d_dk.isSecuredZone(sd.qname) && !d_dk.getNSEC3PARAM(sd.qname, 0)) {
       addNSEC(p, r, target, sd.qname, 2); // only NSEC please
       goto sendit;
     }
     
     // this TRUMPS a cname!
-    if(p->qtype.getCode() == QType::RRSIG && p->d_dnssecOk) {
+    if(p->qtype.getCode() == QType::RRSIG && p->d_dnssecOk && d_dk.isSecuredZone(sd.qname)) {
       synthesiseRRSIGs(p, r);
       goto sendit;  
     }
@@ -1275,6 +1279,8 @@ DNSPacket *PacketHandler::questionOrRecurse(DNSPacket *p, bool *shouldRecurse)
     weDone=weRedirected=weHaveUnauth=0;
     
     while(B.get(rr)) {
+      if(rr.qtype.getCode() == QType::DS)
+        rr.auth = 1;
       // cerr<<"Auth: "<<rr.auth<<", "<<(rr.qtype == p->qtype)<<", "<<rr.qtype.getName()<<endl;
       if((p->qtype.getCode() == QType::ANY || rr.qtype == p->qtype) && rr.auth) 
         weDone=1;
@@ -1284,10 +1290,18 @@ DNSPacket *PacketHandler::questionOrRecurse(DNSPacket *p, bool *shouldRecurse)
 
       if(rr.qtype.getCode() == QType::CNAME && p->qtype.getCode() != QType::CNAME) 
         weRedirected=1;
+        
+      if(rr.qtype.getCode() == QType::SOA && pdns_iequals(rr.qname, sd.qname)) { // fix up possible SOA adjustments for this zone
+        rr.content=serializeSOAData(sd);
+        rr.ttl=sd.ttl;
+        rr.domain_id=sd.domain_id;
+        rr.auth = true;
+      }
+      
       rrset.push_back(rr);
     }
 
-    DLOG(L<<"After first ANY query: weDone="<<weDone<<", weHaveUnauth="<<weHaveUnauth<<", weRedirected="<<weRedirected<<endl);
+    DLOG(L<<"After first ANY query for '"<<target<<"', id="<<sd.domain_id<<": weDone="<<weDone<<", weHaveUnauth="<<weHaveUnauth<<", weRedirected="<<weRedirected<<endl);
 
     if(rrset.empty()) {
       // try wildcards, and if they don't work, go look for NS records
@@ -1335,7 +1349,7 @@ DNSPacket *PacketHandler::questionOrRecurse(DNSPacket *p, bool *shouldRecurse)
       DLOG(L<<"Have unauth data, so need to hunt for best NS records"<<endl);
       if(tryReferral(p, r, sd, target))
         goto sendit;
-      L<<Logger::Error<<"Should not get here: please run pdnssec rectify-zone "<<sd.qname<<endl;
+      L<<Logger::Error<<"Should not get here ("<<p->qdomain<<"|"<<p->qtype.getCode()<<"): please run pdnssec rectify-zone "<<sd.qname<<endl;
     }
     else {
       DLOG(L<<"Have some data, but not the right data"<<endl);
@@ -1350,10 +1364,11 @@ DNSPacket *PacketHandler::questionOrRecurse(DNSPacket *p, bool *shouldRecurse)
 
     //    doDNSSECProcessing(p, r);
 
+
+    editSOA(d_dk, sd.qname, r);
+    
     if(p->d_dnssecOk)
       addRRSigs(d_dk, B, sd.qname, r->getRRS());
-      
-    editSOA(d_dk, sd.qname, r);
       
     r->wrapup(); // needed for inserting in cache
     if(!noCache)

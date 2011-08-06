@@ -49,6 +49,7 @@ void declareArguments()
   ::arg().set("local-ipv6","Local IP address to which we bind")="";
   ::arg().set("query-local-address","Source IP address for sending queries")="0.0.0.0";
   ::arg().set("query-local-address6","Source IPv6 address for sending queries")="::";
+  ::arg().set("overload-queue-length","Maximum queuelength moving to packetcache only")="0";
   ::arg().set("max-queue-length","Maximum queuelength before considering situation lost")="5000";
   ::arg().set("soa-serial-offset","Make sure that no SOA serial is less than this number")="0";
   
@@ -101,6 +102,8 @@ void declareArguments()
 
   ::arg().setSwitch("webserver","Start a webserver for monitoring")="no"; 
   ::arg().setSwitch("webserver-print-arguments","If the webserver should print arguments")="no"; 
+  ::arg().setSwitch("edns-subnet-processing","If we should act on EDNS Subnet options")="no"; 
+  ::arg().set("edns-subnet-option-number","EDNS option number to use")="20730"; 
   ::arg().set("webserver-address","IP Address of webserver to listen on")="127.0.0.1";
   ::arg().set("webserver-port","Port of webserver to listen on")="8081";
   ::arg().set("webserver-password","Password required for accessing the webserver")="";
@@ -199,7 +202,7 @@ void sendout(const DNSDistributor::AnswerData &AD)
   N->send(AD.A);
   numanswered++;
 
-  if(AD.A->remote.getSocklen()==sizeof(sockaddr_in))
+  if(AD.A->d_remote.getSocklen()==sizeof(sockaddr_in))
     numanswered4++;
   else
     numanswered6++;
@@ -247,7 +250,7 @@ void *qthread(void *number)
       continue;                    // packet was broken, try again
     }
 
-    if(P->remote.getSocklen()==sizeof(sockaddr_in))
+    if(P->d_remote.getSocklen()==sizeof(sockaddr_in))
       numreceived4++;
     else
       numreceived6++;
@@ -255,13 +258,13 @@ void *qthread(void *number)
     S.ringAccount("queries", P->qdomain+"/"+P->qtype.getName());
     S.ringAccount("remotes",P->getRemote());
     if(logDNSQueries) 
-      L << Logger::Notice<<"Remote "<< P->remote.toString() <<" wants '" << P->qdomain<<"|"<<P->qtype.getName() << 
+      L << Logger::Notice<<"Remote "<< P->d_remote.toString() <<" wants '" << P->qdomain<<"|"<<P->qtype.getName() << 
         "', do = " <<P->d_dnssecOk <<", bufsize = "<< P->getMaxReplyLen()<<": ";
 
     if((P->d.opcode != Opcode::Notify) && P->couldBeCached() && PC.get(P, &cached)) { // short circuit - does the PacketCache recognize this question?
       if(logDNSQueries)
         L<<"packetcache HIT"<<endl;
-      cached.setRemote(&P->remote);  // inlined
+      cached.setRemote(&P->d_remote);  // inlined
       cached.setSocket(P->getSocket());                               // inlined
       cached.setMaxReplyLen(P->getMaxReplyLen());
       cached.d.rd=P->d.rd; // copy in recursion desired bit 
@@ -273,15 +276,23 @@ void *qthread(void *number)
       avg_latency=(int)(0.999*avg_latency+0.001*diff); // 'EWMA'
       
       numanswered++;
-      if(P->remote.sin4.sin_family==AF_INET)
+      if(P->d_remote.sin4.sin_family==AF_INET)
         numanswered4++;
       else
         numanswered6++;
 
       continue;
     }
-    if(logDNSQueries)
-        L<<"packetcache MISS"<<endl;
+    
+    if(g_distributor->isOverloaded()) {
+      if(logDNSQueries) 
+        L<<"Dropped query, db is overloaded"<<endl;
+      continue;
+    }
+        
+    if(logDNSQueries) 
+      L<<"packetcache MISS"<<endl;
+
     if(g_mustlockdistributor) {
       Lock l(&d_distributorlock);
       g_distributor->question(P, &sendout); // otherwise, give to the distributor
@@ -302,6 +313,10 @@ void mainthread()
    int newuid=0;      
    if(!::arg()["setuid"].empty())        
      newuid=Utility::makeUidNumeric(::arg()["setuid"]); 
+     
+   
+   DNSPacket::s_doEDNSSubnetProcessing = ::arg().mustDo("edns-subnet-processing");
+     
 #ifndef WIN32
 
    if(!::arg()["chroot"].empty()) {  

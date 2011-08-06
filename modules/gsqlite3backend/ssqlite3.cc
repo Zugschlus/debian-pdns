@@ -69,8 +69,13 @@ int SSQLite3::doQuery( const std::string & query )
   const char *pTail;
   // Execute the query.
   
+#if SQLITE_VERSION_NUMBER >=  3003009
   if ( sqlite3_prepare_v2( m_pDB, query.c_str(), -1, &m_pStmt, &pTail ) != SQLITE_OK )
+#else
+  if ( sqlite3_prepare( m_pDB, query.c_str(), -1, &m_pStmt, &pTail ) != SQLITE_OK )   
+#endif
     throw sPerrorException( string("Unable to compile SQLite statement : ")+ sqlite3_errmsg( m_pDB ) );
+
   return 0;
 }
 
@@ -111,7 +116,13 @@ bool SSQLite3::getRow( row_t & row )
     m_pStmt = NULL;
     return false;
   }
-
+  
+  if(rc == SQLITE_CANTOPEN) {
+    string error ="CANTOPEN error in sqlite3, often caused by unwritable sqlite3 db *directory*: "+string(sqlite3_errmsg(m_pDB));
+    sqlite3_finalize(m_pStmt);
+    throw sPerrorException(error);
+  }
+  
   // Something went wrong, complain.
   throw sPerrorException( "Error while retrieving SQLite query results: "+string(sqlite3_errmsg(m_pDB) ));
 

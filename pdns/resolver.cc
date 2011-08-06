@@ -94,7 +94,7 @@ try
 {
   d_sock4 = d_sock6 = 0;
   d_sock4 = makeQuerySocket(ComboAddress(::arg()["query-local-address"]), true);
-  if(::arg().parmIsset("query-local-address6"))
+  if(!::arg()["query-local-address6"].empty())
     d_sock6 = makeQuerySocket(ComboAddress(::arg()["query-local-address6"]), true);
   else 
     d_sock6 = -1;
@@ -238,8 +238,10 @@ bool Resolver::tryGetSOASerial(string* domain, uint32_t *theirSerial, uint32_t *
     }
     if(drc.first.d_type == QType::RRSIG) {
       shared_ptr<RRSIGRecordContent> rrc=boost::dynamic_pointer_cast<RRSIGRecordContent>(drc.first.d_content);
-      *theirInception= std::max(*theirInception, rrc->d_siginception);
-      *theirExpire = std::max(*theirExpire, rrc->d_sigexpire);
+      if(rrc->d_type == QType::SOA) {
+	*theirInception= std::max(*theirInception, rrc->d_siginception);
+	*theirExpire = std::max(*theirExpire, rrc->d_sigexpire);
+      }
     }
   }
   if(!gotSOA)
@@ -307,7 +309,7 @@ AXFRRetriever::AXFRRetriever(const ComboAddress& remote, const string& domain, c
   ComboAddress local;
   if(remote.sin4.sin_family == AF_INET)
     local=ComboAddress(::arg()["query-local-address"]);
-  else if(::arg().parmIsset("query-local-address6"))
+  else if(!::arg()["query-local-address6"].empty())
     local=ComboAddress(::arg()["query-local-address6"]);
   else
     local=ComboAddress("::");
