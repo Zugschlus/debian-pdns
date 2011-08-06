@@ -3,7 +3,7 @@ Section: net
 Priority: extra
 Standards-Version: 3.9.2
 Maintainer: Matthijs Möhlmann <matthijs@cacholong.nl>
-Build-Depends: debhelper (>= 6.0.7), po-debconf, libtool, flex, bison, docbook-utils, docbook, libmysqlclient-dev, libpq-dev, libssl-dev, tdb-dev, libgdbm-dev, libldap2-dev, libsqlite0-dev, libsqlite3-dev, dpkg-dev (>= 1.10.17), libboost-dev, libboost-serialization-dev, libboost-program-options-dev, autotools-dev, automake, autoconf
+Build-Depends: debhelper (>= 6.0.7), po-debconf, libtool, flex, bison, docbook-utils, docbook, libmysqlclient-dev, libpq-dev, libssl-dev, tdb-dev, libgdbm-dev, libldap2-dev, libsqlite0-dev, libsqlite3-dev, dpkg-dev (>= 1.10.17), libboost-dev, libboost-serialization-dev, libboost-program-options-dev, autotools-dev, automake, autoconf, liblua5.2-dev
 Vcs-Git: git://github.com/Signum/debian-pdns.git
 
 Package: pdns-server
