@@ -19,7 +19,7 @@
 #include "pdns/arguments.hh"
 #include "ssqlite.hh"
 #include "gsqlitebackend.hh"
-
+#include <boost/algorithm/string.hpp>
 
 // Connects to the database.
 gSQLiteBackend::gSQLiteBackend( const std::string & mode, const std::string & suffix ) : GSQLBackend( mode, suffix )
@@ -34,7 +34,7 @@ gSQLiteBackend::gSQLiteBackend( const std::string & mode, const std::string & su
     throw AhuException( "Unable to launch " + mode + " connection: " + e.txtReason());
   }
 
-  L << Logger::Warning << mode << ": connection to '"<<getArg("database")<<"' succesful" << std::endl;
+  L << Logger::Warning << mode << ": connection to '"<<getArg("database")<<"' successful" << std::endl;
 }
 
 
@@ -75,6 +75,7 @@ public:
     declare( suffix, "update-lastcheck-query", "", "update domains set last_check=%d where id=%d");
     declare( suffix, "info-all-master-query", "", "select id,name,master,last_check,notified_serial,type from domains where type='MASTER'");
     declare( suffix, "delete-zone-query", "", "delete from records where domain_id=%d");
+    declare(suffix,"check-acl-query","", "select value from acls where acl_type='%s' and acl_key='%s'");
   }
   
   //! Constructs a new gSQLiteBackend object.
@@ -99,6 +100,11 @@ public:
     L<<Logger::Warning << "This is module gsqlite reporting" << std::endl;
   }
 };
+
+string gSQLiteBackend::sqlEscape(const string &name)
+{
+  return boost::replace_all_copy(name, "'", "''");
+}
 
 
 //! Reports the backendloader to the UeberBackend.

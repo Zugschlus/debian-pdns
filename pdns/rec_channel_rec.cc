@@ -11,6 +11,7 @@
 #include <boost/tuple/tuple.hpp>
 #include <boost/format.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/foreach.hpp>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -22,8 +23,8 @@
 #include <sys/time.h>
 #endif
 
-using namespace std;
-using namespace boost;
+#include "namespaces.hh"
+#include "namespaces.hh"
 map<string, const uint32_t*> d_get32bitpointers;
 map<string, const uint64_t*> d_get64bitpointers;
 map<string, function< uint32_t() > >  d_get32bitmembers;
@@ -55,6 +56,23 @@ optional<uint64_t> get(const string& name)
   return ret;
 }
 
+string getAllStats()
+{
+  string ret;
+  pair<string, const uint32_t*> the32bits;
+  pair<string, const uint64_t*> the64bits;
+  pair<string, function< uint32_t() > >  the32bitmembers;
+  BOOST_FOREACH(the32bits, d_get32bitpointers) {
+    ret += the32bits.first + "\t" + lexical_cast<string>(*the32bits.second) + "\n";
+  }
+  BOOST_FOREACH(the64bits, d_get64bitpointers) {
+    ret += the64bits.first + "\t" + lexical_cast<string>(*the64bits.second) + "\n";
+  }
+  BOOST_FOREACH(the32bitmembers, d_get32bitmembers) {
+    ret += the32bitmembers.first + "\t" + lexical_cast<string>(the32bitmembers.second()) + "\n";
+  }
+  return ret;
+}
 
 template<typename T>
 string doGet(T begin, T end)
@@ -76,6 +94,7 @@ string doGetParameter(T begin, T end)
 {
   string ret;
   string parm;
+  using boost::replace_all;
   for(T i=begin; i != end; ++i) {
     if(::arg().parmIsset(*i)) {
       parm=::arg()[*i];
@@ -91,6 +110,33 @@ string doGetParameter(T begin, T end)
 }
 
 
+static uint64_t dumpNegCache(SyncRes::negcache_t& negcache, int fd)
+{
+  FILE* fp=fdopen(dup(fd), "w");
+  if(!fp) { // dup probably failed
+    return 0;
+  }
+  fprintf(fp, "; negcache dump from thread follows\n;\n");
+  time_t now = time(0);
+  
+  typedef SyncRes::negcache_t::nth_index<1>::type sequence_t;
+  sequence_t& sidx=negcache.get<1>();
+
+  uint64_t count=0;
+  BOOST_FOREACH(const NegCacheEntry& neg, sidx)
+  {
+    ++count;
+    fprintf(fp, "%s IN %s %d VIA %s\n", neg.d_name.c_str(), neg.d_qtype.getName().c_str(), (unsigned int) (neg.d_ttd - now), neg.d_qname.c_str());
+  }
+  fclose(fp);
+  return count;
+}
+
+static uint64_t* pleaseDump(int fd)
+{
+  return new uint64_t(t_RC->doDump(fd) + dumpNegCache(t_sstorage->negcache, fd));
+}
+
 template<typename T>
 string doDumpCache(T begin, T end)
 {
@@ -103,10 +149,46 @@ string doDumpCache(T begin, T end)
   int fd=open(fname.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0660);
   if(fd < 0) 
     return "Error opening dump file for writing: "+string(strerror(errno))+"\n";
+  uint64_t total = 0;
+  try {
+    total = broadcastAccFunction<uint64_t>(boost::bind(pleaseDump, fd));
+  }
+  catch(...){}
+  
+  close(fd);
+  return "dumped "+lexical_cast<string>(total)+" records\n";
+}
 
-  RC.doDumpAndClose(fd); 
+template<typename T>
+string doDumpEDNSStatus(T begin, T end)
+{
+  T i=begin;
+  string fname;
+
+  if(i!=end) 
+    fname=*i;
+
+  int fd=open(fname.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0660);
+  if(fd < 0) 
+    return "Error opening dump file for writing: "+string(strerror(errno))+"\n";
+
+  SyncRes::doEDNSDumpAndClose(fd);
 
   return "done\n";
+}
+
+uint64_t* pleaseWipeCache(const std::string& canon)
+{
+  return new uint64_t(t_RC->doWipeCache(canon));
+}
+
+
+static uint64_t* pleaseWipeAndCountNegCache(const std::string& canon)
+{
+  uint64_t res = t_sstorage->negcache.count(tie(canon));
+  pair<SyncRes::negcache_t::iterator, SyncRes::negcache_t::iterator> range=t_sstorage->negcache.equal_range(tie(canon));
+  t_sstorage->negcache.erase(range.first, range.second);
+  return new uint64_t(res);
 }
 
 template<typename T>
@@ -114,36 +196,13 @@ string doWipeCache(T begin, T end)
 {
   int count=0, countNeg=0;
   for(T i=begin; i != end; ++i) {
-    count+=RC.doWipeCache(toCanonic("", *i));
     string canon=toCanonic("", *i);
-    countNeg+=SyncRes::s_negcache.count(tie(canon));
-    pair<SyncRes::negcache_t::iterator, SyncRes::negcache_t::iterator> range=SyncRes::s_negcache.equal_range(tie(canon));
-    SyncRes::s_negcache.erase(range.first, range.second);
+    count+= broadcastAccFunction<uint64_t>(boost::bind(pleaseWipeCache, canon));
+    countNeg+=broadcastAccFunction<uint64_t>(boost::bind(pleaseWipeAndCountNegCache, canon));
   }
 
   return "wiped "+lexical_cast<string>(count)+" records, "+lexical_cast<string>(countNeg)+" negative records\n";
 }
-
-template<typename T>
-string doSlashCache(T begin, T end)
-{
-  RC.doSlash(10);
-
-  return "done\n";
-}
-
-#if 0  // broken!
-uint32_t getQueryRate()
-{
-  struct timeval now;
-  gettimeofday(&now, 0);
-  optional<float> delay=g_stats.queryrate.get(now, 10);
-  if(delay)
-    return (uint32_t)(1000000/(*delay));
-  else
-    return 0;
-}
-#endif 
 
 #ifndef WIN32
 static uint64_t getSysTimeMsec()
@@ -166,7 +225,7 @@ static uint64_t calculateUptime()
   return time(0) - g_stats.startupTime;
 }
 
-static string doCurrentQueries()
+static string* pleaseGetCurrentQueries()
 {
   ostringstream ostr;
 
@@ -179,13 +238,151 @@ static string doCurrentQueries()
   for(MT_t::waiters_t::iterator mthread=MT->d_waiters.begin(); mthread!=MT->d_waiters.end() && n < 100; ++mthread, ++n) {
     const PacketID& pident = mthread->key;
     ostr << (fmt 
-	     % pident.domain % DNSRecordContent::NumberToType(pident.type) 
-	     % pident.remote.toString() % (pident.sock ? 'Y' : 'n')
-	     % (pident.fd == -1 ? 'Y' : 'n')
-	     );
+             % pident.domain % DNSRecordContent::NumberToType(pident.type) 
+             % pident.remote.toString() % (pident.sock ? 'Y' : 'n')
+             % (pident.fd == -1 ? 'Y' : 'n')
+             );
   }
   ostr <<" - done\n";
-  return ostr.str();
+  return new string(ostr.str());
+}
+
+static string doCurrentQueries()
+{
+  return broadcastAccFunction<string>(pleaseGetCurrentQueries);
+}
+
+uint64_t* pleaseGetThrottleSize()
+{
+  return new uint64_t(t_sstorage->throttle.size());
+}
+
+static uint64_t getThrottleSize()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetThrottleSize);
+}
+
+uint64_t* pleaseGetNegCacheSize()
+{
+  uint64_t tmp=t_sstorage->negcache.size();
+  return new uint64_t(tmp);
+}
+
+uint64_t getNegCacheSize()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetNegCacheSize);
+}
+
+uint64_t* pleaseGetNsSpeedsSize()
+{
+  return new uint64_t(t_sstorage->nsSpeeds.size());
+}
+
+uint64_t getNsSpeedsSize()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetNsSpeedsSize);
+}
+
+uint64_t* pleaseGetConcurrentQueries()
+{
+  return new uint64_t(MT->numProcesses()); 
+}
+
+static uint64_t getConcurrentQueries()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetConcurrentQueries);
+}
+
+uint64_t* pleaseGetCacheSize()
+{
+  return new uint64_t(t_RC->size());
+}
+
+uint64_t* pleaseGetCacheBytes()
+{
+  return new uint64_t(t_RC->bytes());
+}
+
+
+uint64_t doGetCacheSize()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetCacheSize);
+}
+
+uint64_t doGetCacheBytes()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetCacheBytes);
+}
+
+uint64_t* pleaseGetCacheHits()
+{
+  return new uint64_t(t_RC->cacheHits);
+}
+
+uint64_t doGetCacheHits()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetCacheHits);
+}
+
+uint64_t* pleaseGetCacheMisses()
+{
+  return new uint64_t(t_RC->cacheMisses);
+}
+
+uint64_t doGetCacheMisses()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetCacheMisses);
+}
+
+
+uint64_t* pleaseGetPacketCacheSize()
+{
+  return new uint64_t(t_packetCache->size());
+}
+
+uint64_t* pleaseGetPacketCacheBytes()
+{
+  return new uint64_t(t_packetCache->bytes());
+}
+
+
+uint64_t doGetPacketCacheSize()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetPacketCacheSize);
+}
+
+uint64_t doGetPacketCacheBytes()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetPacketCacheBytes);
+}
+
+
+uint64_t* pleaseGetPacketCacheHits()
+{
+  return new uint64_t(t_packetCache->d_hits);
+}
+
+uint64_t doGetPacketCacheHits()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetPacketCacheHits);
+}
+
+uint64_t* pleaseGetPacketCacheMisses()
+{
+  return new uint64_t(t_packetCache->d_misses);
+}
+
+uint64_t doGetPacketCacheMisses()
+{
+  return broadcastAccFunction<uint64_t>(pleaseGetPacketCacheMisses);
+}
+
+uint64_t doGetMallocated()
+{
+  // this turned out to be broken
+/*  struct mallinfo mi = mallinfo();
+  return mi.uordblks; */
+  return 0;
 }
 
 RecursorControlParser::RecursorControlParser()
@@ -193,10 +390,18 @@ RecursorControlParser::RecursorControlParser()
   addGetStat("questions", &g_stats.qcounter);
   addGetStat("tcp-questions", &g_stats.tcpqcounter);
 
-  addGetStat("cache-hits", &RC.cacheHits);
-  addGetStat("cache-misses", &RC.cacheMisses);
-
-  addGetStat("cache-entries", boost::bind(&MemRecursorCache::size, ref(RC)));
+  addGetStat("cache-hits", doGetCacheHits);
+  addGetStat("cache-misses", doGetCacheMisses); 
+  addGetStat("cache-entries", doGetCacheSize); 
+  addGetStat("cache-bytes", doGetCacheBytes); 
+  
+  addGetStat("packetcache-hits", doGetPacketCacheHits);
+  addGetStat("packetcache-misses", doGetPacketCacheMisses); 
+  addGetStat("packetcache-entries", doGetPacketCacheSize); 
+  addGetStat("packetcache-bytes", doGetPacketCacheBytes); 
+  
+  addGetStat("malloc-bytes", doGetMallocated);
+  
   addGetStat("servfail-answers", &g_stats.servFails);
   addGetStat("nxdomain-answers", &g_stats.nxDomains);
   addGetStat("noerror-answers", &g_stats.noErrors);
@@ -222,29 +427,33 @@ RecursorControlParser::RecursorControlParser()
   addGetStat("nsset-invalidations", &g_stats.nsSetInvalidations);
 
   addGetStat("resource-limits", &g_stats.resourceLimits);
+  addGetStat("over-capacity-drops", &g_stats.overCapacityDrops);
+  addGetStat("no-packet-error", &g_stats.noPacketError);
   addGetStat("dlg-only-drops", &SyncRes::s_nodelegated);
+  addGetStat("max-mthread-stack", &g_stats.maxMThreadStackUsage);
   
-  addGetStat("shunted-queries", &g_stats.shunted);
-  addGetStat("noshunt-size", &g_stats.noShuntSize);
-  addGetStat("noshunt-expired", &g_stats.noShuntExpired);
-  addGetStat("noshunt-nomatch", &g_stats.noShuntNoMatch);
-  addGetStat("noshunt-cname", &g_stats.noShuntCNAME);
-  addGetStat("noshunt-wrong-question", &g_stats.noShuntWrongQuestion);
-  addGetStat("noshunt-wrong-type", &g_stats.noShuntWrongType);
+  addGetStat("negcache-entries", boost::bind(getNegCacheSize));
+  addGetStat("throttle-entries", boost::bind(getThrottleSize)); 
 
-  addGetStat("negcache-entries", boost::bind(&SyncRes::negcache_t::size, ref(SyncRes::s_negcache)));
-  addGetStat("throttle-entries", boost::bind(&SyncRes::throttle_t::size, ref(SyncRes::s_throttle)));
-  addGetStat("nsspeeds-entries", boost::bind(&SyncRes::nsspeeds_t::size, ref(SyncRes::s_nsSpeeds)));
+  addGetStat("nsspeeds-entries", boost::bind(getNsSpeedsSize));
 
-  addGetStat("concurrent-queries", boost::bind(&MTasker<PacketID,string>::numProcesses, ref(MT)));
+  addGetStat("concurrent-queries", boost::bind(getConcurrentQueries)); 
   addGetStat("outgoing-timeouts", &SyncRes::s_outgoingtimeouts);
   addGetStat("tcp-outqueries", &SyncRes::s_tcpoutqueries);
   addGetStat("all-outqueries", &SyncRes::s_outqueries);
   addGetStat("ipv6-outqueries", &g_stats.ipv6queries);
   addGetStat("throttled-outqueries", &SyncRes::s_throttledqueries);
+  addGetStat("dont-outqueries", &SyncRes::s_dontqueries);
   addGetStat("throttled-out", &SyncRes::s_throttledqueries);
   addGetStat("unreachables", &SyncRes::s_unreachables);
   addGetStat("chain-resends", &g_stats.chainResends);
+  addGetStat("tcp-clients", boost::bind(TCPConnection::getCurrentConnections));
+
+  addGetStat("edns-ping-matches", &g_stats.ednsPingMatches);
+  addGetStat("edns-ping-mismatches", &g_stats.ednsPingMismatches);
+
+  addGetStat("noping-outqueries", &g_stats.noPingOutQueries);
+  addGetStat("noedns-outqueries", &g_stats.noEdnsOutQueries);
 
   addGetStat("uptime", calculateUptime);
 
@@ -255,7 +464,7 @@ RecursorControlParser::RecursorControlParser()
 #endif
 }
 
-static void doExit()
+static void doExitGeneric(bool nicely)
 {
   L<<Logger::Error<<"Exiting on user request"<<endl;
   extern RecursorControlChannel s_rcc;
@@ -264,22 +473,44 @@ static void doExit()
   extern string s_pidfname;
   if(!s_pidfname.empty()) 
     unlink(s_pidfname.c_str()); // we can at least try..
-  _exit(1);
+  if(nicely)
+    exit(1);
+  else
+    _exit(1);
+}
+
+static void doExit()
+{
+  doExitGeneric(false);
+}
+
+static void doExitNicely()
+{
+  //extern void printCallers();
+  // printCallers();
+  doExitGeneric(true);
+}
+
+vector<ComboAddress>* pleaseGetRemotes()
+{
+  return new vector<ComboAddress>(t_remotes->remotes);
 }
 
 string doTopRemotes()
 {
   typedef map<ComboAddress, int, ComboAddress::addressOnlyLessThan> counts_t;
   counts_t counts;
-  
+
+  vector<ComboAddress> remotes=broadcastAccFunction<vector<ComboAddress> >(pleaseGetRemotes);
+    
   unsigned int total=0;
-  for(RecursorStats::remotes_t::const_iterator i=g_stats.remotes.begin(); i != g_stats.remotes.end(); ++i)
+  for(RemoteKeeper::remotes_t::const_iterator i = remotes.begin(); i != remotes.end(); ++i)
     if(i->sin4.sin_family) {
       total++;
       counts[*i]++;
     }
 
-  typedef multimap<int, ComboAddress> rcounts_t;
+  typedef std::multimap<int, ComboAddress> rcounts_t;
   rcounts_t rcounts;
   
   for(counts_t::const_iterator i=counts.begin(); i != counts.end(); ++i)
@@ -296,6 +527,11 @@ string doTopRemotes()
   return ret.str();
 }
 
+static string* nopFunction()
+{
+  return new string("pong\n");
+}
+
 string RecursorControlParser::getAnswer(const string& question, RecursorControlParser::func_t** command)
 {
   *command=nop;
@@ -308,9 +544,12 @@ string RecursorControlParser::getAnswer(const string& question, RecursorControlP
   string cmd=toLower(words[0]);
   vector<string>::const_iterator begin=words.begin()+1, end=words.end();
 
+  if(cmd=="get-all")
+    return getAllStats();
+
   if(cmd=="get") 
     return doGet(begin, end);
-
+  
   if(cmd=="get-parameter") 
     return doGetParameter(begin, end);
 
@@ -319,23 +558,40 @@ string RecursorControlParser::getAnswer(const string& question, RecursorControlP
     *command=&doExit;
     return "bye\n";
   }
+  
+  if(cmd=="quit-nicely") {
+    *command=&doExitNicely;
+    return "bye nicely\n";
+  }  
 
   if(cmd=="dump-cache") 
     return doDumpCache(begin, end);
 
-  if(cmd=="slash-cache") 
-    return doSlashCache(begin, end);
+  if(cmd=="dump-ednsstatus" || cmd=="dump-edns") 
+    return doDumpEDNSStatus(begin, end);
+
 
   if(cmd=="wipe-cache") 
     return doWipeCache(begin, end);
 
   if(cmd=="reload-lua-script") 
-    return doReloadLuaScript(begin, end);
+    return doQueueReloadLuaScript(begin, end);
 
   if(cmd=="unload-lua-script") {
     vector<string> empty;
     empty.push_back(string());
-    return doReloadLuaScript(empty.begin(), empty.end());
+    return doQueueReloadLuaScript(empty.begin(), empty.end());
+  }
+
+  if(cmd=="reload-acls") {
+    try {
+      parseACLs();
+    } 
+    catch(std::exception& e) 
+    {
+      return e.what() + string("\n");
+    }
+    return "ok\n";
   }
 
 
@@ -345,12 +601,13 @@ string RecursorControlParser::getAnswer(const string& question, RecursorControlP
   if(cmd=="current-queries")
     return doCurrentQueries();
   
-  if(cmd=="ping")
-    return "pong\n";
+  if(cmd=="ping") {
+    return broadcastAccFunction<string>(nopFunction);
+  }
 
   if(cmd=="reload-zones") {
     return reloadAuthAndForwards();
   }
-
+  
   return "Unknown command '"+cmd+"'\n";
 }

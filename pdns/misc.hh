@@ -1,12 +1,11 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002-2006  PowerDNS.COM BV
+    Copyright (C) 2002-2009  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
     as published by the Free Software Foundation
     
-
     This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -18,9 +17,16 @@
 */
 #ifndef MISC_HH
 #define MISC_HH
-#include <stdint.h>
+#include <inttypes.h>
 #include <cstring>
-
+#include <cstdio>
+#include <boost/algorithm/string.hpp>
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/tuple/tuple_comparison.hpp>
+#include <boost/multi_index/key_extractors.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
+using namespace ::boost::multi_index;
 #if 0
 #include <iostream>
 using std::cout;
@@ -60,9 +66,8 @@ struct TSCTimer
 #include <string>
 #include <ctype.h>
 #include <vector>
-#include <boost/optional.hpp>
 
-using namespace std;
+#include "namespaces.hh"
 bool chopOff(string &domain);
 bool chopOffDotted(string &domain);
 
@@ -71,38 +76,18 @@ bool dottedEndsOn(const string &domain, const string &suffix);
 string nowTime();
 const string unquotify(const string &item);
 string humanDuration(time_t passed);
-void chomp(string &line, const string &delim);
 bool stripDomainSuffix(string *qname, const string &domain);
 void stripLine(string &line);
 string getHostname();
 string urlEncode(const string &text);
 int waitForData(int fd, int seconds, int useconds=0);
+int waitFor2Data(int fd1, int fd2, int seconds, int useconds, int* fd);
 int waitForRWData(int fd, bool waitForRead, int seconds, int useconds);
 uint16_t getShort(const unsigned char *p);
 uint16_t getShort(const char *p);
 uint32_t getLong(const unsigned char *p);
 uint32_t getLong(const char *p);
-boost::optional<int> logFacilityToLOG(unsigned int facility);
-
-inline void putLong(unsigned char* p, uint32_t val)
-{
-  *p++=(val>>24)&0xff;
-  *p++=(val>>16)&0xff;
-  *p++=(val>>8)&0xff;
-  *p++=(val   )&0xff;
-
-}
-inline void putLong(char* p, uint32_t val)
-{
-  putLong((unsigned char *)p,val);
-}
-
-
-inline uint32_t getLong(unsigned char *p)
-{
-  return (p[0]<<24)+(p[1]<<16)+(p[2]<<8)+p[3];
-}
-
+int logFacilityToLOG(unsigned int facility);
 
 struct ServiceTuple
 {
@@ -197,6 +182,7 @@ public:
   time_t time();
   inline void set();  //!< Reset the timer
   inline int udiff(); //!< Return the number of microseconds since the timer was last set.
+  inline int udiffNoReset(); //!< Return the number of microseconds since the timer was last set.
   void setTimeval(const struct timeval& tv)
   {
     d_set=tv;
@@ -208,7 +194,7 @@ public:
 private:
   struct timeval d_set;
 };
-const string sockAddrToString(struct sockaddr_in *remote);
+
 int sendData(const char *buffer, int replen, int outsock);
 
 inline void DTime::set()
@@ -218,13 +204,20 @@ inline void DTime::set()
 
 inline int DTime::udiff()
 {
+  int res=udiffNoReset();
+  Utility::gettimeofday(&d_set,0);
+  return res;
+}
+
+inline int DTime::udiffNoReset()
+{
   struct timeval now;
 
   Utility::gettimeofday(&now,0);
   int ret=1000000*(now.tv_sec-d_set.tv_sec)+(now.tv_usec-d_set.tv_usec);
-  d_set=now;
   return ret;
 }
+
 
 inline bool dns_isspace(char c)
 {
@@ -259,7 +252,7 @@ inline const string toLowerCanonic(const string &upper)
     for(i = 0; i < limit ; i++) {
       c = dns_tolower(upper[i]);
       if(c != upper[i])
-	reply[i] = c;
+        reply[i] = c;
     }   
     if(upper[i-1]=='.')
       reply.resize(i-1);
@@ -273,11 +266,11 @@ inline const string toLowerCanonic(const string &upper)
 // Make s uppercase:
 inline string toUpper( const string& s )
 {
-	string r(s);
-	for( unsigned int i = 0; i < s.length(); i++ ) {
-		r[i] = toupper( r[i] );
-	}
-	return r;
+        string r(s);
+        for( unsigned int i = 0; i < s.length(); i++ ) {
+        	r[i] = toupper( r[i] );
+        }
+        return r;
 }
 
 inline double getTime()
@@ -303,54 +296,108 @@ inline float makeFloat(const struct timeval& tv)
 {
   return tv.tv_sec + tv.tv_usec/1000000.0f;
 }
-struct CIStringCompare: public binary_function<string, string, bool>  
+
+inline bool operator<(const struct timeval& lhs, const struct timeval& rhs) 
+{
+  return make_pair(lhs.tv_sec, lhs.tv_usec) < make_pair(rhs.tv_sec, rhs.tv_usec);
+}
+
+inline bool pdns_ilexicographical_compare(const std::string& a, const std::string& b)  __attribute__((pure));
+inline bool pdns_ilexicographical_compare(const std::string& a, const std::string& b) 
+{
+  string::size_type aLen = a.length(), bLen = b.length(), n;
+  const unsigned char *aPtr = (const unsigned char*)a.c_str(), *bPtr = (const unsigned char*)b.c_str();
+  int result;
+  
+  for(n = 0 ; n < aLen && n < bLen ; ++n) {
+      if((result = dns_tolower(*aPtr++) - dns_tolower(*bPtr++))) {
+        return result < 0;
+      }
+  }
+  if(n == aLen && n == bLen) // strings are equal (in length)
+    return 0; 
+  if(n == aLen) // first string was shorter
+    return true; 
+  return false;
+}
+
+inline bool pdns_iequals(const std::string& a, const std::string& b) __attribute__((pure));
+
+inline bool pdns_iequals(const std::string& a, const std::string& b) 
+{
+  string::size_type aLen = a.length(), bLen = b.length(), n;
+  const char *aPtr = a.c_str(), *bPtr = b.c_str();
+  
+  for(n = 0 ; n < aLen && n < bLen ; ++n) {
+      if(dns_tolower(*aPtr++) != dns_tolower(*bPtr++))
+        return false;
+  }
+  return aLen == bLen; // strings are equal (in length)
+}
+
+// lifted from boost, with thanks
+class AtomicCounter
+{
+public:
+
+    explicit AtomicCounter( unsigned int v = 0) : value_( v ) {}
+
+    unsigned int operator++()
+    {
+      return atomic_exchange_and_add( &value_, +1 ) + 1;
+    }
+
+    unsigned int operator--()
+    {
+      return atomic_exchange_and_add( &value_, -1 ) - 1;
+    }
+
+    operator unsigned int() const
+    {
+      return atomic_exchange_and_add( &value_, 0);
+    }
+
+private:
+    AtomicCounter(AtomicCounter const &);
+    AtomicCounter &operator=(AtomicCounter const &);
+
+    mutable unsigned int value_;
+    
+    // the below is necessary because __sync_fetch_and_add is not universally available on i386.. I 3> RHEL5. 
+    #if defined( __GNUC__ ) && ( defined( __i386__ ) || defined( __x86_64__ ) )
+    static int atomic_exchange_and_add( unsigned int * pw, int dv )
+    {
+        // int r = *pw;
+        // *pw += dv;
+        // return r;
+
+        int r;
+
+        __asm__ __volatile__
+        (
+            "lock\n\t"
+            "xadd %1, %0":
+            "+m"( *pw ), "=r"( r ): // outputs (%0, %1)
+            "1"( dv ): // inputs (%2 == %1)
+            "memory", "cc" // clobbers
+        );
+
+        return r;
+    }
+    #else 
+    static int atomic_exchange_and_add( unsigned int * pw, int dv )
+    {
+      return __sync_fetch_and_add(pw, dv);
+    }
+    #endif
+};
+
+
+struct CIStringCompare: public std::binary_function<string, string, bool>  
 {
   bool operator()(const string& a, const string& b) const
   {
-    const unsigned char *p1 = (const unsigned char *) a.c_str();
-    const unsigned char *p2 = (const unsigned char *) b.c_str();
-    int result;
-    
-    if (p1 == p2)
-      return 0;
-    
-    while ((result = dns_tolower (*p1) - dns_tolower (*p2++)) == 0)
-      if (*p1++ == '\0')
-	break;
-    
-    return result < 0;
-  }
-
-  bool operator()(const string& a, const char* b) const
-  {
-    const unsigned char *p1 = (const unsigned char *) a.c_str();
-    const unsigned char *p2 = (const unsigned char *) b;
-    int result;
-    
-    if (p1 == p2)
-      return 0;
-    
-    while ((result = dns_tolower (*p1) - dns_tolower (*p2++)) == 0)
-      if (*p1++ == '\0')
-	break;
-    
-    return result < 0;
-  }
-
-  bool operator()(const char* a, const string& b) const
-  {
-    const unsigned char *p1 = (const unsigned char *) a;
-    const unsigned char *p2 = (const unsigned char *) b.c_str();
-    int result;
-    
-    if (p1 == p2)
-      return 0;
-    
-    while ((result = dns_tolower (*p1) - dns_tolower (*p2++)) == 0)
-      if (*p1++ == '\0')
-	break;
-    
-    return result < 0;
+    return pdns_ilexicographical_compare(a, b);
   }
 };
 
@@ -365,6 +412,9 @@ inline bool isCanonical(const string& dom)
 
 inline string toCanonic(const string& zone, const string& domain)
 {
+  if(domain.length()==1 && domain[0]=='@')
+    return zone;
+
   if(isCanonical(domain))
     return domain;
   string ret=domain;
@@ -382,4 +432,21 @@ inline void setSocketReusable(int fd)
 
 string stripDot(const string& dom);
 void seedRandom(const string& source);
+string makeRelative(const std::string& fqdn, const std::string& zone);
+string labelReverse(const std::string& qname);
+std::string dotConcat(const std::string& a, const std::string &b);
+int makeIPv6sockaddr(const std::string& addr, struct sockaddr_in6* ret);
+int makeIPv4sockaddr(const string &str, struct sockaddr_in* ret);
+bool stringfgets(FILE* fp, std::string& line);
+
+template<typename Index>
+std::pair<typename Index::iterator,bool>
+replacing_insert(Index& i,const typename Index::value_type& x)
+{
+  std::pair<typename Index::iterator,bool> res=i.insert(x);
+  if(!res.second)res.second=i.replace(res.first,x);
+  return res;
+}
+
+
 #endif

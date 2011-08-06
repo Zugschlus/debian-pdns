@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2005  PowerDNS.COM BV
+    Copyright (C) 2002 - 2011  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify it
     under the terms of the GNU General Public License version 2 as published
@@ -19,9 +19,9 @@
 
 #if __GNUC__ == 2
 #if __GNUC_MINOR__ < 95
-	#error Your compiler is too old! Try g++ 3.3 or higher
+        #error Your compiler is too old! Try g++ 3.3 or higher
 #else
-	#warning There are known problems with PowerDNS binaries compiled by gcc version 2.95 and 2.96!
+        #warning There are known problems with PowerDNS binaries compiled by gcc version 2.95 and 2.96!
 #endif
 #endif
 
@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <sys/types.h>
 #include "iputils.hh"
+#include "ednssubnet.hh"
 
 #ifndef WIN32
 #include <sys/socket.h>
@@ -44,7 +45,6 @@
 
 #include <iostream>
 #include <string>
-
 #include <vector>
 #include "qtype.hh"
 #include "dns.hh"
@@ -52,6 +52,7 @@
 #include "utility.hh"
 #include "logger.hh"
 #include "ahuexception.hh"
+#include "dnsrecords.hh"
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -66,14 +67,7 @@
 #endif // WIN32
 
 class DNSBackend;
-
-/** helper function for both DNSPacket and addSOARecord() - converts a line into a struct, for easier parsing */
-void fillSOAData(const string &content, SOAData &data);
-
-/** for use by DNSPacket, converts a SOAData class to a ascii line again */
-string serializeSOAData(const SOAData &data);
-
-string &attodot(string &str);  //!< for when you need to insert an email address in the SOA
+class DNSSECKeeper;
 
 //! This class represents DNS packets, either received or to be sent.
 class DNSPacket
@@ -82,13 +76,14 @@ public:
   DNSPacket();
   DNSPacket(const DNSPacket &orig);
 
-  int noparse(const char *mesg, int len); //!< parse a raw UDP or TCP packet and suck the data inward
+  int noparse(const char *mesg, int len); //!< just suck the data inward
   int parse(const char *mesg, int len); //!< parse a raw UDP or TCP packet and suck the data inward
-  string getString(); //!< for serialization - just passes the whole packet
+  const string& getString(); //!< for serialization - just passes the whole packet
 
   // address & socket manipulation
   void setRemote(const ComboAddress*);
   string getRemote() const;
+  Netmask getRealRemote() const;
   string getLocal() const
   {
     ComboAddress ca;
@@ -125,29 +120,24 @@ public:
   void setQuestion(int op, const string &qdomain, int qtype);  // wipes 'd', sets a random id, creates start of packet (label, type, class etc)
 
   DTime d_dt; //!< the time this packet was created. replyPacket() copies this in for you, so d_dt becomes the time spent processing the question+answer
-  void wrapup(void);  // writes out queued rrs, and generates the binary packet. also shuffles. also rectifies dnsheader 'd', and copies it to the stringbuffer
-  const char *getData(void); //!< get binary representation of packet, will call 'wrapup' for you
-
-  const char *getRaw(void); //!< provides access to the raw packet, possibly on a packet that has never been 'wrapped'
-  void spoofID(uint16_t id); //!< change the ID of an existing packet. Useful for fixing up packets returned from the PacketCache
+  void wrapup();  // writes out queued rrs, and generates the binary packet. also shuffles. also rectifies dnsheader 'd', and copies it to the stringbuffer
   void spoofQuestion(const string &qd); //!< paste in the exact right case of the question. Useful for PacketCache
-  void truncate(int new_length); // has documentation in source
 
   vector<DNSResourceRecord*> getAPRecords(); //!< get a vector with DNSResourceRecords that need additional processing
+  vector<DNSResourceRecord*> getAnswerRecords(); //!< get a vector with DNSResourceRecords that are answers
   void setCompress(bool compress);
 
   DNSPacket *replyPacket() const; //!< convenience function that creates a virgin answer packet to this question
 
   void commitD(); //!< copies 'd' into the stringbuffer
-  int getMaxReplyLen(); //!< retrieve the maximum length of the packet we should send in response
+  unsigned int getMaxReplyLen(); //!< retrieve the maximum length of the packet we should send in response
   void setMaxReplyLen(int bytes); //!< set the max reply len (used when retrieving from the packet cache, and this changed)
 
   bool couldBeCached(); //!< returns 0 if this query should bypass the packet cache
 
   //////// DATA !
 
-  ComboAddress remote;
-  uint16_t len; //!< length of the raw binary packet 2
+  ComboAddress d_remote;
   uint16_t qclass;  //!< class of the question - should always be INternet 2
   struct dnsheader d; //!< dnsheader at the start of the databuffer 12
 
@@ -155,7 +145,15 @@ public:
 
   string qdomain;  //!< qname of the question 4 - unsure how this is used
   bool d_tcp;
+  bool d_dnssecOk;
+  bool d_havetsig;
 
+  bool getTSIGDetails(TSIGRecordContent* tr, string* keyname, string* message) const;
+  void setTSIGDetails(const TSIGRecordContent& tr, const string& keyname, const string& secret, const string& previous, bool timersonly=false);
+  
+  vector<DNSResourceRecord>& getRRS() { return d_rrs; }
+  TSIGRecordContent d_trc;
+  static bool s_doEDNSSubnetProcessing;
 private:
   void pasteQ(const char *question, int length); //!< set the question of this packet, useful for crafting replies
 
@@ -165,13 +163,21 @@ private:
   
   int d_socket; // 4
 
-  string stringbuffer; // this is where everything lives 4
+  string d_rawpacket; // this is where everything lives 4
   int d_maxreplylen;
   string d_ednsping;
   bool d_wantsnsid;
-  vector<DNSResourceRecord> rrs; // 4
+  bool d_haveednssubnet;
+  EDNSSubnetOpts d_eso;
+  string d_tsigsecret;
+  string d_tsigkeyname;
+  string d_tsigprevious;
+  bool d_tsigtimersonly;
+
+  vector<DNSResourceRecord> d_rrs; // 4
 };
 
 
+bool checkForCorrectTSIG(const DNSPacket* q, DNSBackend* B, string* keyname, string* secret, TSIGRecordContent* trc);
 
 #endif

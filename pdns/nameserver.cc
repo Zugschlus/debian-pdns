@@ -33,7 +33,7 @@
 #include "arguments.hh"
 #include "statbag.hh"
 
-using namespace boost;
+#include "namespaces.hh"
 
 extern StatBag S;
 
@@ -156,7 +156,7 @@ void UDPNameserver::bindIPv6()
     }
     d_highfd=max(s,d_highfd);
     d_sockets.push_back(s);
-    L<<Logger::Error<<"UDPv6 server bound to ["<<localname<<"]:"<<::arg().asNum("local-port")<<endl;
+    L<<Logger::Error<<"UDPv6 server bound to "<<locala.toStringWithPort()<<endl;
     FD_SET(s, &d_rfds);
   }
 #endif // WIN32
@@ -178,18 +178,12 @@ UDPNameserver::UDPNameserver()
 
 void UDPNameserver::send(DNSPacket *p)
 {
-  const char *buffer=p->getData();
-  DLOG(L<<Logger::Notice<<"Sending a packet to "<< p->remote.toString() <<" ("<<p->len<<" octets)"<<endl);
-  if(p->len > p->getMaxReplyLen()) {
-    shared_ptr<DNSPacket> sharedp(new DNSPacket(*p));
-    sharedp->truncate(p->getMaxReplyLen());
-    buffer=sharedp->getData();
-    if(sendto(sharedp->getSocket(),buffer,sharedp->len,0,(struct sockaddr *)(&sharedp->remote), sharedp->remote.getSocklen())<0) 
-      L<<Logger::Error<<"Error sending reply with sendto (socket="<<sharedp->getSocket()<<"): "<<strerror(errno)<<endl;
+  const string& buffer=p->getString();
+  DLOG(L<<Logger::Notice<<"Sending a packet to "<< p->remote.toString() <<" ("<< buffer.length()<<" octets)"<<endl);
+  if(buffer.length() > p->getMaxReplyLen()) {
+    cerr<<"Weird, trying to send a message that needs truncation, "<< buffer.length()<<" > "<<p->getMaxReplyLen()<<endl;
   }
-  else {
-    if(sendto(p->getSocket(),buffer,p->len,0,(struct sockaddr *)(&p->remote),p->remote.getSocklen())<0)
-      L<<Logger::Error<<"Error sending reply with sendto (socket="<<p->getSocket()<<"): "<<strerror(errno)<<endl;
-  }
+  if(sendto(p->getSocket(),buffer.c_str(), buffer.length(), 0, (struct sockaddr *)(&p->d_remote), p->d_remote.getSocklen()) < 0)
+    L<<Logger::Error<<"Error sending reply with sendto (socket="<<p->getSocket()<<"): "<<strerror(errno)<<endl;
 }
 

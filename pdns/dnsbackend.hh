@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002-2007  PowerDNS.COM BV
+    Copyright (C) 2002-2010  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -28,6 +28,7 @@ class DNSPacket;
 #include <sys/types.h>
 #include "ahuexception.hh"
 #include <set>
+#include <iostream>
 
 #ifndef WIN32
 # include <sys/socket.h>
@@ -37,11 +38,12 @@ class DNSPacket;
 #include "qtype.hh"
 #include "dns.hh"
 #include <vector>
-using namespace std;
+#include "namespaces.hh"
   
 class DNSBackend;  
 struct DomainInfo
 {
+  DomainInfo() : backend(0) {}
   uint32_t id;
   string zone;
   vector<string> masters;
@@ -50,6 +52,11 @@ struct DomainInfo
   time_t last_check;
   enum {Master,Slave,Native} kind;
   DNSBackend *backend;
+  
+  bool operator<(const DomainInfo& rhs) const
+  {
+    return zone < rhs.zone;
+  }
 };
 
 class DNSPacket;
@@ -72,6 +79,27 @@ public:
   //! lookup() initiates a lookup. A lookup without results should not throw!
   virtual void lookup(const QType &qtype, const string &qdomain, DNSPacket *pkt_p=0, int zoneId=-1)=0; 
   virtual bool get(DNSResourceRecord &)=0; //!< retrieves one DNSResource record, returns false if no more were available
+
+  virtual bool getBeforeAndAfterNamesAbsolute(uint32_t id, const std::string& qname, std::string& unhashed, std::string& before, std::string& after)
+  {
+    std::cerr<<"Default beforeAndAfterAbsolute called!"<<std::endl;
+    abort();
+    return false;
+  }
+
+  bool getBeforeAndAfterNames(uint32_t id, const std::string& zonename, const std::string& qname, std::string& before, std::string& after);
+
+  virtual bool updateDNSSECOrderAndAuth(uint32_t domain_id, const std::string& zonename, const std::string& qname, bool auth)
+  {
+    return false;
+  }
+
+  virtual bool updateDNSSECOrderAndAuthAbsolute(uint32_t domain_id, const std::string& qname, const std::string& ordername, bool auth)
+  {
+    return false;
+  }
+
+
   //! Initiates a list of the specified domain
   /** Once initiated, DNSResourceRecord objects can be retrieved using get(). Should return false
       if the backend does not consider itself responsible for the id passed.
@@ -81,8 +109,25 @@ public:
 
   virtual ~DNSBackend(){};
 
+  struct KeyData {
+    unsigned int id;
+    unsigned int flags;
+    bool active;
+    std::string content;
+  };
+
   //! fills the soadata struct with the SOA details. Returns false if there is no SOA.
   virtual bool getSOA(const string &name, SOAData &soadata, DNSPacket *p=0);
+
+  virtual bool getDomainMetadata(const string& name, const std::string& kind, std::vector<std::string>& meta) { return false; }
+  virtual bool setDomainMetadata(const string& name, const std::string& kind, const std::vector<std::string>& meta) {return false;}
+  virtual bool getDomainKeys(const string& name, unsigned int kind, std::vector<KeyData>& keys) { return false;}
+  virtual bool removeDomainKey(const string& name, unsigned int id) { return false; }
+  virtual int addDomainKey(const string& name, const KeyData& key){ return -1; }
+  virtual bool activateDomainKey(const string& name, unsigned int id) { return false; }
+  virtual bool deactivateDomainKey(const string& name, unsigned int id) { return false; }
+
+  virtual bool getTSIGKey(const string& name, string* algorithm, string* content) { return false; }
 
   //! returns true if master ip is master for domain name.
   virtual bool isMaster(const string &name, const string &ip)
@@ -166,6 +211,11 @@ public:
     return false;
   }
 
+  virtual bool checkACL(const string &acl_type, const string &key, const string &value)
+  {
+    return false;
+  }
+
 protected:
   bool mustDo(const string &key);
   const string &getArg(const string &key);
@@ -198,7 +248,7 @@ class BackendMakerClass
 public:
   void report(BackendFactory *bf);
   void launch(const string &instr);
-  vector<DNSBackend *>all();
+  vector<DNSBackend *>all(bool skipBIND=false);
   void load(const string &module);
   int numLauncheable();
   vector<string> getModules();

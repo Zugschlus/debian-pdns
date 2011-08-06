@@ -2,7 +2,7 @@
 #include <string>
 #include <map>
 
-using namespace std;
+#include "pdns/namespaces.hh"
 
 #include "pdns/dns.hh"
 #include "pdns/dnsbackend.hh"
@@ -22,8 +22,8 @@ gOracleBackend::gOracleBackend(const string &mode, const string &suffix)  : GSQL
 {
   try {
     setDB(new SOracle(getArg("tnsname"),
-		     getArg("user"),
-		     getArg("password")));
+        	     getArg("user"),
+        	     getArg("password")));
     
   }
   
@@ -31,7 +31,7 @@ gOracleBackend::gOracleBackend(const string &mode, const string &suffix)  : GSQL
     L<<Logger::Error<<mode<<" Connection failed: "<<e.txtReason()<<endl;
     throw AhuException("Unable to launch "+mode+" connection: "+e.txtReason());
   }
-  L<<Logger::Warning<<mode<<" Connection succesful"<<endl;
+  L<<Logger::Warning<<mode<<" Connection successful"<<endl;
 }
 
 class gOracleFactory : public BackendFactory
@@ -68,8 +68,7 @@ public:
     declare(suffix,"update-lastcheck-query","", "update domains set last_check=%d where id=%d");
     declare(suffix,"info-all-master-query","", "select id,name,master,last_check,notified_serial,type from domains where type='MASTER'");
     declare(suffix,"delete-zone-query","", "delete from records where domain_id=%d");
-
-
+    declare(suffix,"check-acl-query","", "select value from acls where acl_type='%s' and acl_key='%s'");
   }
   
   DNSBackend *make(const string &suffix="")

@@ -4,7 +4,7 @@
 #include <string>
 #include <map>
 
-using namespace std;
+#include "pdns/namespaces.hh"
 
 #include <mysql.h>
 

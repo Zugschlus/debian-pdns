@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005 - 2007  PowerDNS.COM BV
+    Copyright (C) 2005 - 2010  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -24,9 +24,10 @@
 #include "rcpgenerator.hh"
 #include <boost/lexical_cast.hpp>
 #include <set>
+#include <bitset>
 
-using namespace std;
-using namespace boost;
+#include "namespaces.hh"
+#include "namespaces.hh"
 
 #define includeboilerplate(RNAME)   RNAME##RecordContent(const DNSRecord& dr, PacketReader& pr); \
   RNAME##RecordContent(const string& zoneData);                                                  \
@@ -125,6 +126,7 @@ class TSIGRecordContent : public DNSRecordContent
 {
 public:
   includeboilerplate(TSIG)
+  TSIGRecordContent() : DNSRecordContent(QType::TSIG) {}
 
   string d_algoName;
   uint64_t d_time; // 48 bits
@@ -226,9 +228,10 @@ private:
 class DNSKEYRecordContent : public DNSRecordContent
 {
 public:
+  DNSKEYRecordContent();
   includeboilerplate(DNSKEY)
+  uint16_t getTag();
 
-private:
   uint16_t d_flags;
   uint8_t d_protocol;
   uint8_t d_algorithm;
@@ -238,13 +241,25 @@ private:
 class DSRecordContent : public DNSRecordContent
 {
 public:
+  DSRecordContent();
   includeboilerplate(DS)
 
-private:
   uint16_t d_tag;
   uint8_t d_algorithm, d_digesttype;
   string d_digest;
 };
+
+class DLVRecordContent : public DNSRecordContent
+{
+public:
+  DLVRecordContent();
+  includeboilerplate(DLV)
+
+  uint16_t d_tag;
+  uint8_t d_algorithm, d_digesttype;
+  string d_digest;
+};
+
 
 class SSHFPRecordContent : public DNSRecordContent
 {
@@ -289,12 +304,23 @@ private:
   string d_certificate;
 };
 
+class TLSARecordContent : public DNSRecordContent
+{
+public:
+  includeboilerplate(TLSA)
+
+private:
+  uint8_t d_certtype, d_hashtype;
+  string d_cert;
+};
+
+
 class RRSIGRecordContent : public DNSRecordContent
 {
 public:
+  RRSIGRecordContent(); 
   includeboilerplate(RRSIG)
 
-private:
   uint16_t d_type;
   uint8_t d_algorithm, d_labels;
   uint32_t d_originalttl, d_sigexpire, d_siginception;
@@ -322,7 +348,6 @@ public:
   includeboilerplate(SOA)
   SOARecordContent(const string& mname, const string& rname, const struct soatimes& st);
 
-private:
   string d_mname;
   string d_rname;
   struct soatimes d_st;
@@ -345,6 +370,52 @@ public:
 private:
 };
 
+class NSEC3RecordContent : public DNSRecordContent
+{
+public:
+  static void report(void);
+  NSEC3RecordContent() : DNSRecordContent(50)
+  {}
+  NSEC3RecordContent(const string& content, const string& zone="");
+
+  static DNSRecordContent* make(const DNSRecord &dr, PacketReader& pr);
+  static DNSRecordContent* make(const string& content);
+  string getZoneRepresentation() const;
+  void toPacket(DNSPacketWriter& pw);
+
+  uint8_t d_algorithm, d_flags;
+  uint16_t d_iterations;
+  uint8_t d_saltlength;
+  string d_salt;
+  uint8_t d_nexthashlength;
+  string d_nexthash;
+  std::set<uint16_t> d_set;
+
+private:
+};
+
+
+class NSEC3PARAMRecordContent : public DNSRecordContent
+{
+public:
+  static void report(void);
+  NSEC3PARAMRecordContent() : DNSRecordContent(51)
+  {}
+  NSEC3PARAMRecordContent(const string& content, const string& zone="");
+
+  static DNSRecordContent* make(const DNSRecord &dr, PacketReader& pr);
+  static DNSRecordContent* make(const string& content);
+  string getZoneRepresentation() const;
+  void toPacket(DNSPacketWriter& pw);
+
+
+  uint8_t d_algorithm, d_flags;
+  uint16_t d_iterations;
+  uint8_t d_saltlength;
+  string d_salt;
+};
+
+
 class LOCRecordContent : public DNSRecordContent
 {
 public:
@@ -363,6 +434,26 @@ public:
   
 private:
 };
+
+
+class WKSRecordContent : public DNSRecordContent
+{
+public:
+  static void report(void);
+  WKSRecordContent() : DNSRecordContent(ns_t_wks)
+  {}
+  WKSRecordContent(const string& content, const string& zone="");
+
+  static DNSRecordContent* make(const DNSRecord &dr, PacketReader& pr);
+  static DNSRecordContent* make(const string& content);
+  string getZoneRepresentation() const;
+  void toPacket(DNSPacketWriter& pw);
+
+  uint32_t d_ip;
+  std::bitset<65535> d_services;
+private:
+};
+
 
 class URLRecordContent : public DNSRecordContent // Fake, 'fancy record' with type 256
 {
@@ -420,7 +511,7 @@ RNAME##RecordContent::RNAME##RecordContent(const string& zoneData) : DNSRecordCo
   }                                                                                                \
   catch(RecordTextException& rtr) {                                                                \
     throw MOADNSException("Parsing record content: "+string(rtr.what()));                          \
-  }												   \
+  }        											   \
 }                                                                                                  \
                                                                                                    \
 string RNAME##RecordContent::getZoneRepresentation() const                                         \
@@ -446,6 +537,7 @@ struct EDNSOpts
   uint8_t d_extRCode, d_version;
   uint16_t d_Z;
   vector<pair<uint16_t, string> > d_options;
+  enum zFlags { DNSSECOK=32768 };
 };
 //! Convenience function that fills out EDNS0 options, and returns true if there are any
 

@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2011 PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -16,7 +16,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-// $Id: dns.hh 1273 2008-11-15 20:05:42Z ahu $ 
+// $Id: dns.hh 2231 2011-07-11 07:25:27Z ahu $ 
 /* (C) 2002 POWERDNS.COM BV */
 #ifndef DNS_HH
 #define DNS_HH
@@ -25,6 +25,10 @@
 #include <boost/tuple/tuple_comparison.hpp>
 #include <boost/multi_index/key_extractors.hpp>
 #include <boost/multi_index/sequenced_index.hpp>
+#include <boost/serialization/string.hpp>
+#include <boost/serialization/version.hpp>
+
+
 #include "utility.hh"
 #include "qtype.hh"
 #include <time.h>
@@ -44,13 +48,14 @@ struct SOAData
   uint32_t default_ttl;
   int domain_id;
   DNSBackend *db;
+  uint8_t scopeMask;
 };
 
 
 class RCode
 {
 public:
-  enum rcodes_ { NoError=0, FormErr=1, ServFail=2, NXDomain=3, NotImp=4, Refused=5 };
+  enum rcodes_ { NoError=0, FormErr=1, ServFail=2, NXDomain=3, NotImp=4, Refused=5, NotAuth=9 };
 };
 
 class Opcode
@@ -63,24 +68,41 @@ public:
 class DNSResourceRecord
 {
 public:
-  DNSResourceRecord() : qclass(1), priority(0), d_place(ANSWER) {};
+  DNSResourceRecord() : qclass(1), priority(0), last_modified(0), d_place(ANSWER), auth(1), scopeMask(0) {};
   ~DNSResourceRecord(){};
-
-  string serialize() const;
-  int unSerialize(const string &str);
 
   // data
   
   QType qtype; //!< qtype of this record, ie A, CNAME, MX etc
   uint16_t qclass; //!< class of this record
   string qname; //!< the name of this record, for example: www.powerdns.com
+  string wildcardname;
   string content; //!< what this record points to. Example: 10.1.2.3
-  uint16_t priority; //!< For qtype's that support a priority or preference. Currently only MX
+  uint16_t priority; //!< For qtypes that support a priority or preference (MX, SRV)
   uint32_t ttl; //!< Time To Live of this record
   int domain_id; //!< If a backend implements this, the domain_id of the zone this record is in
   time_t last_modified; //!< For autocalculating SOA serial numbers - the backend needs to fill this in
   enum Place {QUESTION=0, ANSWER=1, AUTHORITY=2, ADDITIONAL=3}; //!< Type describing the positioning of a DNSResourceRecord within, say, a DNSPacket
   Place d_place; //!< This specifies where a record goes within the packet
+
+  bool auth;
+  uint8_t scopeMask;
+
+  template<class Archive>
+  void serialize(Archive & ar, const unsigned int version)
+  {
+    ar & qtype;
+    ar & qclass;
+    ar & qname;
+    ar & wildcardname;
+    ar & content;
+    ar & priority;
+    ar & ttl;
+    ar & domain_id;
+    ar & last_modified;
+    ar & d_place;
+    ar & auth;
+  }
 
   bool operator<(const DNSResourceRecord &b) const
   {
@@ -90,9 +112,6 @@ public:
       return(content < b.content);
     return false;
   }
-
-private:
-  string escape(const string &str) const;
 };
 
 #ifdef _MSC_VER
@@ -112,8 +131,8 @@ struct dnsrecordheader
 
 struct EDNS0Record 
 { 
-	uint8_t extRCode, version; 
-	uint16_t Z; 
+        uint8_t extRCode, version; 
+        uint16_t Z; 
 } GCCPACKATTRIBUTE;
 #ifdef _MSC_VER
 #pragma pack (pop)
@@ -248,5 +267,14 @@ struct dnsheader {
 
 #define L theL()
 extern time_t s_starttime;
+std::string questionExpand(const char* packet, uint16_t len, uint16_t& type);
+bool dnspacketLessThan(const std::string& a, const std::string& b);
 
+/** helper function for both DNSPacket and addSOARecord() - converts a line into a struct, for easier parsing */
+void fillSOAData(const string &content, SOAData &data);
+
+/** for use by DNSPacket, converts a SOAData class to a ascii line again */
+string serializeSOAData(const SOAData &data);
+string &attodot(string &str);  //!< for when you need to insert an email address in the SOA
+string strrcode(unsigned char rcode);
 #endif

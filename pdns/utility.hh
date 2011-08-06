@@ -71,7 +71,7 @@ typedef int socklen_t;
 #endif // WIN32
 #include <string>
 
-using namespace std;
+#include "namespaces.hh"
 
 //! A semaphore class.
 class Semaphore
@@ -187,9 +187,6 @@ public:
   //! Sets the random seed.
   static void srandom( unsigned int seed );
 
-  //! Compares two strings and ignores case.
-  static int strcasecmp( const char *s1, const char *s2 );
-
   //! Drops the program's privileges.
   static void dropPrivs( int uid, int gid );
   
@@ -204,6 +201,8 @@ public:
   
   //! Sleeps for a number of microseconds.
   static void usleep( unsigned long usec );
+
+  static time_t timegm(struct tm *tm);
   
 };
 

@@ -23,7 +23,7 @@
 extern StatBag S;
 #endif
 
-using namespace std;
+#include "namespaces.hh"
 
 Logger &theL(const string &pname)
 {
@@ -122,6 +122,14 @@ Logger& Logger::operator<<(int i)
 
   *this<<tmp.str();
 
+  return *this;
+}
+
+Logger& Logger::operator<<(double i)
+{
+  ostringstream tmp;
+  tmp<<i;
+  *this<<tmp.str();
   return *this;
 }
 

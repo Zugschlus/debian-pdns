@@ -1,26 +1,36 @@
 /* Copyright 2001 Netherlabs BV, bert.hubert@netherlabs.nl. See LICENSE 
    for more information.
-   $Id: smysql.cc 477 2005-09-03 18:15:37Z ahu $  */
+   $Id: smysql.cc 2199 2011-05-23 19:12:22Z ahu $  */
 #include "smysql.hh"
 #include <string>
 #include <iostream>
 #include "pdns/misc.hh"
 #include "pdns/logger.hh"
 #include "pdns/dns.hh"
-using namespace std;
+#include "pdns/namespaces.hh"
 
 bool SMySQL::s_dolog;
 
 SMySQL::SMySQL(const string &database, const string &host, uint16_t port, const string &msocket, const string &user, 
-	       const string &password)
+               const string &password)
 {
   mysql_init(&d_db);
+  mysql_options(&d_db, MYSQL_READ_DEFAULT_GROUP, "client");
+  my_bool reconnect = 1;
+  mysql_options(&d_db, MYSQL_OPT_RECONNECT, &reconnect);
+
+#if MYSQL_VERSION_ID > 51000
+  unsigned int timeout = 10;
+  mysql_options(&d_db, MYSQL_OPT_READ_TIMEOUT, &timeout);
+  mysql_options(&d_db, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
+#endif
+  
   if (!mysql_real_connect(&d_db, host.empty() ? 0 : host.c_str(), 
-			  user.empty() ? 0 : user.c_str(), 
-			  password.empty() ? 0 : password.c_str(),
-			  database.c_str(), port,
-			  msocket.empty() ? 0 : msocket.c_str(),
-			  0)) {
+        		  user.empty() ? 0 : user.c_str(), 
+        		  password.empty() ? 0 : password.c_str(),
+        		  database.c_str(), port,
+        		  msocket.empty() ? 0 : msocket.c_str(),
+        		  CLIENT_MULTI_RESULTS)) {
 
     throw sPerrorException("Unable to connect to database");
   }
@@ -91,6 +101,13 @@ bool SMySQL::getRow(row_t &row)
     return true;
   }
   mysql_free_result(d_rres);  
+
+  while (mysql_next_result(&d_db) == 0) {
+    if ((d_rres = mysql_use_result(&d_db))) {
+      mysql_free_result(d_rres);
+    }
+  }
+
   d_rres=0;
   return false;
 }
@@ -122,7 +139,7 @@ int main()
       const SSql::row_t &row=juh[i];
 
       for(SSql::row_t::const_iterator j=row.begin();j!=row.end();++j)
-	cout <<"'"<< *j<<"', ";
+        cout <<"'"<< *j<<"', ";
       cout<<endl;
     }
   }

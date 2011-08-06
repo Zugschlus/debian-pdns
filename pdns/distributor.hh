@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2011  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -72,8 +72,6 @@ public:
   static void* makeThread(void *); //!< helper function to create our n threads
   void getQueueSizes(int &questions, int &answers); //!< Returns length of question queue
 
-
-
   int getNumBusy()
   {
     return d_num_threads-d_idle_threads;
@@ -87,11 +85,15 @@ public:
   };
 
   typedef pair<QuestionData, AnswerData> tuple_t;
+  bool isOverloaded()
+  {
+    return d_overloaded;
+  }
   
 private:
+  bool d_overloaded;
   std::queue<QuestionData> questions;
   pthread_mutex_t q_lock;
-
   
   deque<tuple_t> answers;
   pthread_mutex_t a_lock;
@@ -115,6 +117,7 @@ private:
 template<class Answer, class Question, class Backend>Distributor<Answer,Question,Backend>::Distributor(int n)
 {
   b=0;
+  d_overloaded = false;
   nextid=0;
   d_idle_threads=0;
   d_last_started=time(0);
@@ -144,6 +147,7 @@ template<class Answer, class Question, class Backend>Distributor<Answer,Question
 // start of a new thread
 template<class Answer, class Question, class Backend>void *Distributor<Answer,Question,Backend>::makeThread(void *p)
 {
+  pthread_detach(pthread_self());
   try {
     Backend *b=new Backend(); // this will answer our questions
     Distributor *us=static_cast<Distributor *>(p);
@@ -154,7 +158,7 @@ template<class Answer, class Question, class Backend>void *Distributor<Answer,Qu
     int queuetimeout=::arg().asNum("queue-limit"); 
 #endif 
     // ick ick ick!
-
+    static int overloadQueueLength=::arg().asNum("overload-queue-length");
     for(;;) {
       us->d_idle_threads++;
 
@@ -170,6 +174,10 @@ template<class Answer, class Question, class Backend>void *Distributor<Answer,Qu
       Question *q=QD.Q;
       
       us->questions.pop();
+
+      if(us->d_overloaded && qcount <= overloadQueueLength/10) {
+        us->d_overloaded=false;
+      }
       
       pthread_mutex_unlock(&us->q_lock);
       Answer *a;      
@@ -179,7 +187,7 @@ template<class Answer, class Question, class Backend>void *Distributor<Answer,Qu
         delete q;
         S.inc("timedout-packets");
         continue;
-      }	
+      }        
 #endif  
       // this is the only point where we interact with the backend (synchronous)
       try {
@@ -188,12 +196,12 @@ template<class Answer, class Question, class Backend>void *Distributor<Answer,Qu
       }
       catch(const AhuException &e) {
         L<<Logger::Error<<"Backend error: "<<e.reason<<endl;
-	delete b;
+        delete b;
         return 0;
       }
       catch(...) {
         L<<Logger::Error<<Logger::NTLog<<"Caught unknown exception in Distributor thread "<<(unsigned long)pthread_self()<<endl;
-	delete b;
+        delete b;
         return 0;
       }
 
@@ -203,21 +211,21 @@ template<class Answer, class Question, class Backend>void *Distributor<Answer,Qu
       tuple_t tuple(QD,AD);
 
       if(QD.callback) {
-	QD.callback(AD);
+        QD.callback(AD);
       }
       else {
-	pthread_mutex_lock(&us->a_lock);
+        pthread_mutex_lock(&us->a_lock);
 
-	us->answers.push_back(tuple);
-	pthread_mutex_unlock(&us->a_lock);
+        us->answers.push_back(tuple);
+        pthread_mutex_unlock(&us->a_lock);
       
-	//	  L<<"We have an answer to send! Trying to get to to_mut lock"<<endl;
-	pthread_mutex_lock(&us->to_mut); 
-	// L<<"Yes, we got the lock, we can transmit! First we post"<<endl;
-	us->numanswers.post();
-	// L<<"And now we broadcast!"<<endl;
-	pthread_cond_broadcast(&us->to_cond); // for timeoutWait(); 
-	pthread_mutex_unlock(&us->to_mut);
+        //	  L<<"We have an answer to send! Trying to get to to_mut lock"<<endl;
+        pthread_mutex_lock(&us->to_mut); 
+        // L<<"Yes, we got the lock, we can transmit! First we post"<<endl;
+        us->numanswers.post();
+        // L<<"And now we broadcast!"<<endl;
+        pthread_cond_broadcast(&us->to_cond); // for timeoutWait(); 
+        pthread_mutex_unlock(&us->to_mut);
       }
     }
     
@@ -284,7 +292,7 @@ template<class Answer, class Question, class Backend>int Distributor<Answer,Ques
 
   if(Backend::numRunning() < d_num_threads+2 && time(0)-d_last_started>5) { 
     d_last_started=time(0);
-    L<<"Distributor misses a thread ("<<Backend::numRunning()<<"<"<<d_num_threads<<"), spawning new one"<<endl;
+    L<<"Distributor misses a thread ("<<Backend::numRunning()<<"<"<<d_num_threads + 2<<"), spawning new one"<<endl;
     pthread_t tid;
     pthread_create(&tid,0,&makeThread,static_cast<void *>(this));
   }
@@ -298,14 +306,21 @@ template<class Answer, class Question, class Backend>int Distributor<Answer,Ques
   pthread_mutex_unlock(&q_lock);
 
   numquestions.post();
+  
+  static int overloadQueueLength=::arg().asNum("overload-queue-length");
 
   if(!(nextid%50)) {
     int val;
     numquestions.getValue( &val );
+    
+    if(!d_overloaded)
+      d_overloaded = overloadQueueLength && (val > overloadQueueLength);
+
     if(val>::arg().asNum("max-queue-length")) {
       L<<Logger::Error<<val<<" questions waiting for database attention. Limit is "<<::arg().asNum("max-queue-length")<<", respawning"<<endl;
-      exit(1);
+      _exit(1);
     }
+
   }
 
   return QD.id;
@@ -334,11 +349,11 @@ template<class Answer, class Question,class Backend>Answer* Distributor<Answer,Q
       // search if the answer is there
       tuple_t tuple=answers.front();
       if(tuple.first==q)
-	{
-	  answers.pop_front();
-	  pthread_mutex_unlock(&a_lock);
-	  return tuple.second.A;
-	}
+        {
+          answers.pop_front();
+          pthread_mutex_unlock(&a_lock);
+          return tuple.second.A;
+        }
       // if not, loop again
       pthread_mutex_unlock(&a_lock);
       numanswers.post();

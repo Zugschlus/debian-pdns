@@ -1,3 +1,5 @@
+#ifndef PDNS_MPLEXER_HH
+#define PDNS_MPLEXER_HH
 #include <boost/function.hpp>
 #include <boost/any.hpp>
 #include <boost/shared_array.hpp>
@@ -94,7 +96,7 @@ public:
     std::vector<std::pair<int, funcparam_t> > ret;
     for(callbackmap_t::iterator i=d_readCallbacks.begin(); i!=d_readCallbacks.end(); ++i)
       if(i->second.d_ttd.tv_sec && boost::tie(tv.tv_sec, tv.tv_usec) > boost::tie(i->second.d_ttd.tv_sec, i->second.d_ttd.tv_usec)) 
-	ret.push_back(std::make_pair(i->first, i->second.d_parameter));
+        ret.push_back(std::make_pair(i->first, i->second.d_parameter));
     return ret;
   }
 
@@ -156,3 +158,4 @@ public:
   }
 };
 
+#endif

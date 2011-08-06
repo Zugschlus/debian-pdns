@@ -1,4 +1,4 @@
-// $Id: pdnsbackend.hh 1317 2008-11-28 15:00:33Z ahu $
+// $Id: pdnsbackend.hh 1985 2011-02-07 09:39:22Z ahu $
 
 #ifndef PDNSBACKEND_HH
 #define PDNSBACKEND_HH
@@ -6,7 +6,7 @@
 #include <string>
 #include <map>
 
-using namespace std;
+#include "pdns/namespaces.hh"
 
 #include <mysql.h>
 

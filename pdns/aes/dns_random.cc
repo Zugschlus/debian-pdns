@@ -13,6 +13,8 @@ static aes_encrypt_ctx g_cx;
 static unsigned char g_counter[16];
 static uint32_t g_in;
 
+static bool g_initialized;
+
 void dns_random_init(const char data[16])
 {
   aes_init();
@@ -24,6 +26,8 @@ void dns_random_init(const char data[16])
   memcpy(g_counter, &now.tv_usec, sizeof(now.tv_usec));
   memcpy(g_counter+sizeof(now.tv_usec), &now.tv_sec, sizeof(now.tv_sec));
   g_in = getpid() | (getppid()<<16);
+  
+  g_initialized = true;
   srandom(dns_random(numeric_limits<uint32_t>::max()));
 }
 
@@ -32,24 +36,26 @@ static void counterIncrement(unsigned char* counter)
   if(!++counter[0])
     if(!++counter[1])
       if(!++counter[2])
-	if(!++counter[3])
-	  if(!++counter[4])
-	    if(!++counter[5])
-	      if(!++counter[6])
-		if(!++counter[7])
-		  if(!++counter[8])
-		    if(!++counter[9])
-		      if(!++counter[10])
-			if(!++counter[11])
-			  if(!++counter[12])
-			    if(!++counter[13])
-			      if(!++counter[14])
-				++counter[15];
+        if(!++counter[3])
+          if(!++counter[4])
+            if(!++counter[5])
+              if(!++counter[6])
+        	if(!++counter[7])
+        	  if(!++counter[8])
+        	    if(!++counter[9])
+        	      if(!++counter[10])
+        		if(!++counter[11])
+        		  if(!++counter[12])
+        		    if(!++counter[13])
+        		      if(!++counter[14])
+        			++counter[15];
   
 }
 
 unsigned int dns_random(unsigned int n)
 {
+  if(!g_initialized)
+    abort();
   uint32_t out;
   aes_ctr_encrypt((unsigned char*) &g_in, (unsigned char*)& out, sizeof(g_in), g_counter, counterIncrement, &g_cx);
   return out % n;

@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2008 PowerDNS.COM BV
+    Copyright (C) 2002 - 2010 PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -20,6 +20,7 @@
 #include "utility.hh"
 #include "lwres.hh"
 #include <iostream>
+#include "dnsrecords.hh"
 #include <errno.h>
 #include "misc.hh"
 #include <algorithm>
@@ -52,9 +53,11 @@ string dns0x20(const std::string& in)
   return ret;
 }
 
-//! returns -2 for OS limits error, -1 for permanent error that has to do with remote, 0 for timeout, 1 for success
-/** Never throws! */
-int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool doTCP, bool doEDNS0, struct timeval* now, LWResult *lwr)
+//! returns -2 for OS limits error, -1 for permanent error that has to do with remote **transport**, 0 for timeout, 1 for success
+/** lwr is only filled out in case 1 was returned, and even when returning 1 for 'success', lwr might contain DNS errors
+    Never throws! 
+ */
+int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool doTCP, bool sendRDQuery, int EDNS0Level, struct timeval* now, LWResult *lwr)
 {
   int len; 
   int bufsize=1500;
@@ -63,14 +66,26 @@ int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool do
   //  string mapped0x20=dns0x20(domain);
   DNSPacketWriter pw(vpacket, domain, type);
 
-  pw.getHeader()->rd=0;
+  pw.getHeader()->rd=sendRDQuery;
   pw.getHeader()->id=dns_random(0xffff);
+  
+  string ping;
 
-  if(doEDNS0 && !doTCP) {
-    pw.addOpt(1200, 0, 0); // 1200 bytes answer size
+  uint32_t nonce=dns_random(0xffffffff);
+  ping.assign((char*) &nonce, 4);
+
+  if(EDNS0Level && !doTCP) {
+    DNSPacketWriter::optvect_t opts;
+    if(EDNS0Level > 1) {
+      opts.push_back(make_pair(5, ping));
+    }
+
+    pw.addOpt(1200, 0, 0, opts); // 1200 bytes answer size
     pw.commit();
   }
-  lwr->d_rcode=0;
+  lwr->d_rcode = 0;
+  lwr->d_pingCorrect = false;
+  lwr->d_haveEDNS = false;
 
   int ret;
 
@@ -83,29 +98,27 @@ int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool do
       g_stats.ipv6queries++;
 
     if((ret=asendto((const char*)&*vpacket.begin(), (int)vpacket.size(), 0, ip, pw.getHeader()->id, 
-		    domain, type, &queryfd)) < 0) {
+        	    domain, type, &queryfd)) < 0) {
       return ret; // passes back the -2 EMFILE
     }
   
     // sleep until we see an answer to this, interface to mtasker
     
     ret=arecvfrom(reinterpret_cast<char *>(buf.get()), bufsize-1,0, ip, &len, pw.getHeader()->id, 
-		  domain, type, queryfd, now->tv_sec);
+        	  domain, type, queryfd, now);
   }
   else {
     try {
-      if(ip.sin4.sin_family != AF_INET) // sstuff isn't yet ready for IPv6
-	return -1;
-      Socket s(InterNetwork, Stream);
-      IPEndpoint ie(U32ToIP(ntohl(ip.sin4.sin_addr.s_addr)), 53);   // WRONG WRONG WRONG XXX FIXME
-      s.setNonBlocking();
-      string bindIP=::arg()["query-local-address"];
-      if(!bindIP.empty()) {
-	ComboAddress local(bindIP);
-	s.bind(local.sin4);
-      }
+      Socket s((AddressFamily)ip.sin4.sin_family, Stream);
 
-      s.connect(ie);
+      s.setNonBlocking();
+      ComboAddress local = getQueryLocalAddress(ip.sin4.sin_family, 0);
+
+      s.bind(local);
+        
+      ComboAddress remote = ip;
+      remote.sin4.sin_port = htons(53);      
+      s.connect(remote);
       
       uint16_t tlen=htons(vpacket.size());
       char *lenP=(char*)&tlen;
@@ -114,24 +127,24 @@ int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool do
       
       ret=asendtcp(packet, &s);
       if(!(ret>0))           
-	return ret;
+        return ret;
       
       packet.clear();
       ret=arecvtcp(packet, 2, &s);
       if(!(ret > 0))
-	return ret;
+        return ret;
       
       memcpy(&tlen, packet.c_str(), 2);
       len=ntohs(tlen); // switch to the 'len' shared with the rest of the function
       
       ret=arecvtcp(packet, len, &s);
       if(!(ret > 0))
-	return ret;
+        return ret;
       
       if(len > bufsize) {
-	bufsize=len;
-	scoped_array<unsigned char> narray(new unsigned char[bufsize]);
-	buf.swap(narray);
+        bufsize=len;
+        scoped_array<unsigned char> narray(new unsigned char[bufsize]);
+        buf.swap(narray);
       }
       memcpy(buf.get(), packet.c_str(), len);
 
@@ -142,6 +155,7 @@ int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool do
     }
   }
 
+  
   lwr->d_usec=dt.udiff();
   *now=dt.getTimeval();
 
@@ -150,40 +164,57 @@ int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool do
 
   lwr->d_result.clear();
   try {
+    lwr->d_tcbit=0;
     MOADNSParser mdp((const char*)buf.get(), len);
     lwr->d_aabit=mdp.d_header.aa;
     lwr->d_tcbit=mdp.d_header.tc;
     lwr->d_rcode=mdp.d_header.rcode;
     
-    if(Utility::strcasecmp(domain.c_str(), mdp.d_qname.c_str())) { 
-      if(domain.find((char)0)==string::npos) {// embedded nulls are too noisy
-	L<<Logger::Notice<<"Packet purporting to come from remote server "<<ip.toString()<<" contained wrong answer: '" << domain << "' != '" << mdp.d_qname << "'" << endl;
-	g_stats.unexpectedCount++;
+    if(mdp.d_header.rcode == RCode::FormErr && mdp.d_qname.empty() && mdp.d_qtype == 0 && mdp.d_qclass == 0) {
+      return 1; // this is "success", the error is set in lwr->d_rcode
+    }
+
+    if(!pdns_iequals(domain, mdp.d_qname)) { 
+      if(!mdp.d_qname.empty() && domain.find((char)0) == string::npos) {// embedded nulls are too noisy, plus empty domains are too
+        L<<Logger::Notice<<"Packet purporting to come from remote server "<<ip.toString()<<" contained wrong answer: '" << domain << "' != '" << mdp.d_qname << "'" << endl;
       }
+      // unexpected count has already been done @ pdns_recursor.cc
       goto out;
     }
 
     for(MOADNSParser::answers_t::const_iterator i=mdp.d_answers.begin(); i!=mdp.d_answers.end(); ++i) {          
       DNSResourceRecord rr;
+      rr.priority = 0;
       rr.qtype=i->first.d_type;
       rr.qname=i->first.d_label;
-      /* 
-      if(i->first.d_label == mapped0x20)
-	rr.qname=domain;
-      else
-	rr.qname=i->first.d_label;
-      */
       rr.ttl=i->first.d_ttl;
       rr.content=i->first.d_content->getZoneRepresentation();  // this should be the serialised form
       rr.d_place=(DNSResourceRecord::Place) i->first.d_place;
       lwr->d_result.push_back(rr);
     }
-    
+
+    EDNSOpts edo;
+    if(EDNS0Level > 1 && getEDNSOpts(mdp, &edo)) {
+      lwr->d_haveEDNS = true;
+      for(vector<pair<uint16_t, string> >::const_iterator iter = edo.d_options.begin();
+          iter != edo.d_options.end(); 
+          ++iter) {
+        if(iter->first == 5 || iter->first == 4) {// 'EDNS PING'
+          if(iter->second == ping)  {
+            lwr->d_pingCorrect = true;
+          }
+        }
+      }
+    }
+        
     return 1;
   }
   catch(std::exception &mde) {
     if(::arg().mustDo("log-common-errors"))
       L<<Logger::Notice<<"Unable to parse packet from remote server "<<ip.toString()<<": "<<mde.what()<<endl;
+    lwr->d_rcode = RCode::FormErr;
+    g_stats.serverParseError++; 
+    return 1; // success - oddly enough
   }
   catch(...) {
     L<<Logger::Notice<<"Unknown error parsing packet from remote server"<<endl;
@@ -192,7 +223,8 @@ int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool do
   g_stats.serverParseError++; 
   
  out:
-  lwr->d_rcode=RCode::ServFail;
+  if(!lwr->d_rcode)
+    lwr->d_rcode=RCode::ServFail;
 
   return -1;
 }

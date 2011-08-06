@@ -31,27 +31,26 @@ extern PacketCache PC;
 
 DNSProxy::DNSProxy(const string &remote)
 {
-  ServiceTuple st;
-  st.port=53;
-  parseService(remote,st);
-
   pthread_mutex_init(&d_lock,0);
   d_resanswers=S.getPointer("recursing-answers");
   d_resquestions=S.getPointer("recursing-questions");
   d_udpanswers=S.getPointer("udp-answers");
-  if((d_sock=socket(AF_INET, SOCK_DGRAM,0))<0)
+  ComboAddress remaddr(remote, 53);
+  
+  if((d_sock=socket(remaddr.sin4.sin_family, SOCK_DGRAM,0))<0)
     throw AhuException(string("socket: ")+strerror(errno));
  
-  struct sockaddr_in sin;
-  memset((char *)&sin, 0, sizeof(sin));
-  
-  sin.sin_family = AF_INET;
-  sin.sin_addr.s_addr = INADDR_ANY;
+  ComboAddress local;
+  if(remaddr.sin4.sin_family==AF_INET)
+    local = ComboAddress("0.0.0.0");
+  else
+    local = ComboAddress("::");
+    
   int n=0;
   for(;n<10;n++) {
-    sin.sin_port = htons(10000+( Utility::random()%50000));
+    local.sin4.sin_port = htons(10000+( Utility::random()%50000));
     
-    if(::bind(d_sock, (struct sockaddr *)&sin, sizeof(sin)) >= 0) 
+    if(::bind(d_sock, (struct sockaddr *)&local, local.getSocklen()) >= 0) 
       break;
   }
   if(n==10) {
@@ -60,19 +59,11 @@ DNSProxy::DNSProxy(const string &remote)
     throw AhuException(string("binding dnsproxy socket: ")+strerror(errno));
   }
 
-  struct sockaddr_in toaddr;
-  struct in_addr inp;
-  Utility::inet_aton(st.host.c_str(),&inp);
-  toaddr.sin_addr.s_addr=inp.s_addr;
-
-  toaddr.sin_port=htons(st.port);
-  toaddr.sin_family=AF_INET;
-
-  if(connect(d_sock, (sockaddr *)&toaddr, sizeof(toaddr))<0) 
-    throw AhuException("Unable to UDP connect to remote nameserver "+st.host+" ("+itoa(st.port)+"): "+stringerror());
+  if(connect(d_sock, (sockaddr *)&remaddr, remaddr.getSocklen())<0) 
+    throw AhuException("Unable to UDP connect to remote nameserver "+remaddr.toStringWithPort()+": "+stringerror());
 
   d_xor=Utility::random()&0xffff;
-  L<<Logger::Error<<"DNS Proxy launched, local port "<<ntohs(sin.sin_port)<<", remote "<<st.host<<":"<<st.port<<endl;
+  L<<Logger::Error<<"DNS Proxy launched, local port "<<ntohs(local.sin4.sin_port)<<", remote "<<remaddr.toStringWithPort()<<endl;
 } 
 
 void DNSProxy::go()
@@ -94,7 +85,7 @@ void DNSProxy::onlyFrom(const string &ips)
 
 bool DNSProxy::recurseFor(DNSPacket* p)
 {
-  return d_ng.match((ComboAddress *)&p->remote);
+  return d_ng.match((ComboAddress *)&p->d_remote);
 }
 
 /** returns false if p->remote is not allowed to recurse via us */
@@ -110,18 +101,19 @@ bool DNSProxy::sendPacket(DNSPacket *p)
 
     ConntrackEntry ce;
     ce.id       = p->d.id;
-    memcpy((void *)&ce.remote,(void *)&p->remote, p->remote.getSocklen()); 
-    ce.addrlen  = p->remote.getSocklen();
+    ce.remote = p->d_remote;
     ce.outsock  = p->getSocket();
     ce.created  = time( NULL );
-
+    ce.qtype = p->qtype.getCode();
+    ce.qname = p->qdomain;
     d_conntrack[id]=ce;
   }
-  p->spoofID(id^d_xor);
-
-  char *buffer=const_cast<char *>(p->getRaw());
-  int len=p->len;
-  if(send(d_sock,buffer,len,0)<0) { // zoom
+  p->d.id=id^d_xor;
+  p->commitD();
+  
+  const string& buffer = p->getString();
+  
+  if(send(d_sock,buffer.c_str(), buffer.length() , 0)<0) { // zoom
     L<<Logger::Error<<"Unable to send a packet to our recursing backend: "<<stringerror()<<endl;
   }
   (*d_resquestions)++;
@@ -139,9 +131,9 @@ int DNSProxy::getID_locked()
     }
     else if(i->second.created<time(0)-60) {
       if(i->second.created)
-	L<<Logger::Warning<<"Recursive query for remote "<<
-	  sockAddrToString((struct sockaddr_in *)&i->second.remote)<<" with internal id "<<n<<
-	  " was not answered by backend within timeout, reusing id"<<endl;
+        L<<Logger::Warning<<"Recursive query for remote "<<
+          i->second.remote.toStringWithPort()<<" with internal id "<<n<<
+          " was not answered by backend within timeout, reusing id"<<endl;
       
       return n;
     }
@@ -157,46 +149,51 @@ void DNSProxy::mainloop(void)
     for(;;) {
       len=recv(d_sock, buffer, sizeof(buffer),0); // answer from our backend
       if(len<12) {
-	if(len<0)
-	  L<<Logger::Error<<"Error receiving packet from recursor backend: "<<stringerror()<<endl;
-	else if(len==0)
-	  L<<Logger::Error<<"Error receiving packet from recursor backend, EOF"<<endl;
-	else
-	  L<<Logger::Error<<"Short packet from recursor backend, "<<len<<" bytes"<<endl;
-	
-	continue;
+        if(len<0)
+          L<<Logger::Error<<"Error receiving packet from recursor backend: "<<stringerror()<<endl;
+        else if(len==0)
+          L<<Logger::Error<<"Error receiving packet from recursor backend, EOF"<<endl;
+        else
+          L<<Logger::Error<<"Short packet from recursor backend, "<<len<<" bytes"<<endl;
+        
+        continue;
       }
       (*d_resanswers)++;
       (*d_udpanswers)++;
       dnsheader d;
       memcpy(&d,buffer,sizeof(d));
       {
-	Lock l(&d_lock);
+        Lock l(&d_lock);
 #ifdef WORDS_BIGENDIAN
-	// this is needed because spoof ID down below does not respect the native byteorder
-	d.id = ( 256 * (uint16_t)buffer[1] ) + (uint16_t)buffer[0];  
+        // this is needed because spoof ID down below does not respect the native byteorder
+        d.id = ( 256 * (uint16_t)buffer[1] ) + (uint16_t)buffer[0];  
 #endif
-	map_t::iterator i=d_conntrack.find(d.id^d_xor);
-	if(i==d_conntrack.end()) {
-	  L<<Logger::Error<<"Discarding untracked packet from recursor backend with id "<<(d.id^d_xor)<<
-	    ". Contrack table size="<<d_conntrack.size()<<endl;
-	  continue;
-	}
-	else if(i->second.created==0) {
-	  L<<Logger::Error<<"Received packet from recursor backend with id "<<(d.id^d_xor)<<" which is a duplicate"<<endl;
-	  continue;
-	}
-	d.id=i->second.id;
-	memcpy(buffer,&d,sizeof(d));  // commit spoofed id
+        map_t::iterator i=d_conntrack.find(d.id^d_xor);
+        if(i==d_conntrack.end()) {
+          L<<Logger::Error<<"Discarding untracked packet from recursor backend with id "<<(d.id^d_xor)<<
+            ". Contrack table size="<<d_conntrack.size()<<endl;
+          continue;
+        }
+        else if(i->second.created==0) {
+          L<<Logger::Error<<"Received packet from recursor backend with id "<<(d.id^d_xor)<<" which is a duplicate"<<endl;
+          continue;
+        }
+        d.id=i->second.id;
+        memcpy(buffer,&d,sizeof(d));  // commit spoofed id
 
-	sendto(i->second.outsock,buffer,len,0,(struct sockaddr*)&i->second.remote,i->second.addrlen);
-	
-	DNSPacket p,q;
-	p.parse(buffer,len);
-	q.parse(buffer,len);
-	
-	PC.insert(&q, &p);
-	i->second.created=0;
+        DNSPacket p,q;
+        p.parse(buffer,len);
+        q.parse(buffer,len);
+
+        if(p.qtype.getCode() != i->second.qtype || p.qdomain != i->second.qname) {
+          L<<Logger::Error<<"Discarding packet from recursor backend with id "<<(d.id^d_xor)<<
+            ", qname or qtype mismatch"<<endl;
+          continue;
+        }
+        sendto(i->second.outsock, buffer, len, 0, (struct sockaddr*)&i->second.remote, i->second.remote.getSocklen());
+        
+        PC.insert(&q, &p);
+        i->second.created=0;
       }
     }
   }

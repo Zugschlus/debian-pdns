@@ -25,8 +25,6 @@
 #include "logger.hh"
 #include <boost/algorithm/string.hpp>
 
-using boost::iequals;
-
 /* FIRST PART */
 class RandomBackend : public DNSBackend
 {
@@ -43,7 +41,7 @@ public:
     
   void lookup(const QType &type, const string &qdomain, DNSPacket *p, int zoneId)
   {
-    if((type.getCode()!=QType::ANY && type.getCode()!=QType::A) || !iequals(qdomain, d_ourname))  // we only know about random.powerdns.com A
+    if((type.getCode()!=QType::ANY && type.getCode()!=QType::A) || !pdns_iequals(qdomain, d_ourname))  // we only know about random.powerdns.com A
       d_answer="";                                                  // no answer
     else {
       ostringstream os;
@@ -59,6 +57,7 @@ public:
       rr.qname=d_ourname;                                           // fill in details
       rr.qtype=QType::A;                                            // A record
       rr.ttl=5;                                                 // 5 seconds
+      rr.auth = 1;  // it may be random.. but it is auth!
       rr.content=d_answer;
 
       d_answer="";                                                  // this was the last answer

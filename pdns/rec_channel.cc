@@ -1,6 +1,8 @@
 #include "rec_channel.hh"
 #include <sys/socket.h>
 #include <cerrno>
+#include "misc.hh"
+#include <string.h>
 #include <cstdlib>
 #include <unistd.h>
 #include <sys/types.h>
@@ -9,7 +11,7 @@
 
 #include "ahuexception.hh"
 
-using namespace std;
+#include "namespaces.hh"
 
 RecursorControlChannel::RecursorControlChannel()
 {
@@ -120,35 +122,14 @@ void RecursorControlChannel::send(const std::string& msg, const std::string* rem
     throw AhuException("Unable to send message over control channel: "+string(strerror(errno)));
 }
 
-// returns -1 in case if error, 0 if no data is available, 1 if there is. In the first two cases, errno is set
-static int waitForData(int fd, int seconds, int useconds)
-{
-  struct timeval tv;
-  int ret;
-
-  tv.tv_sec   = seconds;
-  tv.tv_usec  = useconds;
-
-  fd_set readfds;
-  FD_ZERO( &readfds );
-  FD_SET( fd, &readfds );
-
-  ret = select( fd + 1, &readfds, NULL, NULL, &tv );
-  if ( ret == 0 )
-    errno = ETIMEDOUT;
-
-  return ret;
-}
-
-
-string RecursorControlChannel::recv(std::string* remote)
+string RecursorControlChannel::recv(std::string* remote, unsigned int timeout)
 {
   char buffer[16384];
   ssize_t len;
   struct sockaddr_un remoteaddr;
   socklen_t addrlen=sizeof(remoteaddr);
     
-  if((waitForData(d_fd, 5, 0 ) != 1) || (len=::recvfrom(d_fd, buffer, sizeof(buffer), 0, (struct sockaddr*)&remoteaddr, &addrlen)) < 0)
+  if((waitForData(d_fd, timeout, 0 ) != 1) || (len=::recvfrom(d_fd, buffer, sizeof(buffer), 0, (struct sockaddr*)&remoteaddr, &addrlen)) < 0)
     throw AhuException("Unable to receive message over control channel: "+string(strerror(errno)));
 
   if(remote)

@@ -10,6 +10,8 @@ SOCKETPATH=@socketdir@
 
 [ -f "$SBINARYPATH/pdns_server" ] || exit 0
 
+[ -r /etc/default/pdns ] && . /etc/default/pdns
+
 cd $SOCKETPATH
 suffix=`basename $0 | awk -F- '{print $2}'`
 if [ $suffix ] 
@@ -170,7 +172,7 @@ case "$1" in
 
 
 	*)
-	echo pdns [start\|stop\|force-reload\|restart\|status\|dump\|show\|mrtg\|cricket\|monitor]
+	echo pdns [start\|stop\|force-reload\|reload\|restart\|status\|dump\|show\|mrtg\|cricket\|monitor]
 
 	;;
 esac

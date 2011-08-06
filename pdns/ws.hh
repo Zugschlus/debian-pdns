@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2009  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -34,7 +34,7 @@
 #endif // HAVE_CONFIG_H
 
 #include "misc.hh"
-using namespace std;
+#include "namespaces.hh"
 
 class Ewma
 {
@@ -75,16 +75,19 @@ private:
   double d_10, d_5, d_1, d_max;
 };
 
+class WebServer;
 
 class StatWebServer
 {
 public:
   StatWebServer();
   void go();
+  static string makePercentage(const double& val);
 private:
   static void *threadHelper(void *);
   static void *statThreadHelper(void *p);
   static string indexfunction(const map<string,string> &varmap, void *ptr, bool *custom);
+
   void printvars(ostringstream &ret);
   void printargs(ostringstream &ret);
   void launch();
@@ -95,6 +98,7 @@ private:
   double d_min10, d_min5, d_min1;
   Ewma d_queries, d_cachehits, d_cachemisses;
   Ewma d_qcachehits, d_qcachemisses;
+  WebServer *d_ws;
 };
 
 #endif

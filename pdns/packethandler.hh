@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2011  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -28,8 +28,9 @@
 #include "ueberbackend.hh"
 #include "dnspacket.hh"
 #include "packetcache.hh"
+#include "dnsseckeeper.hh"
 
-using namespace std;
+#include "namespaces.hh"
 
 // silly Solaris people define PC
 #undef PC
@@ -47,6 +48,7 @@ using namespace std;
     a complete reply.
 
 */
+class NSEC3PARAMRecordContent;
 
 class PacketHandler
 {
@@ -62,7 +64,7 @@ public:
     ~Guard()
     {
       if(*d_guard)
-	delete *d_guard;
+        delete *d_guard;
     }
     
   private:
@@ -89,9 +91,29 @@ private:
   int findUrl(DNSPacket *p, DNSPacket *r, string &target);
   int doFancyRecords(DNSPacket *p, DNSPacket *r, string &target);
   int doVersionRequest(DNSPacket *p, DNSPacket *r, string &target);
+  int doDNSKEYRequest(DNSPacket *p, DNSPacket *r, const SOAData& sd);
+  int doNSEC3PARAMRequest(DNSPacket *p, DNSPacket *r, const SOAData& sd);
   bool getAuth(DNSPacket *p, SOAData *sd, const string &target, int *zoneId);
   bool getTLDAuth(DNSPacket *p, SOAData *sd, const string &target, int *zoneId);
-  int doAdditionalProcessingAndDropAA(DNSPacket *p, DNSPacket *r);
+  int doAdditionalProcessingAndDropAA(DNSPacket *p, DNSPacket *r, const SOAData& sd);
+  bool doDNSSECProcessing(DNSPacket* p, DNSPacket *r);
+  void addNSECX(DNSPacket *p, DNSPacket* r, const string &target, const std::string& auth, int mode);
+  void addNSEC(DNSPacket *p, DNSPacket* r, const string &target, const std::string& auth, int mode);
+  void addNSEC3(DNSPacket *p, DNSPacket* r, const string &target, const std::string& auth, const NSEC3PARAMRecordContent& nsec3param, bool narrow, int mode);
+  void emitNSEC(const std::string& before, const std::string& after, const std::string& toNSEC, const SOAData& sd, DNSPacket *r, int mode);
+  void emitNSEC3(const NSEC3PARAMRecordContent &ns3rc, const SOAData& sd, const std::string& unhashed, const std::string& begin, const std::string& end, const std::string& toNSEC3, DNSPacket *r, int mode);
+  
+
+  void synthesiseRRSIGs(DNSPacket* p, DNSPacket* r);
+  void makeNXDomain(DNSPacket* p, DNSPacket* r, const std::string& target, SOAData& sd);
+  void makeNOError(DNSPacket* p, DNSPacket* r, const std::string& target, SOAData& sd);
+  vector<DNSResourceRecord> getBestReferralNS(DNSPacket *p, SOAData& sd, const string &target);
+  bool tryReferral(DNSPacket *p, DNSPacket*r, SOAData& sd, const string &target);
+
+  bool getBestWildcard(DNSPacket *p, SOAData& sd, const string &target, vector<DNSResourceRecord>* ret);
+  bool tryWildcard(DNSPacket *p, DNSPacket*r, SOAData& sd, string &target, bool& retargeted, bool& nodata);
+  bool addDSforNS(DNSPacket* p, DNSPacket* r, SOAData& sd, const string& dsname);
+  void completeANYRecords(DNSPacket *p, DNSPacket*r, SOAData& sd, const string &target);
   
   static int s_count;
   bool d_doFancyRecords;
@@ -102,6 +124,8 @@ private:
   bool d_doIPv6AdditionalProcessing;
 
   UeberBackend B; // every thread an own instance
+  DNSSECKeeper d_dk; // same, might even share B?
 };
-
+void emitNSEC3(DNSBackend& B, const NSEC3PARAMRecordContent& ns3prc, const SOAData& sd, const std::string& unhashed, const std::string& begin, const std::string& end, const std::string& toNSEC3, DNSPacket *r, int mode);
+bool getNSEC3Hashes(bool narrow, DNSBackend* db, int id, const std::string& hashed, bool decrement, string& unhashed, string& before, string& after);
 #endif /* PACKETHANDLER */

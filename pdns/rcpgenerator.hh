@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2005  PowerDNS.COM BV
+    Copyright (C) 2005 - 2009  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -19,16 +19,16 @@
 
 #ifndef PDNS_RCPGENERATOR_HH
 #define PDNS_RCPGENERATOR_HH
-
+#include <inttypes.h>
 #include <string>
 #include <stdexcept>
 #if !defined SOLARIS8 && !defined WIN32
-# include <stdint.h>
+
 #elif defined WIN32
 # include "utility.hh"
 #endif
 
-using namespace std;
+#include "namespaces.hh"
 
 class RecordTextException : public runtime_error
 {
@@ -53,7 +53,9 @@ public:
 
   void xfrLabel(string& val, bool compress=false);
   void xfrText(string& val, bool multi=false);
-  void xfrHexBlob(string& val);
+  void xfrHexBlob(string& val, bool keepReading=false);
+  void xfrBase32HexBlob(string& val);
+
   void xfrBlob(string& val, int len=-1);
 
   bool eof();
@@ -75,16 +77,17 @@ public:
   void xfr8BitInt(const uint8_t& val);
   void xfrIP(const uint32_t& val);
   void xfrTime(const uint32_t& val);
+  void xfrBase32HexBlob(const string& val);
 
   void xfrType(const uint16_t& val);
   void xfrLabel(const string& val, bool compress=false);
   void xfrText(const string& val, bool multi=false);
   void xfrBlob(const string& val, int len=-1);
-  void xfrHexBlob(const string& val);
+  void xfrHexBlob(const string& val, bool keepReading=false);
 
 private:
   string& d_string;
 };
 
-
+string segmentDNSLabel(const string& input );
 #endif

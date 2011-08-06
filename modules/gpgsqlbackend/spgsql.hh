@@ -2,7 +2,7 @@
    for more information. */
 #ifndef SPGSQL_HH
 #define SPGSQL_HH
-using namespace std;
+#include "pdns/namespaces.hh"
 #include "pdns/backends/gsql/ssql.hh"
 
 #include <libpq-fe.h>
@@ -10,8 +10,8 @@ class SPgSQL : public SSql
 {
 public:
   SPgSQL(const string &database, const string &host="", const string& port="",
-	 const string &msocket="",const string &user="", 
-	 const string &password="");
+         const string &msocket="",const string &user="", 
+         const string &password="");
 
   ~SPgSQL();
   
@@ -23,7 +23,9 @@ public:
   string escape(const string &str);    
   void setLog(bool state);
 private:
+  void ensureConnect();
   PGconn* d_db; 
+  string d_connectstr;
   PGresult* d_result;
   int d_count;
   static bool s_dolog;

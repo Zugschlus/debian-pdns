@@ -38,12 +38,12 @@
 
 #include "ahuexception.hh"
 #include "dns.hh"
-using namespace std;
+#include "namespaces.hh"
 
 int asendto(const char *data, int len, int flags, const ComboAddress& ip, uint16_t id, 
-	    const string& domain, uint16_t qtype,  int* fd);
+            const string& domain, uint16_t qtype,  int* fd);
 int arecvfrom(char *data, int len, int flags, const ComboAddress& ip, int *d_len, uint16_t id, 
-	      const string& domain, uint16_t, int fd, unsigned int now);
+              const string& domain, uint16_t, int fd, struct timeval* now);
 
 class LWResException : public AhuException
 {
@@ -61,8 +61,10 @@ public:
   int d_rcode;
   bool d_aabit, d_tcbit;
   uint32_t d_usec;
+  bool d_pingCorrect;
+  bool d_haveEDNS;
 };
 
-int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool doTCP, bool doEDNS0, struct timeval* now, LWResult* res);
+int asyncresolve(const ComboAddress& ip, const string& domain, int type, bool doTCP, bool sendRDQuery, int EDNS0Level, struct timeval* now, LWResult* res);
 
 #endif // PDNS_LWRES_HH

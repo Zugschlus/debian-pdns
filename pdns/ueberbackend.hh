@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002  PowerDNS.COM BV
+    Copyright (C) 2002 - 2011  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -36,11 +36,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 #endif // WIN32
-
+#include <boost/utility.hpp>
 #include "dnspacket.hh"
 #include "dnsbackend.hh"
 
-using namespace std;
+#include "namespaces.hh"
 
 class BackendReporter;
 
@@ -51,11 +51,10 @@ class BackendReporter;
     The UeberBackend is transparent for exceptions, which should fall straight through.
 */
 
-class UeberBackend : public DNSBackend
+class UeberBackend : public DNSBackend, public boost::noncopyable
 {
 public:
-  UeberBackend();
-  UeberBackend(const string &);
+  UeberBackend(const string &pname="default");
   ~UeberBackend();
   typedef DNSBackend *BackendMaker(); //!< typedef for functions returning pointers to new backends
 
@@ -64,7 +63,7 @@ public:
   /** contains BackendReporter objects, which contain maker functions and information about
       weather a module has already been reported to existing instances of the UeberBackend
   */
-  static vector<BackendReporter>backendmakers;
+//  static vector<BackendReporter>backendmakers;
 
   /** Tracks all created UeberBackend instances for us. We use this vector to notify
       existing threads of new modules 
@@ -79,10 +78,9 @@ public:
   static void *DynListener(void *);
   static void go(void);
 
-  
   /** This contains all registered backends. The DynListener modifies this list for us when
       new modules are loaded */
-  vector<DNSBackend*>backends; 
+  vector<DNSBackend*> backends; 
 
   void die();
   void cleanup();
@@ -124,6 +122,19 @@ public:
   void getUnfreshSlaveInfos(vector<DomainInfo>* domains);
   void getUpdatedMasters(vector<DomainInfo>* domains);
   bool getDomainInfo(const string &domain, DomainInfo &di);
+  
+  int addDomainKey(const string& name, const KeyData& key);
+  bool getDomainKeys(const string& name, unsigned int kind, std::vector<KeyData>& keys);
+  bool getDomainMetadata(const string& name, const std::string& kind, std::vector<std::string>& meta);
+  bool setDomainMetadata(const string& name, const std::string& kind, const std::vector<std::string>& meta);
+
+  bool removeDomainKey(const string& name, unsigned int id);
+  bool activateDomainKey(const string& name, unsigned int id);
+  bool deactivateDomainKey(const string& name, unsigned int id);
+
+  bool getTSIGKey(const string& name, string* algorithm, string* content);
+  
+  void alsoNotifies(const string &domain, set<string> *ips); 
   void rediscover(string* status=0);
   void reload();
 private:
@@ -138,11 +149,12 @@ private:
     string qname;
     int zoneId;
   }d_question;
-  DNSResourceRecord d_answer;
+  vector<DNSResourceRecord> d_answers;
+  vector<DNSResourceRecord>::const_iterator d_cachehandleiter;
 
-  int cacheHas(const Question &q, DNSResourceRecord &rr);
+  int cacheHas(const Question &q, vector<DNSResourceRecord> &rrs);
   void addNegCache(const Question &q);
-  void addOneCache(const Question &q, const DNSResourceRecord &rr);
+  void addCache(const Question &q, const vector<DNSResourceRecord> &rrs);
   
   static pthread_mutex_t d_mut;
   static pthread_cond_t d_cond;
@@ -151,7 +163,7 @@ private:
   static int s_s;
   static string s_status; 
   int d_ancount;
-  static string programname;
+  
   bool stale;
 };
 

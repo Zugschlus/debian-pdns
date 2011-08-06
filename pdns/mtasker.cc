@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2006  PowerDNS.COM BV
+    Copyright (C) 2002 - 2009  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 as 
@@ -24,7 +24,7 @@
     support for waiting on events which can return values.
 
     \section copyright Copyright and License
-    MTasker is (c) 2002 - 2006 by bert hubert. It is licensed to you under the terms of the GPL version 2.
+    MTasker is (c) 2002 - 2009 by bert hubert. It is licensed to you under the terms of the GPL version 2.
 
     \section overview High level overview
     MTasker is designed to support very simple cooperative multitasking to facilitate writing 
@@ -158,7 +158,7 @@ int main()
     \return returns -1 in case of error, 0 in case of timeout, 1 in case of an answer 
 */
 
-template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEvent(EventKey &key, EventVal *val, unsigned int timeout, unsigned int now)
+template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEvent(EventKey &key, EventVal *val, unsigned int timeoutMsec, struct timeval* now)
 {
   if(d_waiters.count(key)) { // there was already an exact same waiter
     return -1;
@@ -166,12 +166,21 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEven
 
   Waiter w;
   w.context=new ucontext_t;
-  w.ttd=0;
-  if(timeout)
-    w.ttd= timeout + (now ? now : time(0));
+  w.ttd.tv_sec = 0; w.ttd.tv_usec = 0;
+  if(timeoutMsec) {
+    struct timeval increment;
+    increment.tv_sec = timeoutMsec / 1000;
+    increment.tv_usec = 1000 * (timeoutMsec % 1000);
+    if(now) 
+      w.ttd = increment + *now;
+    else {
+      struct timeval realnow;
+      gettimeofday(&realnow, 0);
+      w.ttd = increment + realnow;
+    }
+  }
 
   w.tid=d_tid;
-  
   w.key=key;
 
   d_waiters.insert(w);
@@ -183,6 +192,9 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEven
   if(val && d_waitstatus==Answer) 
     *val=d_waitval;
   d_tid=w.tid;
+  if((char*)&w < d_threads[d_tid].highestStackSeen) {
+    d_threads[d_tid].highestStackSeen = (char*)&w;
+  }
   key=d_eventkey;
   return d_waitstatus;
 }
@@ -193,7 +205,7 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::waitEven
 template<class Key, class Val>void MTasker<Key,Val>::yield()
 {
   d_runQueue.push(d_tid);
-  if(swapcontext(d_threads[d_tid] ,&d_kernel) < 0) { // give control to the kernel
+  if(swapcontext(d_threads[d_tid].context ,&d_kernel) < 0) { // give control to the kernel
     perror("swapcontext in  yield");
     exit(EXIT_FAILURE);
   }
@@ -232,6 +244,17 @@ template<class EventKey, class EventVal>int MTasker<EventKey,EventVal>::sendEven
   return 1;
 }
 
+inline pair<uint32_t, uint32_t> splitPointer(void *ptr)
+{
+  uint64_t ll = (uint64_t) ptr;
+  return make_pair(ll >> 32, ll & 0xffffffff);
+}
+
+inline void* joinPtr(uint32_t val1, uint32_t val2)
+{
+  return (void*)(((uint64_t)val1 << 32) | (uint64_t)val2);
+}
+
 //! launches a new thread
 /** The kernel can call this to make a new thread, which starts at the function start and gets passed the val void pointer.
     \param start Pointer to the function which will form the start of the thread
@@ -246,13 +269,12 @@ template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, 
   uc->uc_stack.ss_sp = new char[d_stacksize];
   
   uc->uc_stack.ss_size = d_stacksize;
-#ifdef SOLARIS8
-  uc->uc_stack.ss_sp = (void*)(((char*)uc->uc_stack.ss_sp)+d_stacksize);
-  makecontext (uc,(void (*)(...))threadWrapper, 5, this, start, d_maxtid, val);
-#else
-  makecontext (uc, (void (*)(void))threadWrapper, 4, this, start, d_maxtid, val);
-#endif
-  d_threads[d_maxtid]=uc;
+  pair<uint32_t, uint32_t> valpair = splitPointer(val);
+  pair<uint32_t, uint32_t> thispair = splitPointer(this);
+
+  makecontext (uc, (void (*)(void))threadWrapper, 6, thispair.first, thispair.second, start, d_maxtid, valpair.first, valpair.second);
+
+  d_threads[d_maxtid].context = uc;
   d_runQueue.push(d_maxtid++); // will run at next schedule invocation
 }
 
@@ -267,11 +289,11 @@ template<class Key, class Val>void MTasker<Key,Val>::makeThread(tfunc_t *start, 
     \return Returns if there is more work scheduled and recalling schedule now would be useful
       
 */
-template<class Key, class Val>bool MTasker<Key,Val>::schedule(unsigned int now)
+template<class Key, class Val>bool MTasker<Key,Val>::schedule(struct timeval*  now)
 {
   if(!d_runQueue.empty()) {
     d_tid=d_runQueue.front();
-    if(swapcontext(&d_kernel, d_threads[d_tid])) {
+    if(swapcontext(&d_kernel, d_threads[d_tid].context)) {
       perror("swapcontext in schedule");
       exit(EXIT_FAILURE);
     }
@@ -280,39 +302,38 @@ template<class Key, class Val>bool MTasker<Key,Val>::schedule(unsigned int now)
     return true;
   }
   if(!d_zombiesQueue.empty()) {
-#ifdef SOLARIS8
-    delete[] (((char *)d_threads[d_zombiesQueue.front()]->uc_stack.ss_sp)-d_stacksize);
-#else
-    delete[] (char *)d_threads[d_zombiesQueue.front()]->uc_stack.ss_sp;
-#endif
-    delete d_threads[d_zombiesQueue.front()];
+    delete[] (char *)d_threads[d_zombiesQueue.front()].context->uc_stack.ss_sp;
+    delete d_threads[d_zombiesQueue.front()].context;
     d_threads.erase(d_zombiesQueue.front());
     d_zombiesQueue.pop();
     return true;
   }
   if(!d_waiters.empty()) {
+    struct timeval rnow;
     if(!now)
-      now=time(0);
+      gettimeofday(&rnow, 0);
+    else
+      rnow = *now;
 
     typedef typename waiters_t::template index<KeyTag>::type waiters_by_ttd_index_t;
     //    waiters_by_ttd_index_t& ttdindex=d_waiters.template get<KeyTag>();
     waiters_by_ttd_index_t& ttdindex=boost::multi_index::get<KeyTag>(d_waiters);
 
     for(typename waiters_by_ttd_index_t::iterator i=ttdindex.begin(); i != ttdindex.end(); ) {
-      if(i->ttd && (unsigned int)i->ttd < now) {
-	d_waitstatus=TimeOut;
-	d_eventkey=i->key;        // pass waitEvent the exact key it was woken for
-	ucontext_t* uc = i->context;
-	ttdindex.erase(i++);                  // removes the waitpoint 
+      if(i->ttd.tv_sec && i->ttd < rnow) {
+        d_waitstatus=TimeOut;
+        d_eventkey=i->key;        // pass waitEvent the exact key it was woken for
+        ucontext_t* uc = i->context;
+        ttdindex.erase(i++);                  // removes the waitpoint 
 
-	if(swapcontext(&d_kernel, uc)) { // swaps back to the above point 'A'
-	  perror("swapcontext in schedule2");
-	  exit(EXIT_FAILURE);
-	}
-	delete uc;
+        if(swapcontext(&d_kernel, uc)) { // swaps back to the above point 'A'
+          perror("swapcontext in schedule2");
+          exit(EXIT_FAILURE);
+        }
+        delete uc;
       }
-      else if(i->ttd)
-	break;
+      else if(i->ttd.tv_sec)
+        break;
     }
   }
   return false;
@@ -351,9 +372,11 @@ template<class Key, class Val>void MTasker<Key,Val>::getEvents(std::vector<Key>&
   }
 }
 
-
-template<class Key, class Val>void MTasker<Key,Val>::threadWrapper(MTasker *self, tfunc_t *tf, int tid, void* val)
+template<class Key, class Val>void MTasker<Key,Val>::threadWrapper(uint32_t self1, uint32_t self2, tfunc_t *tf, int tid, uint32_t val1, uint32_t val2)
 {
+  void* val = joinPtr(val1, val2); 
+  MTasker* self = (MTasker*) joinPtr(self1, self2);
+  self->d_threads[self->d_tid].startOfStack = self->d_threads[self->d_tid].highestStackSeen = (char*)&val;
   (*tf)(val);
   self->d_zombiesQueue.push(tid);
   
@@ -367,4 +390,11 @@ template<class Key, class Val>void MTasker<Key,Val>::threadWrapper(MTasker *self
 template<class Key, class Val>int MTasker<Key,Val>::getTid()
 {
   return d_tid;
+}
+
+
+//! Returns the maximum stack usage so far of this MThread
+template<class Key, class Val>unsigned int MTasker<Key,Val>::getMaxStackUsage()
+{
+  return d_threads[d_tid].startOfStack - d_threads[d_tid].highestStackSeen;
 }

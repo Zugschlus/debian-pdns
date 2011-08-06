@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2002 - 2006  PowerDNS.COM BV
+    Copyright (C) 2002 - 2011  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2
@@ -35,7 +35,7 @@
 
 #include "ahuexception.hh"
 #include "dns.hh"
-using namespace std;
+#include "namespaces.hh"
 
 class ResolverException : public AhuException
 {
@@ -43,44 +43,63 @@ public:
   ResolverException(const string &reason) : AhuException(reason){}
 };
 
-//! Resolver class 
-class Resolver
+// send out an update notification for a domain to an IPv4/v6 address
+int sendNotification(int sock, const string &domain, const ComboAddress& remote, uint16_t id);
+
+// make an IPv4 or IPv6 query socket 
+int makeQuerySocket(const ComboAddress& local, bool udpOrTCP);
+//! Resolver class. Can be used synchronously and asynchronously, over IPv4 and over IPv6 (simultaneously)
+class Resolver  : public boost::noncopyable
 {
 public:
   Resolver();
   ~Resolver();
-  string i;
 
   typedef vector<DNSResourceRecord> res_t;
-  void makeSocket(int type);
-  void makeUDPSocket();
-  void makeTCPSocket(const string &ip, uint16_t port=53);
-  int notify(int sock, const string &domain, const string &ip, uint16_t id);
-  int resolve(const string &ip, const char *domain, int type);
-  void sendResolve(const string &ip, const char *domain, int type);
-
-  int receiveResolve(struct sockaddr* fromaddr, Utility::socklen_t addrlen);
-  char* sendReceive(const string &ip, uint16_t remotePort, const char *packet, int length, unsigned int *replylen);
-  void getSoaSerial(const string &, const string &, uint32_t *);
-  int axfrChunk(Resolver::res_t &res);
-  vector<DNSResourceRecord> result();
+  //! synchronously resolve domain|type at IP, store result in result, rcode in ret
+  int resolve(const string &ip, const char *domain, int type, res_t* result);
   
-  void setRemote(const string &remote);
-  int axfr(const string &ip, const char *domain);
+  //! only send out a resolution request
+  uint16_t sendResolve(const ComboAddress& remote, const char *domain, int type, bool dnssecOk=false,
+    const string& tsigkeyname="", const string& tsigalgorithm="", const string& tsigsecret="");
+  
+  //! see if we got a SOA response from our sendResolve
+  bool tryGetSOASerial(string* theirDomain, uint32_t* theirSerial, uint32_t* theirInception, uint32_t* theirExpire, uint16_t* id);
+  
+  //! convenience function that calls resolve above
+  void getSoaSerial(const string &, const string &, uint32_t *);
   
 private:
-  void timeoutReadn(char *buffer, int bytes);
-  int d_sock;
-  unsigned char *d_buf;
-  int getLength();
-  int d_len;
-  int d_soacount;
-  string d_domain;
+  int d_sock4, d_sock6;
+  
   int d_type;
   int d_timeout;
-  uint32_t d_ip;
+  string d_domain;
   uint16_t d_randomid;
-  bool d_inaxfr;
-  ComboAddress d_toaddr;
+  
+  ComboAddress d_remote;
+};
+
+class AXFRRetriever : public boost::noncopyable
+{
+  public:
+    AXFRRetriever(const ComboAddress& remote, const string& zone, const string& tsigkeyname=string(), const string& tsigalgorithm=string(), const string& tsigsecret=string());
+	~AXFRRetriever();
+    int getChunk(Resolver::res_t &res);  
+  
+  private:
+    void connect();
+    int getLength();
+    void timeoutReadn(uint16_t bytes);  
+
+    shared_array<char> d_buf;
+    string d_domain;
+    int d_sock;
+    int d_soacount;
+    ComboAddress d_remote;
+    
+    string d_tsigkeyname;
+    string d_tsigsecret;
+    TSIGRecordContent d_trc;
 };
 
