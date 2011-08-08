@@ -8,3 +8,4 @@ etc/resolvconf
 etc/resolvconf/update.d
 usr/share/man/man8
 usr/share/pdns-server
+etc/insserv.conf.d
