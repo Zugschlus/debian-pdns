@@ -1,6 +1,6 @@
 pdns (3.0-1) unstable; urgency=low
 
-  * New upstream version
+  * New upstream version (Closes: #624330)
   * Update Standards-Version to 3.9.2
   * Add lua and mongodb backend.
   * Use new style dh instead of individual dh_* commands.
