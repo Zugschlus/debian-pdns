@@ -4,3 +4,4 @@ hurd-ftbfs-patch
 fix-lua-backend-patch
 fix-mongodb-backend-patch
 remove-rpath-ldflags-patch
+add-check-target-patch

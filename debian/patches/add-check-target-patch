@@ -1,0 +1,8 @@
+--- a/pdns/ext/polarssl/Makefile
++++ b/pdns/ext/polarssl/Makefile
+@@ -17,4 +17,5 @@
+ 	cp library/Makefile library/*.c $(distdir)/library
+ 	cp include/polarssl/*.h $(distdir)/include/polarssl
+ 
++check:
+ 	
