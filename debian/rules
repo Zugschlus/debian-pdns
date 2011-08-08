@@ -5,7 +5,7 @@ backends := ldap pipe gmysql gpgsql gsqlite gsqlite3 geo lua mongodb
 
 # Use new build system
 %:
-	dh $@ --with-autotools_dev
+	dh $@ --with-autotools_dev --parallel
 
 # Need to run the bootstrap first, and we have some custom flags for ./configure
 override_dh_auto_configure:
