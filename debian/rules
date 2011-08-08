@@ -39,8 +39,3 @@ override_dh_fixperms:
 	dh_fixperms
 	chmod 755 debian/pdns-server/etc/resolvconf/update.d/pdns
 
-# Set up init.d virtual facility
-#mkdir -p $(CURDIR)/debian/pdns-server/etc/insserv.conf.d
-#cp $(CURDIR)/debian/pdns-server.insserv \
-#	$(CURDIR)/debian/pdns-server/etc/insserv.conf.d/pdns-server
-
