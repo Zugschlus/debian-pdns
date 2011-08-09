@@ -1,11 +1,12 @@
 pdns (3.0-1) unstable; urgency=low
 
-  * New upstream version (Closes: #624330)
+  * New upstream version (Closes: #624330, #626909)
   * Update Standards-Version to 3.9.2
   * Add lua and mongodb backend.
   * Use new style dh instead of individual dh_* commands.
+  * Add Homepage to debian/control (Closes: #634947)
 
- -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sat, 06 Aug 2011 13:31:26 +0200
+ -- Matthijs Möhlmann <matthijs@cacholong.nl>  Tue, 09 Aug 2011 08:16:42 +0200
 
 pdns (2.9.22-9) unstable; urgency=low
 
