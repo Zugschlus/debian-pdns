@@ -5,3 +5,5 @@ fix-lua-backend-patch
 fix-mongodb-backend-patch
 remove-rpath-ldflags-patch
 add-check-target-patch
+pdnssec-with-default-ttl-setting-required
+changeset-2267
