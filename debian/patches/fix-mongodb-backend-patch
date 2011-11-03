@@ -44,3 +44,14 @@
 @@ -1 +1 @@
 --L/opt/mongo/lib64/ -lmongoclient -lboost_thread -lboost_filesystem -lboost_system
 +-lmongoclient -lboost_thread -lboost_filesystem -lboost_system
+--- a/modules/mongodbbackend/mongodbbackend.hh
++++ b/modules/mongodbbackend/mongodbbackend.hh
+@@ -106,7 +106,7 @@
+ 
+     mongo::DBClientConnection m_db;
+     
+-    auto_ptr<mongo::DBClientCursor> cursor;
++	std::auto_ptr<mongo::DBClientCursor> cursor;
+     
+     string q_name;
+     

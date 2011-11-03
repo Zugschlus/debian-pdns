@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 
-# Backends
-backends := ldap pipe gmysql gpgsql gsqlite gsqlite3 geo lua mongodb
+# Backends (mongodb removed for now, fails to compile)
+backends := ldap pipe gmysql gpgsql gsqlite gsqlite3 geo lua
 
 # Use new build system
 %:
