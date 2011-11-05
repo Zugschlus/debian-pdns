@@ -1,2 +1,4 @@
 debian/tmp/usr/lib/powerdns/libgpgsqlbackend.so* usr/lib/powerdns/
 debian/tmp/usr/lib/powerdns/libgpgsqlbackend.a usr/lib/powerdns/
+debian/sql/pgsql/pgsql usr/share/dbconfig-common/data/pdns-backend-pgsql/install/
+debian/sql/pgsql/3.0-1 usr/share/dbconfig-common/data/pdns-backend-pgsql/upgrade/pgsql/

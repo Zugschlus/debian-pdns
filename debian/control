@@ -93,6 +93,8 @@ Description: generic MySQL backend for PowerDNS
 Package: pdns-backend-pgsql
 Architecture: any
 Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}
+Recommends: postgresql-client
+Suggests: postgresql
 Provides: pdns-backend
 Description: generic PostgreSQL backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number

@@ -15,24 +15,26 @@
        if(!lax)
          throw ArgException("Trying to set unexisting parameter '"+var+"'");
    }
-@@ -341,6 +344,31 @@
+@@ -341,6 +344,33 @@
    }
  }
  
-+bool ArgvMap::preParseDir(const string dir, const string &arg, bool lax)
++bool ArgvMap::preParseDir(const string &dir, const string &arg, bool lax)
 +{
 +	DIR *dir_p;
-+	string filename;
++	string filename, name;
 +	struct dirent *dir_entry_p;
 +
 +	if (dir_p = opendir(dir.c_str())) {
 +		while((dir_entry_p = readdir(dir_p)))
 +		{
-+			if (strcmp(dir_entry_p->d_name, ".") == 0 ||
-+					strcmp(dir_entry_p->d_name, "..") == 0)
++			name = dir_entry_p->d_name;
++			if (name == "." || name == "..")
++				continue;
++			if (name.find("ucf-dist") != std::string::npos)
 +				continue;
 +
-+			filename = dir + "/" + dir_entry_p->d_name;
++			filename = dir + "/" + name;
 +			file(filename.c_str(), lax);
 +		}
 +		closedir(dir_p);
@@ -61,7 +63,7 @@
    }
    void preParse(int &argc, char **argv, const string &arg); //!< use this to preparse a single var
    bool preParseFile(const char *fname, const string &arg, const string& theDefault=""); //!< use this to preparse a single var in configuration
-+  bool preParseDir(const string dir, const string &arg, bool lax); //!< use this to include a directory
++  bool preParseDir(const string &dir, const string &arg, bool lax); //!< use this to include a directory
  
    bool file(const char *fname, bool lax=false); //!< Parses a file with parameters
    bool laxFile(const char *fname) 

@@ -1,7 +1,8 @@
 # PostgreSQL Configuration
 #
-# gpgsql-host=
-# gpgsql-port=
-# gpgsql-dbname=
-# gpgsql-user=
-# gpgsql-password=
+launch=gpgsql
+gpgsql-host=_DBC_DBSERVER_
+gpgsql-port=_DBC_DBPORT_
+gpgsql-dbname=_DBC_DBNAME_
+gpgsql-user=_DBC_DBUSER_
+gpgsql-password=_DBC_DBPASS_

@@ -1,0 +1,2 @@
+# Using dbconfig-common, no need for a templates file in our package.
+pdns-backend-pgsql: no-debconf-templates
