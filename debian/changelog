@@ -6,8 +6,9 @@ pdns (3.0-1) unstable; urgency=low
   * Add lua backend.
   * Use new style dh instead of individual dh_* commands.
   * Add Homepage to debian/control (Closes: #634947)
+  * Add pdnssec and dnsreplay utility.
 
- -- Matthijs Möhlmann <matthijs@cacholong.nl>  Thu, 03 Nov 2011 20:39:35 +0100
+ -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sat, 05 Nov 2011 16:37:06 +0100
 
 pdns (2.9.22-9) unstable; urgency=low
 
