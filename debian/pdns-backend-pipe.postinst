@@ -2,6 +2,8 @@
 #
 # postinst script for pdns-backend-pipe
 
+set -e
+
 # Activate trigger
 dpkg-trigger pdns-server
 

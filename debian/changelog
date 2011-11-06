@@ -9,8 +9,9 @@ pdns (3.0-1) unstable; urgency=low
   * Add pdnssec and dnsreplay utility.
   * Use dbconfig-common to populate / upgrade databases.
   * Update patch addconfigdir, do not parse ucf-dist files.
+  * Update manpage pdns_control and include a list of options (Closes: #621724)
 
- -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sun, 06 Nov 2011 16:26:02 +0100
+ -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sun, 06 Nov 2011 17:03:25 +0100
 
 pdns (2.9.22-9) unstable; urgency=low
 
