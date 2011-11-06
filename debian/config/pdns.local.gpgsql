@@ -9,3 +9,4 @@ gpgsql-port=_DBC_DBPORT_
 gpgsql-dbname=_DBC_DBNAME_
 gpgsql-user=_DBC_DBUSER_
 gpgsql-password=_DBC_DBPASS_
+gpgsql-dnssec=yes

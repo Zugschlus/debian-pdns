@@ -1,4 +1,8 @@
 # Configuration for gsqlite
 #
-# gsqlite-database=
+# Launch gsqlite backend
+launch=gsqlite
+
+# Database
+gsqlite-database=/var/lib/powerdns/pdns.sqlite
 

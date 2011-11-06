@@ -1,2 +1,4 @@
 usr/lib/powerdns
+usr/share/dbconfig-common/data/pdns-backend-sqlite/install/
 usr/share/doc/pdns-backend-sqlite
+var/lib/powerdns

@@ -18,6 +18,7 @@ if [ "$1" = "purge" ]; then
 	rm -f /etc/powerdns/pdns.d/pdns.local.gmysql
 	if which ucf > /dev/null 2>&1; then
 		ucf --purge /etc/powerdns/pdns.d/pdns.local.gmysql
+		ucfr --purge pdns-backend-mysql /etc/powerdns/pdns.d/pdns.local.gmysql
 	fi
 fi
 
