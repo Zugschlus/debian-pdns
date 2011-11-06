@@ -1,2 +1,4 @@
 usr/lib/powerdns
+usr/share/dbconfig-common/data/pdns-backend-mysql/install/
+usr/share/dbconfig-common/data/pdns-backend-mysql/upgrade/mysql/
 usr/share/doc/pdns-backend-mysql

@@ -8,16 +8,16 @@ set -e
 if [ -f /usr/share/debconf/confmodule ]; then
 	. /usr/share/debconf/confmodule
 fi
-if [ -f /usr/share/dbconfig-common/dpkg/postrm.pgsql ]; then
-	. /usr/share/dbconfig-common/dpkg/postrm.pgsql
-	dbc_go pdns-backend-pgsql $@
+if [ -f /usr/share/dbconfig-common/dpkg/postrm.mysql ]; then
+	. /usr/share/dbconfig-common/dpkg/postrm.mysql
+	dbc_go pdns-backend-mysql $@
 fi
 
 # Remove configuration file, dbconfig-common might not be able to do so.
 if [ "$1" = "purge" ]; then
-	rm -f /etc/powerdns/pdns.d/pdns.local.gpgsql
+	rm -f /etc/powerdns/pdns.d/pdns.local.gmysql
 	if which ucf > /dev/null 2>&1; then
-		ucf --purge /etc/powerdns/pdns.d/pdns.local.gpgsql
+		ucf --purge /etc/powerdns/pdns.d/pdns.local.gmysql
 	fi
 fi
 

@@ -1,6 +1,9 @@
 # PostgreSQL Configuration
 #
+# Launch gpgsql backend
 launch=gpgsql
+
+# gpgsql parameters
 gpgsql-host=_DBC_DBSERVER_
 gpgsql-port=_DBC_DBPORT_
 gpgsql-dbname=_DBC_DBNAME_
