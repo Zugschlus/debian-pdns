@@ -1,7 +1,7 @@
 pdns (3.0-1) unstable; urgency=low
 
   * New upstream version (Closes: #624330, #626909, #617476, #498918, #500572)
-    (Closes: #645539)
+    (Closes: #645539, #623036)
   * Update Standards-Version to 3.9.2
   * Add lua backend.
   * Use new style dh instead of individual dh_* commands.
@@ -10,7 +10,7 @@ pdns (3.0-1) unstable; urgency=low
   * Use dbconfig-common to populate / upgrade databases.
   * Update patch addconfigdir, do not parse ucf-dist files.
 
- -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sat, 05 Nov 2011 21:52:18 +0100
+ -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sun, 06 Nov 2011 16:26:02 +0100
 
 pdns (2.9.22-9) unstable; urgency=low
 
