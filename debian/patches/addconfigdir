@@ -15,7 +15,7 @@
        if(!lax)
          throw ArgException("Trying to set unexisting parameter '"+var+"'");
    }
-@@ -341,6 +344,33 @@
+@@ -341,6 +344,35 @@
    }
  }
  
@@ -32,6 +32,8 @@
 +			if (name == "." || name == "..")
 +				continue;
 +			if (name.find("ucf-dist") != std::string::npos)
++				continue;
++			if (name.find("ucf-old") != std::string::npos)
 +				continue;
 +
 +			filename = dir + "/" + name;
