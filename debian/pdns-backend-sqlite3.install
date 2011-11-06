@@ -1,2 +1,4 @@
 debian/tmp/usr/lib/powerdns/libgsqlite3backend.so* usr/lib/powerdns/
 debian/tmp/usr/lib/powerdns/libgsqlite3backend.a usr/lib/powerdns/
+debian/sql/sqlite3/sqlite3 usr/share/dbconfig-common/data/pdns-backend-sqlite3/install/
+debian/sql/sqlite3/3.0-1 usr/share/dbconfig-common/data/pdns-backend-sqlite3/upgrade/sqlite3/

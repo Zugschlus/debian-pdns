@@ -109,7 +109,7 @@ Description: generic PostgreSQL backend for PowerDNS
 
 Package: pdns-backend-sqlite
 Architecture: any
-Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}, sqlite
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}, sqlite, dbconfig-common
 Provides: pdns-backend
 Description: sqlite backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number
@@ -121,7 +121,7 @@ Description: sqlite backend for PowerDNS
 
 Package: pdns-backend-sqlite3
 Architecture: any
-Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}, sqlite3
+Depends: pdns-server (>= ${source:Version}), ${shlibs:Depends}, ${misc:Depends}, sqlite3, dbconfig-common
 Provides: pdns-backend
 Description: sqlite backend for PowerDNS
  PowerDNS is a versatile nameserver which supports a large number

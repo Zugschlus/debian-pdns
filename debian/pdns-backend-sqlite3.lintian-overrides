@@ -1,2 +1,2 @@
-# Those are not bashism's but sql.
-pdns-backend-sqlite3: possible-bashism-in-maintainer-script
+# Using dbconfig-common, no need for a templates file in our package.
+pdns-backend-sqlite3: no-debconf-templates

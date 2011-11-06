@@ -1,4 +1,8 @@
 # Configuration for gsqlite
 #
-# gsqlite3-database=
+# Launch gsqlite3
+launch=gsqlite3
 
+# Database location
+gsqlite3-database=/var/lib/powerdns/pdns.sqlite3
+gsqlite3-dnssec=on
