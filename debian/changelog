@@ -11,8 +11,9 @@ pdns (3.0-1) unstable; urgency=low
   * Update patch addconfigdir, do not parse ucf-dist files.
   * Update manpage pdns_control and include a list of options (Closes: #621724)
   * Add manpage for pdnssec.
+  * Add prerm scripts to the backends, stop the pdns server.
 
- -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sun, 06 Nov 2011 20:09:46 +0100
+ -- Matthijs Möhlmann <matthijs@cacholong.nl>  Mon, 07 Nov 2011 20:03:52 +0100
 
 pdns (2.9.22-9) unstable; urgency=low
 

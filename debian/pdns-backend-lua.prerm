@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# Add call to init script to actually stop pdns.
+
+if [ -x "/etc/init.d/pdns" ]; then
+	invoke-rc.d pdns stop || exit $?
+fi
+
+exit 0
+
