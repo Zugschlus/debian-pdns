@@ -48,7 +48,10 @@ do_test_running()
 
 do_start()
 {
-	do_test_running
+	NOTRUNNING=1
+	if $BINARYPATH/pdns_control $EXTRAOPTS ping &> /dev/null; then
+		NOTRUNNING=0
+	fi
 	if [ "$NOTRUNNING" = "0" ] || [ "$START" = "no" ]; then
 		echo "already running or disabled"
 	else
@@ -73,7 +76,10 @@ case "$1" in
 	;;
 	stop)
 		echo -n "Stopping PowerDNS authoritative nameserver: "
-		do_test_running
+		NOTRUNNING=1
+		if $BINARYPATH/pdns_control $EXTRAOPTS ping &> /dev/null; then
+			NOTRUNNING=0
+		fi
 		if test "$NOTRUNNING" = "0"; then
 			doPC quit
 			echo $ret

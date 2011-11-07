@@ -2,6 +2,8 @@
 #
 # Pre removal
 
+set -e
+
 # Stop pdns.
 if [ -x "/etc/init.d/pdns" ]; then
 	invoke-rc.d pdns stop || exit $?
