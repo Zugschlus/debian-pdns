@@ -7,3 +7,5 @@ remove-rpath-ldflags-patch
 add-check-target-patch
 pdnssec-with-default-ttl-setting-required
 changeset-2267
+fix-sqlite-parse-priority
+fix-sqlite-backend-loading

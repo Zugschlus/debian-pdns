@@ -1,0 +1,69 @@
+--- a/pdns/backends/gsql/gsqlbackend.cc
++++ b/pdns/backends/gsql/gsqlbackend.cc
+@@ -245,7 +245,13 @@
+   d_db=0;
+   d_logprefix="["+mode+"Backend"+suffix+"] ";
+ 	
+-  d_dnssecQueries = mustDo("dnssec");
++  try
++  {
++  	d_dnssecQueries = mustDo("dnssec");
++  } catch(ArgException e) {
++	d_dnssecQueries = false;
++  }
++
+   string authswitch = d_dnssecQueries ? "-auth" : "";	  
+   d_noWildCardNoIDQuery=getArg("basic-query"+authswitch);
+   d_noWildCardIDQuery=getArg("id-query"+authswitch);
+@@ -271,22 +277,25 @@
+   d_DeleteZoneQuery=getArg("delete-zone-query");
+   d_CheckACLQuery=getArg("check-acl-query");
+   
+-  d_beforeOrderQuery = getArg("get-order-before-query");
+-  d_afterOrderQuery = getArg("get-order-after-query");
+-  d_setOrderAuthQuery = getArg("set-order-and-auth-query");
+-  
+-  d_AddDomainKeyQuery = getArg("add-domain-key-query");
+-  d_ListDomainKeysQuery = getArg("list-domain-keys-query");
+-  
+-  d_GetDomainMetadataQuery = getArg("get-domain-metadata-query");
+-  d_ClearDomainMetadataQuery = getArg("clear-domain-metadata-query");
+-  d_SetDomainMetadataQuery = getArg("set-domain-metadata-query");
+-  
+-  d_ActivateDomainKeyQuery = getArg("activate-domain-key-query");
+-  d_DeactivateDomainKeyQuery = getArg("deactivate-domain-key-query");
+-  d_RemoveDomainKeyQuery = getArg("remove-domain-key-query");
+-  
+-  d_getTSIGKeyQuery = getArg("get-tsig-key-query");
++  if (d_dnssecQueries)
++  {
++	  d_beforeOrderQuery = getArg("get-order-before-query");
++	  d_afterOrderQuery = getArg("get-order-after-query");
++	  d_setOrderAuthQuery = getArg("set-order-and-auth-query");
++
++	  d_AddDomainKeyQuery = getArg("add-domain-key-query");
++	  d_ListDomainKeysQuery = getArg("list-domain-keys-query");
++
++	  d_GetDomainMetadataQuery = getArg("get-domain-metadata-query");
++	  d_ClearDomainMetadataQuery = getArg("clear-domain-metadata-query");
++	  d_SetDomainMetadataQuery = getArg("set-domain-metadata-query");
++
++	  d_ActivateDomainKeyQuery = getArg("activate-domain-key-query");
++	  d_DeactivateDomainKeyQuery = getArg("deactivate-domain-key-query");
++	  d_RemoveDomainKeyQuery = getArg("remove-domain-key-query");
++
++	  d_getTSIGKeyQuery = getArg("get-tsig-key-query");
++  }
+ }
+ 
+ bool GSQLBackend::updateDNSSECOrderAndAuth(uint32_t domain_id, const std::string& zonename, const std::string& qname, bool auth)
+--- a/modules/gsqlitebackend/gsqlitebackend.cc
++++ b/modules/gsqlitebackend/gsqlitebackend.cc
+@@ -73,6 +73,7 @@
+     declare( suffix, "insert-record-query", "", "insert into records (content,ttl,prio,type,domain_id,name) values ('%s',%d,%d,'%s',%d,'%s')");
+     declare( suffix, "update-serial-query", "", "update domains set notified_serial=%d where id=%d");
+     declare( suffix, "update-lastcheck-query", "", "update domains set last_check=%d where id=%d");
++    declare( suffix, "zone-lastchange-query", "", "select max(change_date) from records where domain_id=%d");
+     declare( suffix, "info-all-master-query", "", "select id,name,master,last_check,notified_serial,type from domains where type='MASTER'");
+     declare( suffix, "delete-zone-query", "", "delete from records where domain_id=%d");
+     declare(suffix,"check-acl-query","", "select value from acls where acl_type='%s' and acl_key='%s'");

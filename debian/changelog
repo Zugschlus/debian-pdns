@@ -1,7 +1,7 @@
 pdns (3.0-1) unstable; urgency=low
 
   * New upstream version (Closes: #624330, #626909, #617476, #498918, #500572)
-    (Closes: #645539, #623036, #521791, #583161)
+    (Closes: #645539, #623036, #521791, #583161, #590285, #499396)
   * Update Standards-Version to 3.9.2
   * Add lua backend.
   * Use new style dh instead of individual dh_* commands.
@@ -12,8 +12,9 @@ pdns (3.0-1) unstable; urgency=low
   * Update manpage pdns_control and include a list of options (Closes: #621724)
   * Add manpage for pdnssec.
   * Add prerm scripts to the backends, stop the pdns server.
+  * Add patch from upstream to properly parse priority. (Closes: #533023)
 
- -- Matthijs Möhlmann <matthijs@cacholong.nl>  Mon, 07 Nov 2011 20:03:52 +0100
+ -- Matthijs Möhlmann <matthijs@cacholong.nl>  Sat, 19 Nov 2011 11:58:10 +0100
 
 pdns (2.9.22-9) unstable; urgency=low
 
