@@ -119,6 +119,7 @@ void Session::doConnect(uint32_t ip, int port)
 {
   init();
   clisock=socket(AF_INET,SOCK_STREAM,0);
+  Utility::setCloseOnExec(clisock);
   
   memset(&remote,0,sizeof(remote));
   remote.sin_family=AF_INET;
@@ -370,7 +371,7 @@ Session *Server::accept()
   int clisock=-1;
 
 
-  while((clisock=::accept(s,(struct sockaddr *)(&remote),&len))==-1) // repeat until we have a succesful connect
+  while((clisock=::accept(s,(struct sockaddr *)(&remote),&len))==-1) // repeat until we have a successful connect
     {
       //      L<<Logger::Error<<"accept() returned: "<<strerror(errno)<<endl;
       if(errno==EMFILE) {
@@ -392,6 +393,7 @@ Server::Server(int p, const string &p_localaddress)
 
   struct sockaddr_in local;
   s=socket(AF_INET,SOCK_STREAM,0);
+  Utility::setCloseOnExec(s);
 
   if(s<0)
     throw Exception(string("socket: ")+strerror(errno));

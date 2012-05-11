@@ -30,14 +30,15 @@ static const char _dnstext_actions[] = {
 };
 
 static const char _dnstext_key_offsets[] = {
-	0, 0, 1, 5, 9, 11, 13, 17, 
-	21
+	0, 0, 1, 7, 11, 13, 15, 21, 
+	25
 };
 
 static const char _dnstext_trans_keys[] = {
-	34, 34, 92, 32, 126, 34, 92, 48, 
-	57, 48, 57, 48, 57, 34, 92, 32, 
-	126, 32, 34, 9, 13, 34, 0
+	34, 34, 92, 9, 10, 32, 126, 34, 
+	92, 48, 57, 48, 57, 48, 57, 34, 
+	92, 9, 10, 32, 126, 32, 34, 9, 
+	13, 34, 0
 };
 
 static const char _dnstext_single_lengths[] = {
@@ -46,27 +47,27 @@ static const char _dnstext_single_lengths[] = {
 };
 
 static const char _dnstext_range_lengths[] = {
-	0, 0, 1, 1, 1, 1, 1, 1, 
+	0, 0, 2, 1, 1, 1, 2, 1, 
 	0
 };
 
 static const char _dnstext_index_offsets[] = {
-	0, 0, 2, 6, 10, 12, 14, 18, 
-	22
+	0, 0, 2, 7, 11, 13, 15, 20, 
+	24
 };
 
 static const char _dnstext_trans_targs[] = {
-	2, 0, 7, 3, 2, 0, 2, 2, 
-	4, 0, 5, 0, 6, 0, 7, 3, 
-	2, 0, 8, 2, 8, 0, 2, 0, 
-	0
+	2, 0, 7, 3, 2, 2, 0, 2, 
+	2, 4, 0, 5, 0, 6, 0, 7, 
+	3, 2, 2, 0, 8, 2, 8, 0, 
+	2, 0, 0
 };
 
 static const char _dnstext_trans_actions[] = {
-	3, 0, 0, 0, 11, 0, 5, 5, 
-	7, 0, 7, 0, 7, 0, 9, 9, 
-	16, 0, 0, 13, 0, 0, 13, 0, 
-	0
+	3, 0, 0, 0, 11, 11, 0, 5, 
+	5, 7, 0, 7, 0, 7, 0, 9, 
+	9, 16, 16, 0, 0, 13, 0, 0, 
+	13, 0, 0
 };
 
 static const char _dnstext_eof_actions[] = {
@@ -94,12 +95,12 @@ static const int dnstext_en_main = 1;
         vector<string> ret;
 
         
-#line 98 "dnslabeltext.cc"
+#line 99 "dnslabeltext.cc"
 	{
 	cs = dnstext_start;
 	}
 
-#line 103 "dnslabeltext.cc"
+#line 104 "dnslabeltext.cc"
 	{
 	int _klen;
 	unsigned int _trans;
@@ -214,7 +215,7 @@ _match:
                   appendSplit(ret, segment, *(p));
                 }
 	break;
-#line 218 "dnslabeltext.cc"
+#line 219 "dnslabeltext.cc"
 		}
 	}
 
@@ -237,7 +238,7 @@ _again:
                         segment.clear();
                 }
 	break;
-#line 241 "dnslabeltext.cc"
+#line 242 "dnslabeltext.cc"
 		}
 	}
 	}
@@ -257,7 +258,7 @@ _again:
 string segmentDNSLabel(const string& input )
 {
 
-#line 261 "dnslabeltext.cc"
+#line 262 "dnslabeltext.cc"
 static const char _dnslabel_actions[] = {
 	0, 1, 0, 1, 1, 1, 2, 1, 
 	3, 1, 4, 2, 3, 0, 2, 3, 
@@ -318,12 +319,12 @@ static const int dnslabel_en_main = 1;
         string segment;
 
         
-#line 322 "dnslabeltext.cc"
+#line 323 "dnslabeltext.cc"
 	{
 	cs = dnslabel_start;
 	}
 
-#line 327 "dnslabeltext.cc"
+#line 328 "dnslabeltext.cc"
 	{
 	int _klen;
 	unsigned int _trans;
@@ -436,7 +437,7 @@ _match:
                   segment.append(1, *p);
                 }
 	break;
-#line 440 "dnslabeltext.cc"
+#line 441 "dnslabeltext.cc"
 		}
 	}
 

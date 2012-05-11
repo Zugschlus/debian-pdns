@@ -84,16 +84,19 @@ public:
     declare(suffix,"insert-record-query","", "insert into records (content,ttl,prio,type,domain_id,name) values (E'%s',%d,%d,'%s',%d,E'%s')");
     declare(suffix,"insert-record-query-auth","", "insert into records (content,ttl,prio,type,domain_id,name,auth) values (E'%s',%d,%d,'%s',%d,E'%s', '%d')");
     
-    declare(suffix,"get-order-before-query","DNSSEC Ordering Query, before", "select ordername, name from records where ordername <= E'%s' and auth and domain_id=%d order by 1 desc limit 1");
-    declare(suffix,"get-order-after-query","DNSSEC Ordering Query, afer", "select min(ordername) from records where ordername > E'%s' and auth and domain_id=%d");
+    declare(suffix,"get-order-first-query","DNSSEC Ordering Query, last", "select ordername, name from records where domain_id=%d and ordername is not null order by 1 asc limit 1");
+    declare(suffix,"get-order-before-query","DNSSEC Ordering Query, before", "select ordername, name from records where ordername <= E'%s' and domain_id=%d and ordername is not null order by 1 desc limit 1");
+    declare(suffix,"get-order-after-query","DNSSEC Ordering Query, after", "select min(ordername) from records where ordername > E'%s' and domain_id=%d and ordername is not null");
+    declare(suffix,"get-order-last-query","DNSSEC Ordering Query, last", "select ordername, name from records where ordername != '' and domain_id=%d and ordername is not null order by 1 desc limit 1");
     declare(suffix,"set-order-and-auth-query", "DNSSEC set ordering query", "update records set ordername=E'%s',auth=(%d = 1) where name=E'%s' and domain_id='%d'");
-    
+
+    declare(suffix,"nullify-ordername-and-auth-query", "DNSSEC nullify ordername query", "update records set ordername=NULL,auth=false where name=E'%s' and type=E'%s' and domain_id='%d'");
     
     declare(suffix,"update-serial-query","", "update domains set notified_serial=%d where id=%d");
     declare(suffix,"update-lastcheck-query","", "update domains set last_check=%d where id=%d");
+    declare(suffix,"zone-lastchange-query", "", "select max(change_date) from records where domain_id=%d");
     declare(suffix,"info-all-master-query","", "select id,name,master,last_check,notified_serial,type from domains where type='MASTER'");
     declare(suffix,"delete-zone-query","", "delete from records where domain_id=%d");
-    declare(suffix,"check-acl-query","", "select value from acls where acl_type='%s' and acl_key='%s'");
 
     declare(suffix,"add-domain-key-query","", "insert into cryptokeys (domain_id, flags, active, content) select id, %d, (%d = 1), '%s' from domains where name=E'%s'");
     declare(suffix,"list-domain-keys-query","", "select cryptokeys.id, flags, case when active then 1 else 0 end as active, content from domains, cryptokeys where domain_id=domains.id and name=E'%s'");
@@ -104,6 +107,8 @@ public:
     declare(suffix,"deactivate-domain-key-query","", "update cryptokeys set active=false where domain_id=(select id from domains where name=E'%s') and  cryptokeys.id=%d");
     declare(suffix,"remove-domain-key-query","", "delete from cryptokeys where domain_id=(select id from domains where name=E'%s') and cryptokeys.id=%d");    
     declare(suffix,"get-tsig-key-query","", "select algorithm, secret from tsigkeys where name=E'%s'");
+
+    declare(suffix,"get-all-domains-query", "Retrieve all domains", "select records.domain_id, records.name, records.content, domains.type, domains.master, domains.notified_serial, domains.last_check from records, domains where records.domain_id=domains.id and records.type='SOA'");
   }
   
   DNSBackend *make(const string &suffix="")

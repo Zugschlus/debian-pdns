@@ -64,6 +64,14 @@ bool Utility::setBlocking(sock_t sock)
   return true;
 }
 
+bool Utility::setCloseOnExec(sock_t sock)
+{
+  int flags=fcntl(sock,F_GETFD,0);    
+  if(flags<0 || fcntl(sock, F_SETFD,flags|FD_CLOEXEC) <0)
+    return false;
+  return true;
+}
+
 const char *Utility::inet_ntop(int af, const char *src, char *dst, size_t size)
 {
   return ::inet_ntop(af,src,dst,size);
@@ -90,6 +98,11 @@ void Utility::dropPrivs( int uid, int gid )
     }
     else
       theL()<<Logger::Info<<"Set effective group id to "<<gid<<endl;
+
+    if(setgroups(0, NULL)<0) {
+      theL()<<Logger::Critical<<"Unable to drop supplementary gids: "<<stringerror()<<endl;
+      exit(1);
+    }
 
   }
 

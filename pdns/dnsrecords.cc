@@ -62,7 +62,7 @@ public:
   static DNSRecordContent* make(const string& zone) 
   {
     AAAARecordContent *ar=new AAAARecordContent();
-    if(Utility::inet_pton( AF_INET6, zone.c_str(), static_cast< void * >( ar->d_ip6 )) < 0)
+    if(Utility::inet_pton( AF_INET6, zone.c_str(), static_cast< void * >( ar->d_ip6 )) <= 0)
       throw MOADNSException("Asked to encode '"+zone+"' as an IPv6 address, but does not parse");
     return ar;
   }
@@ -223,10 +223,11 @@ boilerplate_conv(CERT, 37,
         	 conv.xfrBlob(d_certificate);
         	 )
 		 
-boilerplate_conv(TLSA, 65468, 
-        	 conv.xfr8BitInt(d_certtype); 
-        	 conv.xfr8BitInt(d_hashtype); 
-        	 conv.xfrBlob(d_cert);
+boilerplate_conv(TLSA, 52, 
+        	 conv.xfr8BitInt(d_certusage); 
+        	 conv.xfr8BitInt(d_selector); 
+        	 conv.xfr8BitInt(d_matchtype); 
+        	 conv.xfrHexBlob(d_cert, true);
         	 )		 
 		 
 #undef DS

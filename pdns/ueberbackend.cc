@@ -72,6 +72,7 @@ bool UeberBackend::loadmodule(const string &name)
   
   if(dlib == NULL) {
     L<<Logger::Warning <<"Unable to load module '"<<name<<"': "<<dlerror() << endl; 
+    L<<Logger::Warning <<"Trying to load gsqlite3backend? Make sure pdns_server was compiled with sqlite3!" <<endl;
     return false;
   }
   
@@ -333,7 +334,7 @@ int UeberBackend::cacheHas(const Question &q, vector<DNSResourceRecord> &rrs)
     return 0;
   
   std::istringstream istr(content);
-  boost::archive::binary_iarchive boa(istr);
+  boost::archive::binary_iarchive boa(istr, boost::archive::no_header);
   rrs.clear();
   boa >> rrs;
   return 1;
@@ -351,13 +352,18 @@ void UeberBackend::addNegCache(const Question &q)
 void UeberBackend::addCache(const Question &q, const vector<DNSResourceRecord> &rrs)
 {
   extern PacketCache PC;
-  static int queryttl=::arg().asNum("query-cache-ttl");
+  static unsigned int queryttl=::arg().asNum("query-cache-ttl");
   if(!queryttl)
     return;
   
   //  L<<Logger::Warning<<"inserting: "<<q.qname+"|N|"+q.qtype.getName()+"|"+itoa(q.zoneId)<<endl;
   std::ostringstream ostr;
-  boost::archive::binary_oarchive boa(ostr);
+  boost::archive::binary_oarchive boa(ostr, boost::archive::no_header);
+
+  BOOST_FOREACH(DNSResourceRecord rr, rrs) {
+    if (rr.ttl < queryttl)
+      queryttl = rr.ttl;
+  }
   
   boa << rrs;
   PC.insert(q.qname, q.qtype, PacketCache::QUERYCACHE, ostr.str(), queryttl, q.zoneId);
@@ -430,6 +436,13 @@ void UeberBackend::lookup(const QType &qtype,const string &qname, DNSPacket *pkt
   d_handle.parent=this;
 }
 
+void UeberBackend::getAllDomains(vector<DomainInfo> *domains) {
+  for (vector<DNSBackend*>::iterator i = backends.begin(); i != backends.end(); ++i )
+  {
+    (*i)->getAllDomains(domains);
+  }
+}
+
 bool UeberBackend::get(DNSResourceRecord &rr)
 {
   if(d_negcached) {
@@ -464,17 +477,17 @@ bool UeberBackend::list(const string &target, int domain_id)
 }
 
 
-int UeberBackend::handle::instances=0;
+AtomicCounter UeberBackend::handle::instances(0);
 
 UeberBackend::handle::handle()
 {
   //  L<<Logger::Warning<<"Handle instances: "<<instances<<endl;
-  instances++;
+  ++instances;
 }
 
 UeberBackend::handle::~handle()
 {
-  instances--;
+  --instances;
 }
 
 bool UeberBackend::handle::get(DNSResourceRecord &r)

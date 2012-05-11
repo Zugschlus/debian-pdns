@@ -16,7 +16,7 @@
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-// $Id: gsqlbackend.cc 2140 2011-04-04 12:05:18Z ahu $ 
+// $Id: gsqlbackend.cc 2583 2012-04-26 12:37:17Z peter $ 
 #ifdef WIN32
 # pragma warning ( disable: 4786 )
 #endif // WIN32
@@ -245,7 +245,15 @@ GSQLBackend::GSQLBackend(const string &mode, const string &suffix)
   d_db=0;
   d_logprefix="["+mode+"Backend"+suffix+"] ";
 	
-  d_dnssecQueries = mustDo("dnssec");
+  try
+  {
+    d_dnssecQueries = mustDo("dnssec");
+  }
+  catch (ArgException e)
+  {
+    d_dnssecQueries = false;
+  }
+
   string authswitch = d_dnssecQueries ? "-auth" : "";	  
   d_noWildCardNoIDQuery=getArg("basic-query"+authswitch);
   d_noWildCardIDQuery=getArg("id-query"+authswitch);
@@ -267,26 +275,33 @@ GSQLBackend::GSQLBackend(const string &mode, const string &suffix)
   d_InsertRecordQuery=getArg("insert-record-query"+authswitch);
   d_UpdateSerialOfZoneQuery=getArg("update-serial-query");
   d_UpdateLastCheckofZoneQuery=getArg("update-lastcheck-query");
+  d_ZoneLastChangeQuery=getArg("zone-lastchange-query");
   d_InfoOfAllMasterDomainsQuery=getArg("info-all-master-query");
   d_DeleteZoneQuery=getArg("delete-zone-query");
-  d_CheckACLQuery=getArg("check-acl-query");
+  d_getAllDomainsQuery=getArg("get-all-domains-query");
   
-  d_beforeOrderQuery = getArg("get-order-before-query");
-  d_afterOrderQuery = getArg("get-order-after-query");
-  d_setOrderAuthQuery = getArg("set-order-and-auth-query");
-  
-  d_AddDomainKeyQuery = getArg("add-domain-key-query");
-  d_ListDomainKeysQuery = getArg("list-domain-keys-query");
-  
-  d_GetDomainMetadataQuery = getArg("get-domain-metadata-query");
-  d_ClearDomainMetadataQuery = getArg("clear-domain-metadata-query");
-  d_SetDomainMetadataQuery = getArg("set-domain-metadata-query");
-  
-  d_ActivateDomainKeyQuery = getArg("activate-domain-key-query");
-  d_DeactivateDomainKeyQuery = getArg("deactivate-domain-key-query");
-  d_RemoveDomainKeyQuery = getArg("remove-domain-key-query");
-  
-  d_getTSIGKeyQuery = getArg("get-tsig-key-query");
+  if (d_dnssecQueries)
+  {
+    d_firstOrderQuery = getArg("get-order-first-query");
+    d_beforeOrderQuery = getArg("get-order-before-query");
+    d_afterOrderQuery = getArg("get-order-after-query");
+    d_lastOrderQuery = getArg("get-order-last-query");
+    d_setOrderAuthQuery = getArg("set-order-and-auth-query");
+    d_nullifyOrderNameAndAuthQuery = getArg("nullify-ordername-and-auth-query");
+    
+    d_AddDomainKeyQuery = getArg("add-domain-key-query");
+    d_ListDomainKeysQuery = getArg("list-domain-keys-query");
+    
+    d_GetDomainMetadataQuery = getArg("get-domain-metadata-query");
+    d_ClearDomainMetadataQuery = getArg("clear-domain-metadata-query");
+    d_SetDomainMetadataQuery = getArg("set-domain-metadata-query");
+    
+    d_ActivateDomainKeyQuery = getArg("activate-domain-key-query");
+    d_DeactivateDomainKeyQuery = getArg("deactivate-domain-key-query");
+    d_RemoveDomainKeyQuery = getArg("remove-domain-key-query");
+    
+    d_getTSIGKeyQuery = getArg("get-tsig-key-query");
+  }
 }
 
 bool GSQLBackend::updateDNSSECOrderAndAuth(uint32_t domain_id, const std::string& zonename, const std::string& qname, bool auth)
@@ -310,6 +325,18 @@ bool GSQLBackend::updateDNSSECOrderAndAuthAbsolute(uint32_t domain_id, const std
   d_db->doCommand(output);
   return true;
 }
+
+bool GSQLBackend::nullifyDNSSECOrderNameAndAuth(uint32_t domain_id, const std::string& qname, const std::string& type)
+{
+  if(!d_dnssecQueries)
+    return false;
+  char output[1024];
+
+  snprintf(output, sizeof(output)-1, d_nullifyOrderNameAndAuthQuery.c_str(), sqlEscape(qname).c_str(), sqlEscape(type).c_str(), domain_id);
+  d_db->doCommand(output);
+  return true;
+}
+
 bool GSQLBackend::getBeforeAndAfterNamesAbsolute(uint32_t id, const std::string& qname, std::string& unhashed, std::string& before, std::string& after)
 {
   if(!d_dnssecQueries)
@@ -321,23 +348,22 @@ bool GSQLBackend::getBeforeAndAfterNamesAbsolute(uint32_t id, const std::string&
   SSql::row_t row;
 
   char output[1024];
-  string tmp=lcqname;
 
-retryAfter:
-  snprintf(output, sizeof(output)-1, d_afterOrderQuery.c_str(), sqlEscape(tmp).c_str(), id);
+  snprintf(output, sizeof(output)-1, d_afterOrderQuery.c_str(), sqlEscape(lcqname).c_str(), id);
   
   d_db->doQuery(output);
   while(d_db->getRow(row)) {
     after=row[0];
   }
 
-  if(after.empty() && !tmp.empty()) {
-    //cerr<<"Oops, have to pick the first, there is no last!"<<endl;
-    tmp.clear();
-    goto retryAfter;
+  if(after.empty() && !lcqname.empty()) {
+    snprintf(output, sizeof(output)-1, d_firstOrderQuery.c_str(), id);
+  
+    d_db->doQuery(output);
+    while(d_db->getRow(row)) {
+      after=row[0];
+    }
   }
-
-retryBefore:
 
   snprintf(output, sizeof(output)-1, d_beforeOrderQuery.c_str(), sqlEscape(lcqname).c_str(), id);
   d_db->doQuery(output);
@@ -346,10 +372,17 @@ retryBefore:
     unhashed=row[1];
   }
   
-  if(before.empty() && lcqname!="{") {
-    //cerr<<"Oops, have to pick the last!"<<endl;
-    lcqname="{";
-    goto retryBefore;
+  if(! unhashed.empty())
+  {
+    // cerr<<"unhashed="<<unhashed<<",before="<<before<<", after="<<after<<endl;
+    return true;
+  }
+
+  snprintf(output, sizeof(output)-1, d_lastOrderQuery.c_str(), id);
+  d_db->doQuery(output);
+  while(d_db->getRow(row)) {
+    before=row[0];
+    unhashed=row[1];
   }
 
   return true;
@@ -639,30 +672,6 @@ bool GSQLBackend::superMasterBackend(const string &ip, const string &domain, con
   return false;
 }
 
-
-bool GSQLBackend::checkACL(const string &acl_type, const string &key, const string &value)
-{
-  string format;
-  char output[1024];
-  format = d_CheckACLQuery;
-  snprintf(output, sizeof(output)-1, format.c_str(), sqlEscape(acl_type).c_str(), sqlEscape(key).c_str());
-  try {
-    d_db->doQuery(output, d_result);
-  }
-  catch(SSqlException &e) {
-    throw AhuException("Database error trying to check ACL:"+acl_type+" with error: "+e.txtReason());
-  }
-  if(!d_result.empty()) {
-    for (unsigned int i = 0; i < d_result.size(); i++) {
-      Netmask nm(d_result[i][0]);
-      if (nm.match(value)) {
-        return true;
-      }
-    }
-  }  
-  return false; // default to false
-}
-
 bool GSQLBackend::createSlaveDomain(const string &ip, const string &domain, const string &account)
 {
   string format;
@@ -678,6 +687,48 @@ bool GSQLBackend::createSlaveDomain(const string &ip, const string &domain, cons
   return true;
 }
 
+void GSQLBackend::getAllDomains(vector<DomainInfo> *domains) 
+{
+  DLOG(L<<"GSQLBackend retrieving all domains."<<endl);
+
+  try {
+    d_db->doCommand(d_getAllDomainsQuery.c_str()); 
+  }
+  catch (SSqlException &e) {
+    throw AhuException("Database error trying to retrieve all domains:" + e.txtReason());
+  }
+
+  SSql::row_t row;
+  while (d_db->getRow(row)) {
+
+    DomainInfo di;
+    di.id = atol(row[0].c_str());
+    di.zone = row[1];
+
+    if (!row[4].empty()) {
+      stringtok(di.masters, row[4], " ,\t");
+    }
+    di.last_check=atol(row[6].c_str());
+
+    SOAData sd;
+    fillSOAData(row[2], sd);
+    di.serial = sd.serial;
+    if (!row[5].empty()) {
+      di.notified_serial = atol(row[5].c_str());
+    }
+    
+    if (pdns_iequals(row[3], "MASTER"))
+      di.kind = DomainInfo::Master;
+    else if (pdns_iequals(row[3], "SLAVE"))
+      di.kind = DomainInfo::Slave;
+    else
+      di.kind = DomainInfo::Native;
+
+    di.backend = this;
+
+    domains->push_back(di);
+  }
+}
 
 bool GSQLBackend::get(DNSResourceRecord &r)
 {
@@ -711,25 +762,15 @@ bool GSQLBackend::get(DNSResourceRecord &r)
 
 bool GSQLBackend::feedRecord(const DNSResourceRecord &r)
 {
-  char output[10240];
+  string output;
   if(d_dnssecQueries) {
-    snprintf(output,sizeof(output)-1,d_InsertRecordQuery.c_str(),
-	   sqlEscape(r.content).c_str(),
-	   r.ttl, r.priority,
-	   sqlEscape(r.qtype.getName()).c_str(),
-	   r.domain_id, toLower(sqlEscape(r.qname)).c_str(), (int)r.auth); 
+    output = (boost::format(d_InsertRecordQuery) % sqlEscape(r.content) % r.ttl % r.priority % sqlEscape(r.qtype.getName()) % r.domain_id % toLower(sqlEscape(r.qname)) % (int)r.auth).str();
+  } else {
+    output = (boost::format(d_InsertRecordQuery) % sqlEscape(r.content) % r.ttl % r.priority % sqlEscape(r.qtype.getName()) % r.domain_id % toLower(sqlEscape(r.qname))).str();
   }
-  else {
-    snprintf(output,sizeof(output)-1,d_InsertRecordQuery.c_str(),
-	   sqlEscape(r.content).c_str(),
-	   r.ttl, r.priority,
-	   sqlEscape(r.qtype.getName()).c_str(),
-	   r.domain_id, toLower(sqlEscape(r.qname)).c_str()); 
-  }
-     
      
   try {
-    d_db->doCommand(output);
+    d_db->doCommand(output.c_str());
   }
   catch (SSqlException &e) {
     throw AhuException(e.txtReason());
@@ -771,8 +812,36 @@ bool GSQLBackend::abortTransaction()
     d_db->doCommand("rollback");
   }
   catch(SSqlException &e) {
-    throw AhuException("MySQL failed to abort transaction: "+string(e.txtReason()));
+    throw AhuException("Database failed to abort transaction: "+string(e.txtReason()));
   }
   return true;
 }
 
+bool GSQLBackend::calculateSOASerial(const string& domain, const SOAData& sd, time_t& serial)
+{
+  if (d_ZoneLastChangeQuery.empty()) {
+    // query not set => fall back to default impl
+    return DNSBackend::calculateSOASerial(domain, sd, serial);
+  }
+  
+  char output[1024];
+  
+  snprintf(output, sizeof(output)-1,
+           d_ZoneLastChangeQuery.c_str(),
+           sd.domain_id);
+
+  try {
+    d_db->doQuery(output, d_result);
+  }
+  catch (const SSqlException& e) {
+    //DLOG(L<<"GSQLBackend unable to calculate SOA serial: " << e.txtReason()<<endl);
+    return false;
+  }
+
+  if (not d_result.empty()) {
+    serial = atol(d_result[0][0].c_str());
+    return true;
+  }
+
+  return false;
+}

@@ -181,10 +181,10 @@ static int guardian(int argc, char **argv)
   int infd=0, outfd=1;
 
   DynListener dlg(s_programname);
-  dlg.registerFunc("QUIT",&DLQuitHandler);
-  dlg.registerFunc("CYCLE",&DLCycleHandler);
-  dlg.registerFunc("PING",&DLPingHandler);
-  dlg.registerFunc("STATUS",&DLStatusHandler);
+  dlg.registerFunc("QUIT",&DLQuitHandler, "quit daemon");
+  dlg.registerFunc("CYCLE",&DLCycleHandler, "restart instance");
+  dlg.registerFunc("PING",&DLPingHandler, "ping guardian");
+  dlg.registerFunc("STATUS",&DLStatusHandler, "get instance status from guardian");
   dlg.registerRestFunc(&DLRestHandler);
   dlg.go();
   string progname=argv[0];
@@ -333,10 +333,7 @@ static int guardian(int argc, char **argv)
 
 static void UNIX_declareArguments()
 {
-  static char pietje[128]="!@@SYSCONFDIR@@:";
-  ::arg().set("config-dir","Location of configuration directory (pdns.conf)")=
-    strcmp(pietje+1,"@@SYSCONFDIR@@:") ? pietje+strlen("@@SYSCONFDIR@@:")+1 : SYSCONFDIR;
-  
+  ::arg().set("config-dir","Location of configuration directory (pdns.conf)")=SYSCONFDIR;
   ::arg().set("config-name","Name of this virtual configuration - will rename the binary image")="";
   ::arg().set("socket-dir","Where the controlsocket will live")=LOCALSTATEDIR;
   ::arg().set("module-dir","Default directory for modules")=LIBDIR;
@@ -537,19 +534,19 @@ int main(int argc, char **argv)
       
       writePid();
     }
-    DynListener::registerFunc("SHOW",&DLShowHandler);
-    DynListener::registerFunc("RPING",&DLPingHandler);
-    DynListener::registerFunc("QUIT",&DLRQuitHandler);
-    DynListener::registerFunc("UPTIME",&DLUptimeHandler);
-    DynListener::registerFunc("NOTIFY-HOST",&DLNotifyHostHandler);
-    DynListener::registerFunc("NOTIFY",&DLNotifyHandler);
-    DynListener::registerFunc("RELOAD",&DLReloadHandler);
-    DynListener::registerFunc("REDISCOVER",&DLRediscoverHandler);
-    DynListener::registerFunc("VERSION",&DLVersionHandler);
-    DynListener::registerFunc("PURGE",&DLPurgeHandler);
-    DynListener::registerFunc("CCOUNTS",&DLCCHandler);
-    DynListener::registerFunc("SET",&DLSettingsHandler);
-    DynListener::registerFunc("RETRIEVE",&DLNotifyRetrieveHandler);
+    DynListener::registerFunc("SHOW",&DLShowHandler, "show a specific statistic or * to get a list", "<statistic>");
+    DynListener::registerFunc("RPING",&DLPingHandler, "ping instance");
+    DynListener::registerFunc("QUIT",&DLRQuitHandler, "quit daemon");
+    DynListener::registerFunc("UPTIME",&DLUptimeHandler, "get instance uptime");
+    DynListener::registerFunc("NOTIFY-HOST",&DLNotifyHostHandler, "notify host for specific domain", "<domain> <host>");
+    DynListener::registerFunc("NOTIFY",&DLNotifyHandler, "queue a notification", "<domain>");
+    DynListener::registerFunc("RELOAD",&DLReloadHandler, "reload all zones");
+    DynListener::registerFunc("REDISCOVER",&DLRediscoverHandler, "discover any new zones");
+    DynListener::registerFunc("VERSION",&DLVersionHandler, "get instance version");
+    DynListener::registerFunc("PURGE",&DLPurgeHandler, "purge entries from packet cache", "[<record>]");
+    DynListener::registerFunc("CCOUNTS",&DLCCHandler, "get cache statistics");
+    DynListener::registerFunc("SET",&DLSettingsHandler, "set config variables", "<var> <value>");
+    DynListener::registerFunc("RETRIEVE",&DLNotifyRetrieveHandler, "retrieve slave domain", "<domain>");
 
     if(!::arg()["tcp-control-address"].empty()) {
       DynListener* dlTCP=new DynListener(ComboAddress(::arg()["tcp-control-address"], ::arg().asNum("tcp-control-port")));
@@ -574,7 +571,7 @@ int main(int argc, char **argv)
   declareStats();
   DLOG(L<<Logger::Warning<<"Verbose logging in effect"<<endl);
   
-  L<<Logger::Warning<<"PowerDNS "<<VERSION<<" (C) 2001-2011 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
+  L<<Logger::Warning<<"PowerDNS "<<VERSION<<" (C) 2001-2012 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
 #ifdef __GNUC__
   L<<", gcc "__VERSION__;
 #endif // add other compilers here

@@ -51,6 +51,9 @@
 /* Define to 1 if you have ldap_sasl_bind */
 #undef HAVE_LDAP_SASL_BIND
 
+/* Define to 1 if you have the `crypt' library (-lcrypt). */
+#undef HAVE_LIBCRYPT
+
 /* Define to 1 if you have the `dl' library (-ldl). */
 #undef HAVE_LIBDL
 
@@ -89,6 +92,9 @@
 
 /* Define to 1 if you have the `socket' function. */
 #undef HAVE_SOCKET
+
+/* If we have sqlite3 */
+#undef HAVE_SQLITE3
 
 /* Define to 1 if you have the <stdint.h> header file. */
 #undef HAVE_STDINT_H

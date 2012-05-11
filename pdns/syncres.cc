@@ -62,6 +62,8 @@ bool SyncRes::s_log;
 
 bool SyncRes::s_noEDNSPing;
 bool SyncRes::s_noEDNS;
+bool SyncRes::s_doAdditionalProcessing;
+bool SyncRes::s_doAAAAAdditionalProcessing;
 
 SyncRes::SyncRes(const struct timeval& now) :  d_outqueries(0), d_tcpoutqueries(0), d_throttledqueries(0), d_timeouts(0), d_unreachables(0),
         					 d_now(now),
@@ -120,7 +122,7 @@ int SyncRes::beginResolve(const string &qname, const QType &qtype, uint16_t qcla
   
   set<GetBestNSAnswer> beenthere;
   int res=doResolve(qname, qtype, ret, 0, beenthere);
-  if(!res)
+  if(!res && s_doAdditionalProcessing)
     addCruft(qname, ret);
   return res;
 }
@@ -426,20 +428,11 @@ int SyncRes::doResolve(const string &qname, const QType &qtype, vector<DNSResour
 
   set<string, CIStringCompare> nsset;
   bool flawedNSSet=false;
+
+  // the two retries allow getBestNSNamesFromCache&co to reprime the root
+  // hints, in case they ever go missing
   for(int tries=0;tries<2 && nsset.empty();++tries) {
     subdomain=getBestNSNamesFromCache(subdomain, nsset, &flawedNSSet, depth, beenthere); //  pass beenthere to both occasions
-
-    if(nsset.empty()) { // must've lost root records
-      set<DNSResourceRecord> rootset;
-      /* this additional test is needed since getBestNSNamesFromCache sometimes returns that no
-         useful NS records were found, even without the root being expired. This might for example
-         be the case when the . records are not acceptable because they are part of a loop, a loop
-         caused by the invalidation of an nsset during the resolution algorithm */
-      if(t_RC->get(d_now.tv_sec, ".", QType(QType::NS), &rootset) <= 0) {
-        L<<Logger::Warning<<prefix<<qname<<": our root expired, repriming from hints and retrying"<<endl;
-        primeHints();
-      }
-    }
   }
 
   if(!(res=doResolveAt(nsset, subdomain, flawedNSSet, qname, qtype, ret, depth, beenthere)))
@@ -458,7 +451,7 @@ static bool ipv6First(const ComboAddress& a, const ComboAddress& b)
 #endif
 
 /** This function explicitly goes out for A addresses, but if configured to use IPv6 as well, will also return any IPv6 addresses in the cache
-    Additionally, it will return the 'best' address up front, and the rest shufled
+    Additionally, it will return the 'best' address up front, and the rest shuffled
 */
 vector<ComboAddress> SyncRes::getAs(const string &qname, int depth, set<GetBestNSAnswer>& beenthere)
 {
@@ -553,6 +546,7 @@ void SyncRes::getBestNSFromCache(const string &qname, set<DNSResourceRecord>&bes
       }
     }
     LOG<<prefix<<qname<<": no valid/useful NS in cache for '"<<subdomain<<"'"<<endl;
+    if(subdomain==".") { primeHints(); }
   }while(chopOffDotted(subdomain));
 }
 
@@ -1156,9 +1150,6 @@ void SyncRes::addCruft(const string &qname, vector<DNSResourceRecord>& ret)
 
   LOG<<d_prefix<<qname<<": Starting additional processing"<<endl;
   vector<DNSResourceRecord> addit;
-  static optional<bool> l_doIPv6AP;
-  if(!l_doIPv6AP)
-    l_doIPv6AP=::arg().mustDo("aaaa-additional-processing");
 
   for(vector<DNSResourceRecord>::const_iterator k=ret.begin();k!=ret.end();++k) 
     if( (k->d_place==DNSResourceRecord::ANSWER && (k->qtype==QType(QType::MX) || k->qtype==QType(QType::SRV)))  || 
@@ -1176,7 +1167,7 @@ void SyncRes::addCruft(const string &qname, vector<DNSResourceRecord>& ret)
         host=string(k->content.c_str() + fields[3].first, fields[3].second - fields[3].first);
       else 
         continue;
-      doResolve(host, *l_doIPv6AP ? QType(QType::ADDR) : QType(QType::A), addit, 1, beenthere);
+      doResolve(host, s_doAAAAAdditionalProcessing ? QType(QType::ADDR) : QType(QType::A), addit, 1, beenthere);
     }
   
   if(!addit.empty()) {
@@ -1205,4 +1196,17 @@ void SyncRes::addAuthorityRecords(const string& qname, vector<DNSResourceRecord>
     ns.ttl-=d_now.tv_sec;
     ret.push_back(ns);
   }
+}
+
+// used by PowerDNSLua
+int directResolve(const std::string& qname, const QType& qtype, int qclass, vector<DNSResourceRecord>& ret)
+{
+  struct timeval now;
+  gettimeofday(&now, 0);
+  
+  SyncRes sr(now);
+  
+  int res = sr.beginResolve(qname, QType(qtype), qclass, ret);
+  cerr<<"Result: "<<res<<endl;
+  return res;
 }

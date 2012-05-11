@@ -16,7 +16,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
-// $Id: dns.hh 2231 2011-07-11 07:25:27Z ahu $ 
+// $Id: dns.hh 2589 2012-04-29 13:02:29Z peter $ 
 /* (C) 2002 POWERDNS.COM BV */
 #ifndef DNS_HH
 #define DNS_HH
@@ -179,8 +179,15 @@ enum  {
         ns_t_cert = 37,         /* Certification record */
         ns_t_a6 = 38,           /* IPv6 address (deprecates AAAA) */
         ns_t_dname = 39,        /* Non-terminal DNAME (for IPv6) */
-        ns_t_sink = 40,         /* Kitchen sink (experimentatl) */
+        ns_t_sink = 40,         /* Kitchen sink (experimental) */
         ns_t_opt = 41,          /* EDNS0 option (meta-RR) */
+        ns_t_ds = 43,           /* Delegation signer */
+        ns_t_rrsig = 46,        /* Resoure Record signature */
+        ns_t_nsec = 47,         /* Next Record */
+        ns_t_dnskey = 48,       /* DNSKEY record */
+        ns_t_nsec3 = 50,        /* Next Record v3 */
+        ns_t_nsec3param = 51,   /* NSEC Parameters */
+        ns_t_tlsa = 52,         /* TLSA */
         ns_t_tsig = 250,        /* Transaction signature. */
         ns_t_ixfr = 251,        /* Incremental zone transfer. */
         ns_t_axfr = 252,        /* Transfer zone of authority. */
@@ -192,7 +199,7 @@ enum  {
 #ifdef WIN32
 #define BYTE_ORDER 1
 #define LITTLE_ENDIAN 1
-#elif __FreeBSD__ || __APPLE__
+#elif __FreeBSD__ || __APPLE__ || __OpenBSD__
 #include <machine/endian.h>
 #elif __linux__
 # include <endian.h>

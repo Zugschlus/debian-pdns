@@ -60,7 +60,6 @@ AM_RECURSIVE_TARGETS = $(RECURSIVE_TARGETS:-recursive=) \
 	distdir
 ETAGS = etags
 CTAGS = ctags
-DIST_SUBDIRS = $(SUBDIRS)
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 am__relativize = \
   dir0=`pwd`; \
@@ -102,6 +101,8 @@ BOOST_SERIALIZATION_LDFLAGS = @BOOST_SERIALIZATION_LDFLAGS@
 BOOST_SERIALIZATION_LIBS = @BOOST_SERIALIZATION_LIBS@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
+CDB_CFLAGS = @CDB_CFLAGS@
+CDB_LIBS = @CDB_LIBS@
 CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
@@ -133,6 +134,7 @@ LDFLAGS = @LDFLAGS@
 LEX = @LEX@
 LEXLIB = @LEXLIB@
 LEX_OUTPUT_ROOT = @LEX_OUTPUT_ROOT@
+LIBCRYPT = @LIBCRYPT@
 LIBDL = @LIBDL@
 LIBLDAP = @LIBLDAP@
 LIBOBJS = @LIBOBJS@
@@ -239,6 +241,7 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 SUBDIRS = @moduledirs@
+DIST_SUBDIRS = db2backend geobackend gmysqlbackend godbcbackend goraclebackend gpgsqlbackend gsqlite3backend gsqlitebackend ldapbackend luabackend mongodbbackend mydnsbackend opendbxbackend oraclebackend pipebackend xdbbackend tinydnsbackend
 all: all-recursive
 
 .SUFFIXES:

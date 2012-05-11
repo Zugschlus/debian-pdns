@@ -12,6 +12,7 @@
 #include "zoneparser-tng.hh"
 #include "signingpipe.hh"
 #include <boost/scoped_ptr.hpp>
+#include "bindbackend2.hh"
 
 StatBag S;
 PacketCache PC;
@@ -22,55 +23,9 @@ po::variables_map g_vm;
 
 string s_programname="pdns";
 
-#if 0
-void launchSigningService(int fd)
-{
-  UeberBackend db("key-only");
-  DNSSECKeeper dk;
-  string str;
-  vector<DNSResourceRecord> chunk;
-  uint64_t signatures=0;
-  while(readLStringFromSocket(fd, str))
-  {
-    if(str.empty())
-      break;
-    chunk=convertDNSRRVectorFromPBString(str);
-  
-    addRRSigs(dk, db, "big.aa", chunk); // sucks
-  
-    ++signatures;
-    str=convertDNSRRVectorToPBString(chunk);
-    writeLStringToSocket(fd, str);    
-  }
-  cerr<<"Exiting after "<<signatures<<" signatures"<<endl;
-  char c;
-  //read(fd, &c, 1); // wait for EOF, signifies that the other side received everything
-  _exit(1);
+namespace {
+  bool g_verbose; // doesn't yet do anything though
 }
-
-void signingServer()
-{
-  ComboAddress local("::", 2000);
-  int sock = socket(AF_INET6, SOCK_STREAM, 0);
-  
-  setSocketReusable(sock);
-  if(::bind(sock, (struct sockaddr*)&local, local.getSocklen()) < 0)
-    unixDie("Binding signing server to socket");
-  listen(sock, 5);
-  for(;;) {
-    ComboAddress remote("::");
-    socklen_t remotelen = remote.getSocklen();
-    int client = accept(sock, (struct sockaddr*)&remote, &remotelen);
-    
-    if(client < 0) 
-      break;
-    cerr<<"Got connection from "<<remote.toString()<<endl;  
-    if(fork()) 
-      continue;
-    launchSigningService(client);
-  }
-}
-#endif 
 
 ArgvMap &arg()
 {
@@ -91,6 +46,7 @@ void loadMainConfig(const std::string& configdir)
 {
   ::arg().set("config-dir","Location of configuration directory (pdns.conf)")=configdir;
   ::arg().set("pipebackend-abi-version","Version of the pipe backend ABI")="1";
+  ::arg().set("default-ttl","Seconds a result is valid if not set otherwise")="3600";
   ::arg().set("launch","Which backends to launch");
   ::arg().set("dnssec","if we should do dnssec")="true";
   ::arg().set("config-name","Name of this virtual configuration - will rename the binary image")=g_vm["config-name"].as<string>();
@@ -124,25 +80,28 @@ void loadMainConfig(const std::string& configdir)
   S.declare("query-cache-miss","Number of misses on the query cache");
   ::arg().set("max-cache-entries", "Maximum number of cache entries")="1000000";
   ::arg().set("recursor","If recursion is desired, IP address of a recursing nameserver")="no"; 
-  ::arg().set("recursive-cache-ttl","Seconds to store packets in the PacketCache")="10";
+  ::arg().set("recursive-cache-ttl","Seconds to store packets for recursive queries in the PacketCache")="10";
   ::arg().set("cache-ttl","Seconds to store packets in the PacketCache")="20";              
-  ::arg().set("negquery-cache-ttl","Seconds to store packets in the PacketCache")="60";
-  ::arg().set("query-cache-ttl","Seconds to store packets in the PacketCache")="20";              
+  ::arg().set("negquery-cache-ttl","Seconds to store negative query results in the QueryCache")="60";
+  ::arg().set("query-cache-ttl","Seconds to store query results in the QueryCache")="20";              
+  ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
   ::arg().set("soa-refresh-default","Default SOA refresh")="10800";
   ::arg().set("soa-retry-default","Default SOA retry")="3600";
   ::arg().set("soa-expire-default","Default SOA expire")="604800";
-    ::arg().setSwitch("query-logging","Hint backends that queries should be logged")="no";
-  ::arg().set("soa-minimum-ttl","Default SOA mininum ttl")="3600";    
+  ::arg().setSwitch("query-logging","Hint backends that queries should be logged")="no";
+  ::arg().set("soa-minimum-ttl","Default SOA minimum ttl")="3600";    
   
   UeberBackend::go();
 }
 
 // irritatingly enough, rectifyZone needs its own ueberbackend and can't therefore benefit from transactions outside its scope
+// I think this has to do with interlocking transactions between B and DK, but unsure.
 void rectifyZone(DNSSECKeeper& dk, const std::string& zone)
 {
   scoped_ptr<UeberBackend> B(new UeberBackend("default"));
   bool doTransaction=true; // but see above
   SOAData sd;
+  sd.db = (DNSBackend*)-1;
   
   if(!B->getSOA(zone, sd)) {
     cerr<<"No SOA known for '"<<zone<<"', is such a zone in the database?"<<endl;
@@ -151,12 +110,14 @@ void rectifyZone(DNSSECKeeper& dk, const std::string& zone)
   sd.db->list(zone, sd.domain_id);
   DNSResourceRecord rr;
 
-  set<string> qnames, nsset;
+  set<string> qnames, nsset, dsnames;
   
   while(sd.db->get(rr)) {
     qnames.insert(rr.qname);
     if(rr.qtype.getCode() == QType::NS && !pdns_iequals(rr.qname, zone)) 
       nsset.insert(rr.qname);
+    if(rr.qtype.getCode() == QType::DS)
+      dsnames.insert(rr.qname);
   }
 
   NSEC3PARAMRecordContent ns3pr;
@@ -176,6 +137,7 @@ void rectifyZone(DNSSECKeeper& dk, const std::string& zone)
   {
     string shorter(qname);
     bool auth=true;
+
     do {
       if(nsset.count(shorter)) {  
         auth=false;
@@ -183,25 +145,56 @@ void rectifyZone(DNSSECKeeper& dk, const std::string& zone)
       }
     }while(chopOff(shorter));
 
-    if(!haveNSEC3) // NSEC
-      sd.db->updateDNSSECOrderAndAuth(sd.domain_id, zone, qname, auth);
-    else {
+    if(dsnames.count(qname))
+      auth=true;
+
+    if(haveNSEC3)
+    {
       if(!narrow) {
         hashed=toLower(toBase32Hex(hashQNameWithSalt(ns3pr.d_iterations, ns3pr.d_salt, qname)));
-        cerr<<"'"<<qname<<"' -> '"<< hashed <<"'"<<endl;
+        if(g_verbose)
+          cerr<<"'"<<qname<<"' -> '"<< hashed <<"'"<<endl;
       }
       sd.db->updateDNSSECOrderAndAuthAbsolute(sd.domain_id, qname, hashed, auth);
+      if(!auth || dsnames.count(qname))
+      {
+        sd.db->nullifyDNSSECOrderNameAndAuth(sd.domain_id, qname, "NS");
+        sd.db->nullifyDNSSECOrderNameAndAuth(sd.domain_id, qname, "A");
+        sd.db->nullifyDNSSECOrderNameAndAuth(sd.domain_id, qname, "AAAA");
+      }
+    }
+    else // NSEC
+    {
+      sd.db->updateDNSSECOrderAndAuth(sd.domain_id, zone, qname, auth);
+      if(!auth || dsnames.count(qname))
+      {
+        sd.db->nullifyDNSSECOrderNameAndAuth(sd.domain_id, qname, "A");
+        sd.db->nullifyDNSSECOrderNameAndAuth(sd.domain_id, qname, "AAAA");
+      }
     }
   }
   if(doTransaction)
     sd.db->commitTransaction();
 }
 
+void rectifyAllZones(DNSSECKeeper &dk) 
+{
+  scoped_ptr<UeberBackend> B(new UeberBackend("default"));
+  vector<DomainInfo> domainInfo;
+
+  B->getAllDomains(&domainInfo);
+  BOOST_FOREACH(DomainInfo di, domainInfo) {
+    cerr<<"Rectifying "<<di.zone<<": ";
+    rectifyZone(dk, di.zone);
+  }
+  cout<<"Rectified "<<domainInfo.size()<<" zones."<<endl;
+}
+
 int checkZone(DNSSECKeeper& dk, const std::string& zone)
 {
   scoped_ptr<UeberBackend> B(new UeberBackend("default"));
   SOAData sd;
-  
+  sd.db=(DNSBackend*)-1;
   if(!B->getSOA(zone, sd)) {
     cout<<"No SOA for zone '"<<zone<<"'"<<endl;
     return -1;
@@ -211,14 +204,19 @@ int checkZone(DNSSECKeeper& dk, const std::string& zone)
   uint64_t numrecords=0, numerrors=0;
   
   while(sd.db->get(rr)) {
-    if(rr.qtype.getCode() == QType::URL || rr.qtype.getCode() == QType::MBOXFW) 
+    if(rr.qtype.getCode() == QType::URL || rr.qtype.getCode() == QType::MBOXFW) {
+      cout<<"The recordtype "<<rr.qtype.getName()<<" for record '"<<rr.qname<<"' is no longer supported."<<endl;
+      numerrors++;
       continue;
+    }
+      
     if(rr.qtype.getCode() == QType::MX || rr.qtype.getCode() == QType::SRV) 
       rr.content = lexical_cast<string>(rr.priority)+" "+rr.content;
+
     if(rr.qtype.getCode() == QType::TXT && !rr.content.empty() && rr.content[0]!='"')
       rr.content = "\""+rr.content+"\"";  
       
-    if(rr.auth == 0 && rr.qtype.getCode()!=QType::NS && rr.qtype.getCode()!=QType::A)
+    if(rr.auth == 0 && rr.qtype.getCode()!=QType::NS && rr.qtype.getCode()!=QType::A && rr.qtype.getCode()!=QType::AAAA)
     {
       cout<<"Following record is auth=0, run pdnssec rectify-zone?: "<<rr.qname<<" IN " <<rr.qtype.getName()<< " " << rr.content<<endl;
       numerrors++;
@@ -239,6 +237,27 @@ int checkZone(DNSSECKeeper& dk, const std::string& zone)
   return numerrors;
 }
 
+int checkAllZones(DNSSECKeeper &dk) 
+{
+  scoped_ptr<UeberBackend> B(new UeberBackend("default"));
+  vector<DomainInfo> domainInfo;
+
+  B->getAllDomains(&domainInfo);
+  int errors=0;
+  BOOST_FOREACH(DomainInfo di, domainInfo) {
+    if (checkZone(dk, di.zone) > 0) {
+       errors++;
+    }
+  }
+  cout<<"Checked "<<domainInfo.size()<<" zones, "<<errors<<" had errors."<<endl;
+  return 0;
+}
+
+void testAlgorithm(int algo) 
+{
+  DNSCryptoKeyEngine::testOne(algo);
+}
+
 void testAlgorithms()
 {
   DNSCryptoKeyEngine::testAll();
@@ -257,6 +276,11 @@ void testSpeed(DNSSECKeeper& dk, const string& zone, const string& remote, int c
   
   UeberBackend db("key-only");
   
+  if ( ! db.backends.size() )
+  {
+    throw runtime_error("No backends available for DNSSEC key storage");
+  }
+
   ChunkedSigningPipe csp(zone, 1, remote, cores);
   
   vector<DNSResourceRecord> signatures;
@@ -400,42 +424,39 @@ void showZone(DNSSECKeeper& dk, const std::string& zone)
 
 bool secureZone(DNSSECKeeper& dk, const std::string& zone)
 {
-	if(dk.isSecuredZone(zone)) {
-		cerr << "Zone '"<<zone<<"' already secure, remove keys with pdnssec remove-zone-key if needed"<<endl;
-		return false;
-	}
+  if(dk.isSecuredZone(zone)) {
+    cerr << "Zone '"<<zone<<"' already secure, remove keys with pdnssec remove-zone-key if needed"<<endl;
+    return false;
+  }
 
-	if(!dk.secureZone(zone, 8)) {
-		cerr<<"No backend was able to secure '"<<zone<<"', most likely because no DNSSEC\n";
-		cerr<<"capable backends are loaded, or because the backends have DNSSEC disabled.\n";
-		cerr<<"For the Generic SQL backends, set 'gsqlite3-dnssec' or 'gmysql-dnssec' or\n";
-		cerr<<"'gpgsql-dnssec' etc. Also make sure the schema has been updated for DNSSEC!\n";
-		return false;
-	}
+  if(!dk.secureZone(zone, 8)) {
+    cerr<<"No backend was able to secure '"<<zone<<"', most likely because no DNSSEC\n";
+    cerr<<"capable backends are loaded, or because the backends have DNSSEC disabled.\n";
+    cerr<<"For the Generic SQL backends, set the 'gsqlite3-dnssec', 'gmysql-dnssec' or\n";
+    cerr<<"'gpgsql-dnssec' flag. Also make sure the schema has been updated for DNSSEC!\n";
+    return false;
+  }
 
-	if(!dk.isSecuredZone(zone)) {
-		cerr<<"Failed to secure zone. Is your backend dnssec enabled? (set \n";
-		cerr<<"sqlite3-dnssec, or gmysql-dnssec etc). Check this first.\n";
-		cerr<<"If you run with the BIND backend, make sure to also launch another\n";
-		cerr<<"backend which supports storage of DNSSEC settings.\n";
-		cerr<<"In addition, add '"<<zone<<"' to this backend, possibly like this: \n\n";
-		cerr<<"   insert into domains (name, type) values ('"<<zone<<"', 'NATIVE');\n\n";
-		cerr<<"And then rerun secure-zone"<<endl;
-		return false;
-	}
+  if(!dk.isSecuredZone(zone)) {
+    cerr<<"Failed to secure zone. Is your backend dnssec enabled? (set \n";
+    cerr<<"gsqlite3-dnssec, or gmysql-dnssec etc). Check this first.\n";
+    cerr<<"If you run with the BIND backend, make sure you have configured\n";
+    cerr<<"it to use DNSSEC with 'bind-dnssec-db' and 'pdnssec create-bind-db'!\n";
+    return false;
+  }
 
-	DNSSECKeeper::keyset_t zskset=dk.getKeys(zone, false);
+  DNSSECKeeper::keyset_t zskset=dk.getKeys(zone, false);
 
-	if(!zskset.empty())  {
-		cerr<<"There were ZSKs already for zone '"<<zone<<"', no need to add more"<<endl;
-		return false;
-	}
-		
-	dk.addKey(zone, false, 8);
-	dk.addKey(zone, false, 8, 0, false); // not active
-	// rectifyZone(dk, zone);
-	// showZone(dk, zone);
-	cout<<"Zone "<<zone<<" secured"<<endl;
+  if(!zskset.empty())  {
+    cerr<<"There were ZSKs already for zone '"<<zone<<"', no need to add more"<<endl;
+    return false;
+  }
+    
+  dk.addKey(zone, false, 8);
+  dk.addKey(zone, false, 8, 0, false); // not active
+  // rectifyZone(dk, zone);
+  // showZone(dk, zone);
+  cout<<"Zone "<<zone<<" secured"<<endl;
   return true;
 }
 
@@ -445,7 +466,7 @@ try
   po::options_description desc("Allowed options");
   desc.add_options()
     ("help,h", "produce help message")
-    ("verbose,v", po::value<bool>(), "be verbose")
+    ("verbose,v", "be verbose")
     ("force", "force an action")
     ("config-name", po::value<string>()->default_value(""), "virtual configuration name")
     ("config-dir", po::value<string>()->default_value(SYSCONFDIR), "location of pdns.conf")
@@ -461,33 +482,44 @@ try
   if(g_vm.count("commands")) 
     cmds = g_vm["commands"].as<vector<string> >();
 
+  g_verbose = g_vm.count("verbose");
+
   if(cmds.empty() || g_vm.count("help")) {
-    cerr<<"Usage: \npdnssec [options] [show-zone] [secure-zone] [rectify-zone] [add-zone-key] [deactivate-zone-key] [remove-zone-key] [activate-zone-key]\n";
-    cerr<<"         [import-zone-key] [export-zone-key] [set-nsec3] [set-presigned] [unset-nsec3] [unset-presigned] [export-zone-dnskey]\n\n";
-    cerr<<"activate-zone-key ZONE KEY-ID    Activate the key with key id KEY-ID in ZONE\n";
-    cerr<<"add-zone-key ZONE [zsk|ksk]      Add a ZSK or KSK to a zone\n";
-    cerr<<"  [bits] [rsasha1|rsasha256]     and specify algorithm & bits\n";
-    cerr<<"check-zone ZONE                  Check a zone for correctness\n";
-    cerr<<"deactivate-zone-key ZONE KEY-ID  Deactivate the key with key id KEY-ID in ZONE\n";
-    cerr<<"disable-dnssec ZONE              Deactivate all keys and unset PRESIGNED in ZONE\n";
-    cerr<<"export-zone-dnskey ZONE KEY-ID   Export to stdout the public DNSKEY described\n";
-    cerr<<"export-zone-key ZONE KEY-ID      Export to stdout the private key described\n";
-    cerr<<"hash-zone-record ZONE RNAME      Calculate the NSEC3 hash for RNAME in ZONE\n";
-    cerr<<"import-zone-key ZONE FILE        Import from a file a private key, ZSK or KSK\n";            
-    cerr<<"                [ksk|zsk]        Defaults to KSK\n";
-    cerr<<"rectify-zone ZONE                Fix up DNSSEC fields (order, auth)\n";
-    cerr<<"remove-zone-key ZONE KEY-ID      Remove key with KEY-ID from ZONE\n";
-    cerr<<"secure-zone ZONE                 Add KSK and two ZSKs\n";
-    cerr<<"set-nsec3 ZONE 'params' [narrow] Enable NSEC3 with PARAMs. Optionally narrow\n";
-    cerr<<"set-presigned ZONE               Use presigned RRSIGs from storage\n";
-    cerr<<"show-zone ZONE                   Show DNSSEC (public) key details about a zone\n";
-    cerr<<"unset-nsec3 ZONE                 Switch back to NSEC\n";
-    cerr<<"unset-presigned ZONE             No longer use presigned RRSIGs\n\n";
+    cerr<<"Usage: \npdnssec [options] <command> [params ..]\n\n";
+    cerr<<"Commands:\n";
+    cerr<<"activate-zone-key ZONE KEY-ID      Activate the key with key id KEY-ID in ZONE\n";
+    cerr<<"add-zone-key ZONE zsk|ksk [bits]\n";
+    cerr<<"             [rsasha1|rsasha256|rsasha512|gost|ecdsa256|ecdsa384]\n";
+    cerr<<"                                   Add a ZSK or KSK to zone and specify algo&bits\n";
+    cerr<<"check-zone ZONE                    Check a zone for correctness\n";
+    cerr<<"check-all-zones                    Check all zones for correctness\n";
+    cerr<<"create-bind-db FNAME               Create DNSSEC db for BIND backend (bind-dnssec-db)\n"; 
+    cerr<<"deactivate-zone-key ZONE KEY-ID    Deactivate the key with key id KEY-ID in ZONE\n";
+    cerr<<"disable-dnssec ZONE                Deactivate all keys and unset PRESIGNED in ZONE\n";
+    cerr<<"export-zone-dnskey ZONE KEY-ID     Export to stdout the public DNSKEY described\n";
+    cerr<<"export-zone-key ZONE KEY-ID        Export to stdout the private key described\n";
+    cerr<<"hash-zone-record ZONE RNAME        Calculate the NSEC3 hash for RNAME in ZONE\n";
+    cerr<<"import-zone-key ZONE FILE          Import from a file a private key, ZSK or KSK\n";            
+    cerr<<"                [ksk|zsk]          Defaults to KSK\n";
+    cerr<<"rectify-zone ZONE [ZONE ..]        Fix up DNSSEC fields (order, auth)\n";
+    cerr<<"rectify-all-zones                  Rectify all zones.\n";
+    cerr<<"remove-zone-key ZONE KEY-ID        Remove key with KEY-ID from ZONE\n";
+    cerr<<"secure-zone ZONE [ZONE ..]         Add KSK and two ZSKs\n";
+    cerr<<"set-nsec3 ZONE ['params' [narrow]] Enable NSEC3 with PARAMs. Optionally narrow\n";
+    cerr<<"set-presigned ZONE                 Use presigned RRSIGs from storage\n";
+    cerr<<"show-zone ZONE                     Show DNSSEC (public) key details about a zone\n";
+    cerr<<"unset-nsec3 ZONE                   Switch back to NSEC\n";
+    cerr<<"unset-presigned ZONE               No longer use presigned RRSIGs\n\n";
     cerr<<"Options:"<<endl;
     cerr<<desc<<endl;
     return 0;
   }
   
+  if (cmds[0] == "test-algorithm") {
+    testAlgorithm(lexical_cast<int>(cmds[1]));
+    return 0; 
+  }
+
   if(cmds[0] == "test-algorithms") {
     testAlgorithms();
     return 0;
@@ -495,14 +527,35 @@ try
 
   loadMainConfig(g_vm["config-dir"].as<string>());
   reportAllTypes();
+  
+  
+  if(cmds[0] == "create-bind-db") {
+    if(cmds.size() != 2) {
+      cerr << "Syntax: pdnssec create-bind-db fname"<<endl;
+      return 0;
+    }
+    try {
+      Bind2Backend::createDNSSECDB(cmds[1]);
+    }
+    catch (AhuException& ae) {
+      cerr<<"Error: "<<ae.reason<<endl;
+      return 1;
+    }
+    return 0;
+  }
+  
   DNSSECKeeper dk;
 
   if(cmds[0] == "rectify-zone") {
-    if(cmds.size() != 2) {
-      cerr << "Syntax: pdnssec rectify-zone ZONE"<<endl;
+    if(cmds.size() < 2) {
+      cerr << "Syntax: pdnssec rectify-zone ZONE [ZONE..]"<<endl;
       return 0;
     }
-    rectifyZone(dk, cmds[1]);
+    for(unsigned int n = 1; n < cmds.size(); ++n) 
+      rectifyZone(dk, cmds[n]);
+  }
+  else if (cmds[0] == "rectify-all-zones") {
+    rectifyAllZones(dk);
   }
   else if(cmds[0] == "check-zone") {
     if(cmds.size() != 2) {
@@ -510,6 +563,9 @@ try
       return 0;
     }
     exit(checkZone(dk, cmds[1]));
+  }
+  else if (cmds[0] == "check-all-zones") {
+    exit(checkAllZones(dk));
   }
 #if 0
   else if(cmds[0] == "signing-server" )
@@ -559,6 +615,11 @@ try
     }
     const string& zone=cmds[1];
     unsigned int id=atoi(cmds[2].c_str());
+    if(!id)
+    {
+      cerr<<"Invalid KEY-ID"<<endl;
+      return 1;
+    }
     dk.activateKey(zone, id);
   }
   else if(cmds[0] == "deactivate-zone-key") {
@@ -568,11 +629,16 @@ try
     }
     const string& zone=cmds[1];
     unsigned int id=atoi(cmds[2].c_str());
+    if(!id)
+    {
+      cerr<<"Invalid KEY-ID"<<endl;
+      return 1;
+    }
     dk.deactivateKey(zone, id);
   }
   else if(cmds[0] == "add-zone-key") {
     if(cmds.size() < 3 ) {
-      cerr << "Syntax: pdnssec add-zone-key ZONE [zsk|ksk] [bits] [rsasha1|rsasha256]"<<endl;
+      cerr << "Syntax: pdnssec add-zone-key ZONE zsk|ksk [bits] [rsasha1|rsasha256|rsasha512|gost|ecdsa256|ecdsa384]"<<endl;
       return 0;
     }
     const string& zone=cmds[1];
@@ -597,6 +663,8 @@ try
         algorithm=13;
       else if(pdns_iequals(cmds[n], "ecdsa384"))
         algorithm=14;
+      else if(pdns_iequals(cmds[n], "ed25519"))
+        algorithm=250;        
       else if(atoi(cmds[n].c_str()))
         bits = atoi(cmds[n].c_str());
       else { 
@@ -626,16 +694,24 @@ try
     }
     vector<string> mustRectify;
     dk.startTransaction();    
+    unsigned int zoneErrors=0;
     for(unsigned int n = 1; n < cmds.size(); ++n) {
-			const string& zone=cmds[n];
-			if(secureZone(dk, zone)) {
+      const string& zone=cmds[n];
+      if(secureZone(dk, zone)) {
         mustRectify.push_back(zone);
+      } else {
+        zoneErrors++;
       }
-		}
+    }
     
     dk.commitTransaction();
     BOOST_FOREACH(string& zone, mustRectify)
       rectifyZone(dk, zone);
+
+    if (zoneErrors) {
+      return 1;
+    }
+    return 0;
   }
   else if(cmds[0]=="set-nsec3") {
     if(cmds.size() < 2) {
@@ -662,7 +738,7 @@ try
   else if(cmds[0]=="unset-presigned") {
     if(cmds.size() < 2) {
       cerr<<"Syntax: pdnssec unset-presigned ZONE"<<endl;
-      return 0;	
+      return 0;  
     }
     dk.unsetPresigned(cmds[1]);
   }

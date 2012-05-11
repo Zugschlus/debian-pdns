@@ -1,6 +1,6 @@
 /*
     PowerDNS Versatile Database Driven Nameserver
-    Copyright (C) 2003 - 2011  PowerDNS.COM BV
+    Copyright (C) 2003 - 2012  PowerDNS.COM BV
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License version 2 
@@ -323,6 +323,8 @@ public:
   static int makeClientSocket(int family)
   {
     int ret=(int)socket(family, SOCK_DGRAM, 0);
+    Utility::setCloseOnExec(ret);
+
     if(ret < 0 && errno==EMFILE) // this is not a catastrophic error
       return ret;
     
@@ -451,7 +453,6 @@ static void writePid(void)
 typedef map<ComboAddress, uint32_t, ComboAddress::addressOnlyLessThan> tcpClientCounts_t;
 tcpClientCounts_t __thread* t_tcpClientCounts;
 
-
 TCPConnection::TCPConnection(int fd, const ComboAddress& addr) : d_remote(addr), d_fd(fd)
 { 
   ++s_currentConnections; 
@@ -525,13 +526,25 @@ void startDoResolve(void *p)
        res = sr.beginResolve(dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), dc->d_mdp.d_qclass, ret);
 
       if(t_pdl->get()) {
-        if(res == RCode::NXDomain)
+        if(res == RCode::NoError) {
+      	  vector<DNSResourceRecord>::const_iterator i;
+      	  for(i=ret.begin(); i!=ret.end(); ++i) 
+    	      if(i->qtype.getCode() == dc->d_mdp.d_qtype && i->d_place == DNSResourceRecord::ANSWER)
+          		break;
+      	  if(i == ret.end())
+      	    (*t_pdl)->nodata(dc->d_remote, g_listenSocketsAddresses[dc->d_socket], dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), ret, res, &variableAnswer);
+      	}
+      	else if(res == RCode::NXDomain)
           (*t_pdl)->nxdomain(dc->d_remote, g_listenSocketsAddresses[dc->d_socket], dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), ret, res, &variableAnswer);
+      
+      (*t_pdl)->postresolve(dc->d_remote, g_listenSocketsAddresses[dc->d_socket], dc->d_mdp.d_qname, QType(dc->d_mdp.d_qtype), ret, res, &variableAnswer);
       }
     }
+
+
     
     uint32_t minTTL=std::numeric_limits<uint32_t>::max();
-    if(res<0) {
+    if(res < 0) {
       pw.getHeader()->rcode=RCode::ServFail;
       // no commit here, because no record
       g_stats.servFails++;
@@ -809,7 +822,7 @@ string* doProcessUDPQuestion(const std::string& question, const ComboAddress& fr
     uint32_t age;
     if(!SyncRes::s_nopacketcache && t_packetCache->getResponsePacket(question, g_now.tv_sec, &response, &age)) {
       if(!g_quiet)
-        L<<Logger::Error<<t_id<< " question answered from packet cache from "<<fromaddr.toString()<<endl;
+	L<<Logger::Error<<t_id<< " question answered from packet cache from "<<fromaddr.toString()<<endl;
 
       g_stats.packetCacheHits++;
       SyncRes::s_queries++;
@@ -918,6 +931,8 @@ void makeTCPServerSockets()
     }
 
     fd=socket(sin.sin6.sin6_family, SOCK_STREAM, 0);
+    Utility::setCloseOnExec(fd);
+
     if(fd<0) 
       throw AhuException("Making a TCP server socket for resolver: "+stringerror());
 
@@ -982,6 +997,7 @@ void makeUDPServerSockets()
     }
     
     int fd=socket(sin.sin4.sin_family, SOCK_DGRAM, 0);
+    Utility::setCloseOnExec(fd);
 
     if(fd < 0) {
       throw AhuException("Making a UDP server socket for resolver: "+netstringerror());
@@ -1452,8 +1468,9 @@ void handleUDPServerResponse(int fd, FDMultiplexer::funcparam_t& var)
         }
       }
       g_stats.unexpectedCount++; // if we made it here, it really is an unexpected answer
-      if(g_logCommonErrors)
-        L<<Logger::Warning<<"Discarding unexpected packet from "<<fromaddr.toStringWithPort()<<": "<<pident.domain<<", "<<pident.type<<endl;
+      if(g_logCommonErrors) {
+        L<<Logger::Warning<<"Discarding unexpected packet from "<<fromaddr.toStringWithPort()<<": "<<pident.domain<<", "<<pident.type<<", "<<MT->d_waiters.size()<<" waiters"<<endl;
+      }
     }
     else if(fd >= 0) {
       t_udpclientsocks->returnSocket(fd);
@@ -1600,7 +1617,7 @@ int serviceMain(int argc, char*argv[])
       L<<Logger::Error<<"Unknown logging facility "<<::arg().asNum("logging-facility") <<endl;
   }
 
-  L<<Logger::Warning<<"PowerDNS recursor "<<VERSION<<" (C) 2001-2010 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
+  L<<Logger::Warning<<"PowerDNS recursor "<<VERSION<<" (C) 2001-2012 PowerDNS.COM BV ("<<__DATE__", "__TIME__;
 #ifdef __GNUC__
   L<<", gcc "__VERSION__;
 #endif // add other compilers here
@@ -1659,12 +1676,15 @@ int serviceMain(int argc, char*argv[])
     vector<string> addrs;  
     if(!::arg()["query-local-address6"].empty()) {
       SyncRes::s_doIPv6=true;
-      L<<Logger::Error<<"Enabling IPv6 transport for outgoing queries"<<endl;
+      L<<Logger::Warning<<"Enabling IPv6 transport for outgoing queries"<<endl;
       
       stringtok(addrs, ::arg()["query-local-address6"], ", ;");
       BOOST_FOREACH(const string& addr, addrs) {
         g_localQueryAddresses6.push_back(ComboAddress(addr));
       }
+    }
+    else {
+      L<<Logger::Warning<<"NOT using IPv6 for outgoing queries - set 'query-local-address6=::' to enable"<<endl;
     }
     addrs.clear();
     stringtok(addrs, ::arg()["query-local-address"], ", ;");
@@ -1676,6 +1696,9 @@ int serviceMain(int argc, char*argv[])
     L<<Logger::Error<<"Assigning local query addresses: "<<e.what();
     exit(99);
   }
+
+  SyncRes::s_doAAAAAdditionalProcessing = ::arg().mustDo("aaaa-additional-processing");
+  SyncRes::s_doAdditionalProcessing = ::arg().mustDo("additional-processing") | SyncRes::s_doAAAAAdditionalProcessing;
   
   SyncRes::s_noEDNSPing = ::arg().mustDo("disable-edns-ping");
   SyncRes::s_noEDNS = ::arg().mustDo("disable-edns");
@@ -1925,6 +1948,7 @@ int main(int argc, char **argv)
     ::arg().set("soa-minimum-ttl","Don't change")="0";
     ::arg().set("soa-serial-offset","Don't change")="0";
     ::arg().set("no-shuffle","Don't change")="off";
+    ::arg().set("additional-processing","turn on to do additional processing")="off";
     ::arg().set("aaaa-additional-processing","turn on to do AAAA additional processing (slow)")="off";
     ::arg().set("local-port","port to listen on")="53";
     ::arg().set("local-address","IP addresses to listen on, separated by spaces or commas. Also accepts ports.")="127.0.0.1";
@@ -1959,7 +1983,7 @@ int main(int argc, char **argv)
     ::arg().set("socket-dir","Where the controlsocket will live")=LOCALSTATEDIR;
     ::arg().set("delegation-only","Which domains we only accept delegations from")="";
     ::arg().set("query-local-address","Source IP address for sending queries")="0.0.0.0";
-    ::arg().set("query-local-address6","Source IPv6 address for sending queries")="";
+    ::arg().set("query-local-address6","Source IPv6 address for sending queries. IF UNSET, IPv6 WILL NOT BE USED FOR OUTGOING QUERIES")="";
     ::arg().set("client-tcp-timeout","Timeout in seconds when talking to TCP clients")="2";
     ::arg().set("max-mthreads", "Maximum number of simultaneous Mtasker threads")="2048";
     ::arg().set("max-tcp-clients","Maximum number of simultaneous TCP clients")="128";
@@ -1972,7 +1996,7 @@ int main(int argc, char **argv)
     ::arg().set("packetcache-servfail-ttl", "maximum number of seconds to keep a cached servfail entry in packetcache")="60";
     ::arg().set("server-id", "Returned when queried for 'server.id' TXT or NSID, defaults to hostname")="";
     ::arg().set("remotes-ringbuffer-entries", "maximum number of packets to store statistics for")="0";
-    ::arg().set("version-string", "string reported on version.pdns or version.bind")="PowerDNS Recursor "VERSION" $Id: pdns_recursor.cc 2175 2011-04-19 13:31:46Z ahu $";
+    ::arg().set("version-string", "string reported on version.pdns or version.bind")="PowerDNS Recursor "VERSION" $Id: pdns_recursor.cc 2544 2012-04-01 15:59:57Z ahu $";
     ::arg().set("allow-from", "If set, only allow these comma separated netmasks to recurse")=LOCAL_NETS;
     ::arg().set("allow-from-file", "If set, load allowed netmasks from this file")="";
     ::arg().set("entropy-source", "If set, read entropy from this file")="/dev/urandom";
@@ -1985,11 +2009,12 @@ int main(int argc, char **argv)
     ::arg().set("forward-zones-recurse", "Zones for which we forward queries with recursion bit, comma separated domain=ip pairs")="";
     ::arg().set("forward-zones-file", "File with (+)domain=ip pairs for forwarding")="";
     ::arg().set("export-etc-hosts", "If we should serve up contents from /etc/hosts")="off";
+    ::arg().set("export-etc-hosts-search-suffix", "Also serve up the contents of /etc/hosts with this suffix")="";
     ::arg().set("etc-hosts-file", "Path to 'hosts' file")="/etc/hosts";
     ::arg().set("serve-rfc1918", "If we should be authoritative for RFC 1918 private IP space")="";
     ::arg().set("auth-can-lower-ttl", "If we follow RFC 2181 to the letter, an authoritative server can lower the TTL of NS records")="off";
     ::arg().set("lua-dns-script", "Filename containing an optional 'lua' script that will be used to modify dns answers")="";
-    ::arg().setSwitch( "ignore-rd-bit", "Assume each packet requires recursion, for compatability" )= "off"; 
+    ::arg().setSwitch( "ignore-rd-bit", "Assume each packet requires recursion, for compatibility" )= "off"; 
     ::arg().setSwitch( "disable-edns-ping", "Disable EDNSPing" )= "no"; 
     ::arg().setSwitch( "disable-edns", "Disable EDNS" )= ""; 
     ::arg().setSwitch( "disable-packetcache", "Disable packetcache" )= "no"; 

@@ -19,14 +19,14 @@
 #ifndef QTYPE_HH
 #define QTYPE_HH
 /* (C) 2002 POWERDNS.COM BV */
-// $Id: qtype.hh 2059 2011-03-04 20:43:28Z ahu $
+// $Id: qtype.hh 2579 2012-04-26 11:28:04Z peter $
 #include <string>
 #include <vector>
 #include <utility>
 #include "namespaces.hh"
 
 /** The QType class is meant to deal easily with the different kind of resource types, like 'A', 'NS',
- *  'CNAME' etcetera. These types have both a name and a number. This class can seemlessly move between
+ *  'CNAME' etcetera. These types have both a name and a number. This class can seamlessly move between
  *   them. Use it like this:
 
 \code
@@ -78,15 +78,15 @@ public:
 // more solaris fun
 #undef DS   
   enum typeenum {A=1,NS=2,CNAME=5,SOA=6, MR=9, PTR=12,HINFO=13,MX=15,TXT=16,RP=17,AFSDB=18,KEY=25,AAAA=28,LOC=29,SRV=33,NAPTR=35, KX=36, 
-		 CERT=37,OPT=41, DS=43, SSHDP=44, IPSECKEY=45, RRSIG=46, NSEC=47, DNSKEY=48, DHCID=49, NSEC3=50, NSEC3PARAM=51,
-		 SPF=99, TSIG=250, AXFR=252, IXFR=251, ANY=255, URL=256, MBOXFW=257, CURL=258, ADDR=259, DLV=32769} types;
+		 CERT=37,OPT=41, DS=43, SSHFP=44, IPSECKEY=45, RRSIG=46, NSEC=47, DNSKEY=48, DHCID=49, NSEC3=50, NSEC3PARAM=51,
+		 TLSA=52, SPF=99, TSIG=250, AXFR=252, IXFR=251, ANY=255, URL=256, MBOXFW=257, CURL=258, ADDR=259, DLV=32769} types;
   typedef pair<string,uint16_t> namenum; 
   static vector<namenum> names;
 private:
   uint16_t code;
   void insert(const char *p, int n);
 
-
+  static pthread_mutex_t uninitlock;
   static bool uninit;
 };
 

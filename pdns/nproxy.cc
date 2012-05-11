@@ -13,8 +13,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <grp.h>
 #include "dnsrecords.hh"
 #include "mplexer.hh"
+#include "statbag.hh"
 
 #include "namespaces.hh"
 using namespace ::boost::multi_index;
@@ -22,6 +24,8 @@ using namespace ::boost::multi_index;
 
 namespace po = boost::program_options;
 po::variables_map g_vm;
+
+StatBag S;
 
 SelectFDMultiplexer g_fdm;
 int g_pdnssocket;
@@ -143,7 +147,7 @@ try
   
   nif=g_nifs[mdp.d_header.id];
 
-  if(!iequals(nif.domain,mdp.d_qname)) {
+  if(!pdns_iequals(nif.domain,mdp.d_qname)) {
     syslogFmt(boost::format("Response from inner nameserver for different domain '%s' than original notification '%s'") % mdp.d_qname % nif.domain);
   } else {
     struct dnsheader dh;
@@ -261,16 +265,18 @@ try
     syslogFmt(boost::format("Changed root to directory '%s'") % g_vm["chroot"].as<string>());
   }
 
+  if(g_vm.count("setgid")) {
+    if(setgid(g_vm["setgid"].as<int>()) < 0)
+      throw runtime_error("while changing gid to "+g_vm["setgid"].as<int>());
+    syslogFmt(boost::format("Changed gid to %d") % g_vm["setgid"].as<int>());
+    if(setgroups(0, NULL) < 0)
+      throw runtime_error("while dropping supplementary groups");
+  }
+
   if(g_vm.count("setuid")) {
     if(setuid(g_vm["setuid"].as<int>()) < 0)
       throw runtime_error("while changing uid to "+g_vm["setuid"].as<int>());
     syslogFmt(boost::format("Changed uid to %d") % g_vm["setuid"].as<int>());
-  }
-
-  if(g_vm.count("setgid")) {
-    if(setuid(g_vm["setgid"].as<int>()) < 0)
-      throw runtime_error("while changing gid to "+g_vm["setgid"].as<int>());
-    syslogFmt(boost::format("Changed gid to %d") % g_vm["setgid"].as<int>());
   }
 
   if(g_vm["daemon"].as<bool>()) {
@@ -300,46 +306,6 @@ catch(std::exception& e)
 catch(AhuException& e)
 {
   syslogFmt(boost::format("Fatal: %s") % e.reason);
-}
-
-/* added so we don't have to link in most of powerdns */
-
-const char *Utility::inet_ntop(int af, const char *src, char *dst, size_t size)
-{
-  return ::inet_ntop(af,src,dst,size);
-}
-
-// Converts an address from presentation format to network format.
-int Utility::inet_pton( int af, const char *src, void *dst )
-{
-  return ::inet_pton(af, src, dst);
-}
-
-
-// Returns the current time.
-int Utility::gettimeofday( struct timeval *tv, void *tz )
-{
-  return ::gettimeofday(tv,0);
-}
-
-string stringerror()
-{
-  return strerror(errno);
-}
-
-bool IpToU32(const string &str, uint32_t *ip)
-{
-  if(str.empty()) {
-    *ip=0;
-    return true;
-  }
-  
-  struct in_addr inp;
-  if(inet_aton(str.c_str(), &inp)) {
-    *ip=inp.s_addr;
-    return true;
-  }
-  return false;
 }
 
 void daemonize(void)

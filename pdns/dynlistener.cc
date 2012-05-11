@@ -60,6 +60,7 @@ DynListener::~DynListener()
 void DynListener::createSocketAndBind(int family, struct sockaddr*local, size_t len)
 {
   d_s=socket(family, SOCK_STREAM,0);
+  Utility::setCloseOnExec(d_s);
 
   if(d_s < 0) {
     L<<Logger::Error<<"Creating socket for dynlistener: "<<strerror(errno)<<endl;;
@@ -264,15 +265,16 @@ void DynListener::sendLine(const string &l)
     if(!line.empty() && line[line.length()-1]!='\n')
       line.append("\n");
     line.append("\n");
-    if(write(1,line.c_str(),line.length()) != line.length())
+    if((unsigned int)write(1,line.c_str(),line.length()) != line.length())
       L<<Logger::Error<<"Error sending data to console: "<<stringerror()<<endl;
       
   }
 }
 
-void DynListener::registerFunc(const string &name, g_funk_t *gf)
+void DynListener::registerFunc(const string &name, g_funk_t *gf, const string &usage, const string &args)
 {
-  s_funcdb[name]=gf;
+  g_funkwithusage_t e = {gf, args, usage};
+  s_funcdb[name]=e;
 }
 
 void DynListener::registerRestFunc(g_funk_t *gf)
@@ -298,15 +300,17 @@ void DynListener::theListener()
         continue;
       }
       parts[0] = toUpper( parts[0] );
-      if(!s_funcdb[parts[0]]) {
-        if(s_restfunc) 
+      if(!s_funcdb.count(parts[0])) {
+        if(parts[0] == "HELP")
+          sendLine(getHelp());
+        else if(s_restfunc)
           sendLine((*s_restfunc)(parts,d_ppid));
         else
           sendLine("Unknown command: '"+parts[0]+"'");
         continue;
       }
 
-      sendLine((*s_funcdb[parts[0]])(parts,d_ppid));
+      sendLine((*(s_funcdb[parts[0]].func))(parts,d_ppid));
     }
   }
   catch(AhuException &AE)
@@ -325,5 +329,35 @@ void DynListener::theListener()
     {
       L<<Logger::Error<<"Fatal: unknown exception occured"<<endl;
     }
+}
+
+
+string DynListener::getHelp()
+{
+  vector<string> funcs;
+  string rest;
+
+  // s_restfunc, when in guardian mode, is the function that
+  // can pass commands on to the guarded instance
+  // we just pass it HELP and merge it with our own list
+  if(s_restfunc)
+  {
+    vector<string> parts;
+    parts.push_back("HELP");
+    rest=((*s_restfunc)(parts,d_ppid));
+    boost::split(funcs, rest, boost::is_any_of("\n"));
+  }
+
+  const boost::format fmter("%|-32| %||");
+
+  for(g_funkdb_t::const_iterator i=s_funcdb.begin();i!=s_funcdb.end();++i)
+  {
+    funcs.push_back(str(boost::format(fmter) % (toLower(i->first)+" "+i->second.args) % i->second.usage));
+  }
+  sort(funcs.begin(), funcs.end());
+
+  // hack: this removes the duplicate quit method
+  funcs.resize(unique(funcs.begin(), funcs.end()) - funcs.begin());
+  return boost::join(funcs, "\n");
 }
 

@@ -80,11 +80,12 @@ public:
   void soaMagic(DNSResourceRecord *rr);
   DNSBackend *getBackend();
 
+  int trySuperMasterSynchronous(DNSPacket *p);
 
 private:
+  int trySuperMaster(DNSPacket *p);
   int processNotify(DNSPacket *);
   void addRootReferral(DNSPacket *r);
-  int trySuperMaster(DNSPacket *p);
   int makeCanonic(DNSPacket *p, DNSPacket *r, string &target);
   int doWildcardRecords(DNSPacket *p, DNSPacket *r, string &target);
   int findMboxFW(DNSPacket *p, DNSPacket *r, string &target);
@@ -115,10 +116,9 @@ private:
   bool addDSforNS(DNSPacket* p, DNSPacket* r, SOAData& sd, const string& dsname);
   void completeANYRecords(DNSPacket *p, DNSPacket*r, SOAData& sd, const string &target);
   
-  static int s_count;
+  static AtomicCounter s_count;
   bool d_doFancyRecords;
   bool d_doRecursion;
-  bool d_doWildcards;
   bool d_doCNAME;
   bool d_logDNSDetails;
   bool d_doIPv6AdditionalProcessing;

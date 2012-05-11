@@ -113,10 +113,13 @@ string DLPurgeHandler(const vector<string>&parts, Utility::pid_t ppid)
 {
   extern PacketCache PC;  
   ostringstream os;
-  int ret;
+  int ret=0;
 
-  if(parts.size()>1)
-    ret=PC.purge(parts);
+  if(parts.size()>1) {
+    for (vector<string>::const_iterator i=++parts.begin();i<parts.end();++i) {
+      ret+=PC.purge(*i);
+    }
+  }
   else
     ret=PC.purge();
   os<<ret;
@@ -205,6 +208,8 @@ string DLNotifyHostHandler(const vector<string>&parts, Utility::pid_t ppid)
   ostringstream os;
   if(parts.size()!=3)
     return "syntax: notify-host domain ip";
+  if(!::arg().mustDo("master"))
+      return "PowerDNS not configured as master";
 
   struct in_addr inp;
   if(!Utility::inet_aton(parts[2].c_str(),&inp))
@@ -221,6 +226,8 @@ string DLNotifyHandler(const vector<string>&parts, Utility::pid_t ppid)
   ostringstream os;
   if(parts.size()!=2)
     return "syntax: notify domain";
+  if(!::arg().mustDo("master"))
+      return "PowerDNS not configured as master";
   L<<Logger::Warning<<"Notification request for domain '"<<parts[1]<<"' received from operator"<<endl;
   if(!Communicator.notifyDomain(parts[1]))
     return "Failed to add to the queue - see log";

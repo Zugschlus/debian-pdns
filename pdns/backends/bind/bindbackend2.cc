@@ -83,6 +83,7 @@ pthread_mutex_t Bind2Backend::s_state_swap_lock=PTHREAD_MUTEX_INITIALIZER;
 string Bind2Backend::s_binddirectory;  
 /* when a query comes in, we find the most appropriate zone and answer from that */
 
+
 BB2DomainInfo::BB2DomainInfo()
 {
   d_loaded=false;
@@ -295,6 +296,27 @@ void Bind2Backend::getUpdatedMasters(vector<DomainInfo> *changedDomains)
   }
 }
 
+void Bind2Backend::getAllDomains(vector<DomainInfo> *domains) {
+  SOAData soadata;
+
+  shared_ptr<State> state = getState(); 
+
+  for(id_zone_map_t::const_iterator i = state->id_zone_map.begin(); i != state->id_zone_map.end() ; ++i) {
+    soadata.db=(DNSBackend *)-1; // makes getSOA() skip the cache. 
+    this->getSOA(i->second.d_name, soadata);
+    DomainInfo di;
+    di.id=i->first;
+    di.serial=soadata.serial;
+    di.zone=i->second.d_name;
+    di.last_check=i->second.d_lastcheck;
+    di.backend=this;
+    di.kind=i->second.d_masters.empty() ? DomainInfo::Master : DomainInfo::Slave; //TODO: what about Native?
+
+    domains->push_back(di);
+  }
+}
+
+
 void Bind2Backend::getUnfreshSlaveInfos(vector<DomainInfo> *unfreshDomains)
 {
   shared_ptr<State> state = getState();
@@ -309,7 +331,6 @@ void Bind2Backend::getUnfreshSlaveInfos(vector<DomainInfo> *unfreshDomains)
     sd.backend=this;
     sd.kind=DomainInfo::Slave;
     SOAData soadata;
-    soadata.serial=0;
     soadata.refresh=0;
     soadata.serial=0;
     soadata.db=(DNSBackend *)-1; // not sure if this is useful, inhibits any caches that might be around
@@ -450,8 +471,8 @@ string Bind2Backend::DLReloadNowHandler(const vector<string>&parts, Utility::pid
   for(vector<string>::const_iterator i=parts.begin()+1;i<parts.end();++i) {
     if(state->name_id_map.count(*i)) {
       BB2DomainInfo& bbd=state->id_zone_map[state->name_id_map[*i]];
-      
-      queueReload(&bbd);
+      Bind2Backend bb2;
+      bb2.queueReload(&bbd);
       ret<< *i << ": "<< (bbd.d_loaded ? "": "[rejected]") <<"\t"<<bbd.d_status<<"\n";      
     }
     else
@@ -501,7 +522,7 @@ string Bind2Backend::DLListRejectsHandler(const vector<string>&parts, Utility::p
   return ret.str();
 }
 
-Bind2Backend::Bind2Backend(const string &suffix)
+Bind2Backend::Bind2Backend(const string &suffix, bool loadZones)
 {
 #if __GNUC__ >= 3
     std::ios_base::sync_with_stdio(false);
@@ -509,19 +530,23 @@ Bind2Backend::Bind2Backend(const string &suffix)
   d_logprefix="[bind"+suffix+"backend]";
   setArgPrefix("bind"+suffix);
   Lock l(&s_startup_lock);
-
+  
   d_transaction_id=0;
+  setupDNSSEC();
   if(!s_first) {
     return;
   }
-  s_first=0;
+  
   s_state = shared_ptr<State>(new State);
-  loadConfig();
-
+  if(loadZones) {
+    loadConfig();
+    s_first=0;
+  }
+  
   extern DynListener *dl;
-  dl->registerFunc("BIND-RELOAD-NOW", &DLReloadNowHandler);
-  dl->registerFunc("BIND-DOMAIN-STATUS", &DLDomStatusHandler);
-  dl->registerFunc("BIND-LIST-REJECTS", &DLListRejectsHandler);
+  dl->registerFunc("BIND-RELOAD-NOW", &DLReloadNowHandler, "bindbackend: reload domains", "<domains>");
+  dl->registerFunc("BIND-DOMAIN-STATUS", &DLDomStatusHandler, "bindbackend: list status of all domains", "[domains]");
+  dl->registerFunc("BIND-LIST-REJECTS", &DLListRejectsHandler, "bindbackend: list rejected domains");
 }
 
 Bind2Backend::~Bind2Backend()
@@ -619,7 +644,6 @@ void Bind2Backend::loadConfig(string* status)
     }
 
     sort(domains.begin(), domains.end()); // put stuff in inode order
-
     for(vector<BindDomainInfo>::const_iterator i=domains.begin();
         i!=domains.end();
         ++i) 
@@ -659,9 +683,9 @@ void Bind2Backend::loadConfig(string* status)
         
         if(filenameChanged || !bbd->d_loaded || !bbd->current()) {
           L<<Logger::Info<<d_logprefix<<" parsing '"<<i->name<<"' from file '"<<i->filename<<"'"<<endl;
-          DNSSECKeeper dk;
+
           NSEC3PARAMRecordContent ns3pr;
-          bool nsec3zone=dk.getNSEC3PARAM(i->name, &ns3pr);
+          bool nsec3zone=getNSEC3PARAM(i->name, &ns3pr);
         
           try {
             // we need to allocate a new vector so we don't kill the original, which is still in use!
@@ -791,9 +815,8 @@ void Bind2Backend::queueReload(BB2DomainInfo *bbd)
     ZoneParserTNG zpt(bbd->d_filename, bbd->d_name, s_binddirectory);
     DNSResourceRecord rr;
     string hashed;
-    DNSSECKeeper dk;
     NSEC3PARAMRecordContent ns3pr;
-    bool nsec3zone=dk.getNSEC3PARAM(bbd->d_name, &ns3pr);
+    bool nsec3zone=getNSEC3PARAM(bbd->d_name, &ns3pr);
     while(zpt.get(rr)) {
       if(nsec3zone)
         hashed=toLower(toBase32Hex(hashQNameWithSalt(ns3pr.d_iterations, ns3pr.d_salt, rr.qname)));
@@ -835,35 +858,31 @@ bool Bind2Backend::findBeforeAndAfterUnhashed(BB2DomainInfo& bbd, const std::str
 
   recordstorage_t::const_iterator iter = bbd.d_records->lower_bound(domain);
 
-  while(iter != bbd.d_records->begin() && !boost::prior(iter)->auth && boost::prior(iter)->qtype!=QType::NS) {
-    //cerr<<"Going backwards.."<<endl;
+  while(iter == bbd.d_records->end() || (iter->qname) > domain || (!(iter->auth) && !(iter->qtype == QType::NS)))
     iter--;
-  }
-  
-  if(iter == bbd.d_records->end()) {
-    //cerr<<"Didn't find anything"<<endl;
-    return false;
-  }
-  if(iter != bbd.d_records->begin()) {
-    //cerr<<"\tFound: '"<<boost::prior(iter)->qname<<"', auth = "<<boost::prior(iter)->auth<<"\n";
-    before = boost::prior(iter)->qname;
-  }
-  else {
-    //cerr<<"PANIC! Wanted something before the first record!"<<endl;
-    before.clear();
-  }
+
+  before=iter->qname;
 
   //cerr<<"Now upper bound"<<endl;
   iter = bbd.d_records->upper_bound(domain);
 
-  while(iter!=bbd.d_records->end() && (!iter->auth && iter->qtype != QType::NS))
-    iter++;
 
   if(iter == bbd.d_records->end()) {
     //cerr<<"\tFound the end, begin storage: '"<<bbd.d_records->begin()->qname<<"', '"<<bbd.d_name<<"'"<<endl;
-    after.clear(); // this does the right thing
+    after.clear(); // this does the right thing (i.e. point to apex, which is sure to have auth records)
   } else {
-    //cerr<<"\tFound: '"<<iter->qname<<"'"<<endl;
+    //cerr<<"\tFound: '"<<(iter->qname)<<"' (nsec3hash='"<<(iter->nsec3hash)<<"')"<<endl;
+    // this iteration is theoretically unnecessary - glue always sorts right behind a delegation
+    // so we will never get here. But let's do it anyway.
+    while(!(iter->auth) && !(iter->qtype == QType::NS))
+    {
+      iter++;
+      if(iter == bbd.d_records->end())
+      {
+        after.clear();
+        break;
+      }
+    }
     after = (iter)->qname;
   }
 
@@ -875,18 +894,17 @@ bool Bind2Backend::getBeforeAndAfterNamesAbsolute(uint32_t id, const std::string
 {
   shared_ptr<State> state = s_state;
   BB2DomainInfo& bbd = state->id_zone_map[id];  
-  DNSSECKeeper dk;
   NSEC3PARAMRecordContent ns3pr;
   string auth=state->id_zone_map[id].d_name;
     
-  if(!dk.getNSEC3PARAM(auth, &ns3pr)) {
+  if(!getNSEC3PARAM(auth, &ns3pr)) {
     //cerr<<"in bind2backend::getBeforeAndAfterAbsolute: no nsec3 for "<<auth<<endl;
     return findBeforeAndAfterUnhashed(bbd, qname, unhashed, before, after);
   
   }
   else {
     string lqname = toLower(qname);
-    //cerr<<"\nin bind2backend::getBeforeAndAfterAbsolute: nsec3 HASH for "<<auth<<", asked for: "<<lqname<< " (auth: "<<auth<<".)"<<endl;
+    // cerr<<"\nin bind2backend::getBeforeAndAfterAbsolute: nsec3 HASH for "<<auth<<", asked for: "<<lqname<< " (auth: "<<auth<<".)"<<endl;
     typedef recordstorage_t::index<HashedTag>::type records_by_hashindex_t;
     records_by_hashindex_t& hashindex=boost::multi_index::get<HashedTag>(*bbd.d_records);
     
@@ -894,44 +912,42 @@ bool Bind2Backend::getBeforeAndAfterNamesAbsolute(uint32_t id, const std::string
 //      cerr<<"Hash: "<<bdr.nsec3hash<<"\t"<< (lqname < bdr.nsec3hash) <<endl;
 //    }
     
-    records_by_hashindex_t::const_iterator lowIter = hashindex.lower_bound(lqname);
-    records_by_hashindex_t::const_iterator highIter = hashindex.upper_bound(lqname);
-//    cerr<<"iter == hashindex.begin(): "<< (iter == hashindex.begin()) << ", ";
-  //  cerr<<"iter == hashindex.end(): "<< (iter == hashindex.end()) << endl;
-    if(lowIter == hashindex.end()) {  
-//      cerr<<"This hash is beyond the highest hash, wrapping around"<<endl;
-      before = hashindex.rbegin()->nsec3hash; // highest hash
-      after = hashindex.begin()->nsec3hash; // lowest hash
-      unhashed = dotConcat(labelReverse(hashindex.rbegin()->qname), auth);
+    records_by_hashindex_t::const_iterator iter = hashindex.lower_bound(lqname);
+
+    if(iter != hashindex.begin() && (iter == hashindex.end() || iter->nsec3hash > lqname))
+    {
+      iter--;
     }
-    else if(lowIter->nsec3hash == lqname) { // exact match
-      before = lowIter->nsec3hash;
-      unhashed = dotConcat(labelReverse(lowIter->qname), auth);
-  //    cerr<<"Had direct hit, setting unhashed: "<<unhashed<<endl;      
-      if(highIter != hashindex.end())
-       after = highIter->nsec3hash;
-      else
-       after = hashindex.begin()->nsec3hash;
+
+    while(iter == hashindex.end() || !(iter->auth))
+    {
+      iter--;
+      if(iter == hashindex.begin())
+        iter = hashindex.end();
     }
-    else  {
-     // iter will always be HIGER than lqname, but that's not what we need
-     //  rest .. before pos_iter/after pos
-     //             lqname
-      if(highIter != hashindex.end())
-       after = highIter->nsec3hash; // that one is easy
-      else
-       after = hashindex.begin()->nsec3hash;
-       
-      if(lowIter != hashindex.begin()) {
-       --lowIter;
-       before = lowIter->nsec3hash;
-       unhashed = dotConcat(labelReverse(lowIter->qname), auth);
-      }
-      else {
-       before = hashindex.rbegin()->nsec3hash;
-       unhashed = dotConcat(labelReverse(hashindex.rbegin()->qname), auth);       
+
+    before = iter->nsec3hash;
+    unhashed = dotConcat(labelReverse(iter->qname), auth);
+    // cerr<<"before: "<<(iter->nsec3hash)<<"/"<<(iter->qname)<<endl;
+
+
+    iter = hashindex.upper_bound(lqname);
+    if(iter == hashindex.end())
+    {
+      iter = hashindex.begin();
+    }
+
+    while(!(iter->auth))
+    {
+      iter++;
+      if(iter == hashindex.end())
+      {
+        iter = hashindex.begin();
       }
     }
+
+    after = iter->nsec3hash;
+    // cerr<<"after: "<<(iter->nsec3hash)<<"/"<<(iter->qname)<<endl;
     
     //cerr<<"Before: '"<<before<<"', after: '"<<after<<"'\n";
     return true;
@@ -1004,7 +1020,7 @@ void Bind2Backend::lookup(const QType &qtype, const string &qname, DNSPacket *pk
   d_handle.mustlog = mustlog;
   
   if(range.first==range.second) {
-    // cerr<<"Found nothign!"<<endl;
+    // cerr<<"Found nothing!"<<endl;
     d_handle.d_list=false;
     d_handle.d_iter = d_handle.d_end_iter  = range.first;
     return;
@@ -1079,8 +1095,8 @@ bool Bind2Backend::handle::get_normal(DNSResourceRecord &r)
   r.ttl=(d_iter)->ttl;
   r.priority=(d_iter)->priority;
 
-  if(!d_iter->auth && r.qtype.getCode() != QType::A && r.qtype.getCode()!=QType::AAAA && r.qtype.getCode() != QType::NS)
-    cerr<<"Warning! Unauth response!"<<endl;
+  //if(!d_iter->auth && r.qtype.getCode() != QType::A && r.qtype.getCode()!=QType::AAAA && r.qtype.getCode() != QType::NS)
+  //  cerr<<"Warning! Unauth response for qtype "<< r.qtype.getName() << " for '"<<r.qname<<"'"<<endl;
   r.auth = d_iter->auth;
 
   d_iter++;
@@ -1234,12 +1250,19 @@ class Bind2Factory : public BackendFactory
          declare(suffix,"supermaster-config","Location of (part of) named.conf where pdns can write zone-statements to","");
          declare(suffix,"supermasters","List of IP-addresses of supermasters","");
          declare(suffix,"supermaster-destdir","Destination directory for newly added slave zones",::arg()["config-dir"]);
+         declare(suffix,"dnssec-db","Filename to store & access our DNSSEC metadatabase, empty for none", "");
       }
 
       DNSBackend *make(const string &suffix="")
       {
          return new Bind2Backend(suffix);
       }
+      
+      DNSBackend *makeMetadataOnly(const string &suffix="")
+      {
+        return new Bind2Backend(suffix, false);
+      }
+
 };
 
 //! Magic class that is activated when the dynamic library is loaded

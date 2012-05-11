@@ -25,7 +25,10 @@
 #include <sstream>
 #include "qtype.hh"
 #include "misc.hh"
+#include "lock.hh"
 
+
+pthread_mutex_t QType::uninitlock = PTHREAD_MUTEX_INITIALIZER;
 bool QType::uninit=true;
 vector<QType::namenum> QType::names;
 
@@ -37,6 +40,7 @@ void QType::insert(const char *p, int n)
 
 QType::QType()
 {
+  Lock l(&uninitlock);
   if(uninit)
     {
       uninit=false;
@@ -66,6 +70,7 @@ QType::QType()
       insert("DNSKEY", 48);
       insert("NSEC3", 50);
       insert("NSEC3PARAM", 51);
+      insert("TLSA",52);
       insert("SPF",99);
       insert("IXFR",251);
       insert("AXFR",252);
@@ -75,7 +80,6 @@ QType::QType()
       insert("CURL",258);
       insert("ADDR",259);
       insert("DLV",32769);
-      insert("TLSA",65468);
     }
 }
 

@@ -1,6 +1,6 @@
 /* Copyright 2001 Netherlabs BV, bert.hubert@netherlabs.nl. See LICENSE 
    for more information.
-   $Id: smysql.hh 1471 2009-12-24 16:56:43Z ahu $  */
+   $Id: smysql.hh 2591 2012-04-29 14:47:17Z peter $  */
 #ifndef SMYSQL_HH
 #define SMYSQL_HH
 
@@ -28,6 +28,7 @@ private:
   MYSQL d_db;
   MYSQL_RES *d_rres;
   static bool s_dolog;
+  static pthread_mutex_t s_myinitlock;
 };
       
 #endif /* SSMYSQL_HH */

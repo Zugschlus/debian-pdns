@@ -188,8 +188,9 @@ vector<DNSResourceRecord*> DNSPacket::getAPRecords()
       ++i)
     {
       if(i->d_place!=DNSResourceRecord::ADDITIONAL && 
-         (i->qtype.getCode()==15 || 
-          i->qtype.getCode()==2 )) // CNAME or MX or NS
+         (i->qtype.getCode()==QType::MX ||
+          i->qtype.getCode()==QType::NS ||
+          i->qtype.getCode()==QType::SRV))
         {
           arrs.push_back(&*i);
         }
@@ -224,6 +225,17 @@ void DNSPacket::setCompress(bool compress)
 bool DNSPacket::couldBeCached()
 {
   return d_ednsping.empty() && !d_wantsnsid && qclass==QClass::IN;
+}
+
+unsigned int DNSPacket::getMinTTL()
+{
+  unsigned int minttl = UINT_MAX;
+  BOOST_FOREACH(DNSResourceRecord rr, d_rrs) {
+  if (rr.ttl < minttl)
+      minttl = rr.ttl;
+  }
+
+  return minttl;
 }
 
 /** Must be called before attempting to access getData(). This function stuffs all resource
@@ -531,6 +543,11 @@ void DNSPacket::setMaxReplyLen(int bytes)
 void DNSPacket::setRemote(const ComboAddress *s)
 {
   d_remote=*s;
+}
+
+bool DNSPacket::hasEDNSSubnet()
+{
+  return d_haveednssubnet;
 }
 
 Netmask DNSPacket::getRealRemote() const

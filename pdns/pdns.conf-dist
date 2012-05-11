@@ -2,7 +2,7 @@
 #################################
 # allow-axfr-ips	Allow zonetransfers only to these subnets
 #
-# allow-axfr-ips=0.0.0.0/0
+# allow-axfr-ips=0.0.0.0/0,::/0
 
 #################################
 # allow-recursion	List of subnets that are allowed to recurse
@@ -75,6 +75,21 @@
 # do-ipv6-additional-processing=no
 
 #################################
+# edns-subnet-option-number	EDNS option number to use
+#
+# edns-subnet-option-number=20730
+
+#################################
+# edns-subnet-processing	If we should act on EDNS Subnet options
+#
+# edns-subnet-processing=no
+
+#################################
+# entropy-source	If set, read entropy from this file
+#
+# entropy-source=/dev/urandom
+
+#################################
 # fancy-records	Process URL and MBOXFW records
 #
 # fancy-records=no
@@ -120,6 +135,11 @@
 # log-dns-details=
 
 #################################
+# log-dns-queries	If PDNS should log all incoming DNS queries
+#
+# log-dns-queries=no
+
+#################################
 # log-failed-updates	If PDNS should log failed update requests
 #
 # log-failed-updates=
@@ -145,6 +165,11 @@
 # master=no
 
 #################################
+# max-cache-entries	Maximum number of cache entries
+#
+# max-cache-entries=1000000
+
+#################################
 # max-queue-length	Maximum queuelength before considering situation lost
 #
 # max-queue-length=5000
@@ -160,7 +185,7 @@
 # module-dir=/usr/local/lib
 
 #################################
-# negquery-cache-ttl	Seconds to store packets in the PacketCache
+# negquery-cache-ttl	Seconds to store negative query results in the QueryCache
 #
 # negquery-cache-ttl=60
 
@@ -175,19 +200,29 @@
 # out-of-zone-additional-processing=yes
 
 #################################
+# overload-queue-length	Maximum queuelength moving to packetcache only
+#
+# overload-queue-length=0
+
+#################################
 # pipebackend-abi-version	Version of the pipe backend ABI
 #
 # pipebackend-abi-version=1
 
 #################################
-# query-cache-ttl	Seconds to store packets in the PacketCache
+# query-cache-ttl	Seconds to store query results in the QueryCache
 #
 # query-cache-ttl=20
 
 #################################
 # query-local-address	Source IP address for sending queries
 #
-# query-local-address=
+# query-local-address=0.0.0.0
+
+#################################
+# query-local-address6	Source IPv6 address for sending queries
+#
+# query-local-address6=::
 
 #################################
 # query-logging	Hint backends that queries should be logged
@@ -200,7 +235,12 @@
 # queue-limit=1500
 
 #################################
-# recursive-cache-ttl	Seconds to store packets in the PacketCache
+# receiver-threads	Default number of Distributor (backend) threads to start
+#
+# receiver-threads=1
+
+#################################
+# recursive-cache-ttl	Seconds to store packets for recursive queries in the PacketCache
 #
 # recursive-cache-ttl=10
 
@@ -210,9 +250,19 @@
 # recursor=no
 
 #################################
+# retrieval-threads	Number of AXFR-retrieval threads for slave operation
+#
+# retrieval-threads=2
+
+#################################
 # send-root-referral	Send out old-fashioned root-referral instead of ServFail in case of no authority
 #
 # send-root-referral=no
+
+#################################
+# server-id	Returned when queried for 'server.id' TXT or NSID, defaults to hostname
+#
+# server-id=
 
 #################################
 # setgid	If set, change group id to this gid for more security
@@ -225,9 +275,9 @@
 # setuid=
 
 #################################
-# skip-cname	Do not perform CNAME indirection for each query
+# signing-threads	Default number of signer threads to start
 #
-# skip-cname=no
+# signing-threads=3
 
 #################################
 # slave	Act as a slave
@@ -240,6 +290,11 @@
 # slave-cycle-interval=60
 
 #################################
+# slave-renotify	If we should send out notifications for slaved updates
+#
+# slave-renotify=no
+
+#################################
 # smtpredirector	Our smtpredir MX host
 #
 # smtpredirector=a.misconfigured.powerdns.smtp.server
@@ -250,7 +305,7 @@
 # soa-expire-default=604800
 
 #################################
-# soa-minimum-ttl	Default SOA mininum ttl
+# soa-minimum-ttl	Default SOA minimum ttl
 #
 # soa-minimum-ttl=3600
 
@@ -278,6 +333,26 @@
 # strict-rfc-axfrs	Perform strictly rfc compliant axfrs (very slow)
 #
 # strict-rfc-axfrs=no
+
+#################################
+# tcp-control-address	If set, PowerDNS can be controlled over TCP on this address
+#
+# tcp-control-address=
+
+#################################
+# tcp-control-port	If set, PowerDNS can be controlled over TCP on this address
+#
+# tcp-control-port=53000
+
+#################################
+# tcp-control-range	If set, remote control of PowerDNS is possible over these networks only
+#
+# tcp-control-range=127.0.0.0/8, 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, ::1/128, fe80::/10
+
+#################################
+# tcp-control-secret	If set, PowerDNS can be controlled over TCP after passing this secret
+#
+# tcp-control-secret=
 
 #################################
 # trusted-notification-proxy	IP address of incoming notification proxy
@@ -328,10 +403,5 @@
 # wildcard-url	Process URL and MBOXFW records
 #
 # wildcard-url=no
-
-#################################
-# wildcards	Honor wildcards in the database
-#
-# wildcards=
 
 
