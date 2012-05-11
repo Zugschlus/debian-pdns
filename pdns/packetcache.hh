@@ -69,7 +69,7 @@ public:
   ~PacketCache();
   enum CacheEntryType { PACKETCACHE, QUERYCACHE};
 
-  void insert(DNSPacket *q, DNSPacket *r);  //!< We copy the contents of *p into our cache. Do not needlessly call this to insert questions already in the cache as it wastes resources
+  void insert(DNSPacket *q, DNSPacket *r, unsigned int maxttl=UINT_MAX);  //!< We copy the contents of *p into our cache. Do not needlessly call this to insert questions already in the cache as it wastes resources
 
   void insert(const string &qname, const QType& qtype, CacheEntryType cet, const string& value, unsigned int ttl, int zoneID=-1, bool meritsRecursion=false,
     unsigned int maxReplyLen=512, bool dnssecOk=false);
@@ -80,7 +80,8 @@ public:
 
   int size(); //!< number of entries in the cache
   void cleanup(); //!< force the cache to preen itself from expired packets
-  int purge(const vector<string>&matches= vector<string>());
+  int purge();
+  int purge(const string &match);
 
   map<char,int> getCounts();
 private:
@@ -129,7 +130,7 @@ private:
 
   pthread_rwlock_t d_mut;
 
-  unsigned int d_ops;
+  AtomicCounter d_ops;
   int d_ttl;
   int d_recursivettl;
   bool d_doRecursion;

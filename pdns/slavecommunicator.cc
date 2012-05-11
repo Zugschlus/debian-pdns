@@ -39,6 +39,7 @@
 #include "inflighter.cc"
 #include "lua-pdns-recursor.hh"
 #include "namespaces.hh"
+#include "common_startup.hh"
 #include <boost/scoped_ptr.hpp>
 using boost::scoped_ptr;
 
@@ -78,24 +79,32 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
   bool first=true;    
   try {
     UeberBackend *B=dynamic_cast<UeberBackend *>(P.getBackend());  // copy of the same UeberBackend
-    NSEC3PARAMRecordContent ns3pr;
-    bool narrow;
+    NSEC3PARAMRecordContent ns3pr, hadNs3pr;
+    bool narrow, hadNarrow=false;
     DNSSECKeeper dk; // has its own ueberbackend
     bool dnssecZone = false;
     bool haveNSEC3=false;
     if(dk.isSecuredZone(domain)) {
       dnssecZone=true;
       haveNSEC3=dk.getNSEC3PARAM(domain, &ns3pr, &narrow);
-    } 
-   
+      if (haveNSEC3) {
+        hadNs3pr = ns3pr;
+        hadNarrow = narrow;
+      }
+    }
+
+    const bool hadNSEC3 = haveNSEC3;
+    const bool hadPresigned = dk.isPresigned(domain);
+    const bool hadDnssecZone = dnssecZone;
+
     if(dnssecZone) {
       if(!haveNSEC3) 
-				L<<Logger::Info<<"Adding NSEC ordering information"<<endl;
-			else if(!narrow)
+        L<<Logger::Info<<"Adding NSEC ordering information"<<endl;
+      else if(!narrow)
         L<<Logger::Info<<"Adding NSEC3 hashed ordering information for '"<<domain<<"'"<<endl;
-			else 
+      else 
         L<<Logger::Info<<"Erasing NSEC3 ordering since we are narrow, only setting 'auth' fields"<<endl;
-		}    
+    }    
 
     if(!B->getDomainInfo(domain, di) || !di.backend) { // di.backend and B are mostly identical
       L<<Logger::Error<<"Can't determine backend for domain '"<<domain<<"'"<<endl;
@@ -104,7 +113,7 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
     domain_id=di.id;
 
     Resolver::res_t recs;
-    set<string> nsset, qnames;
+    set<string> nsset, qnames, dsnames;
     
     ComboAddress raddr(remote, 53);
     
@@ -112,8 +121,15 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
   
     if(dk.getTSIGForAccess(domain, remote, &tsigkeyname)) {
       string tsigsecret64;
-      B->getTSIGKey(tsigkeyname, &tsigalgorithm, &tsigsecret64);
-      B64Decode(tsigsecret64, tsigsecret);
+      if(B->getTSIGKey(tsigkeyname, &tsigalgorithm, &tsigsecret64))
+      {
+        B64Decode(tsigsecret64, tsigsecret);
+      }
+      else
+      {
+        L<<Logger::Error<<"TSIG key '"<<tsigkeyname<<"' not found, ignoring 'AXFR-MASTER-TSIG' for domain '"<<domain<<"'"<<endl;
+        tsigkeyname="";
+      }
     }
     
     scoped_ptr<PowerDNSLua> pdl;
@@ -129,7 +145,11 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
       }
     }
     AXFRRetriever retriever(raddr, domain.c_str(), tsigkeyname, tsigalgorithm, tsigsecret);
-    
+
+    bool gotPresigned = false;
+    bool gotNSEC3 = false;
+    bool gotOptOutFlag = false;
+    unsigned int soa_serial = 0;
     while(retriever.getChunk(recs)) {
       if(first) {
         L<<Logger::Error<<"AXFR started for '"<<domain<<"', transaction started"<<endl;
@@ -141,10 +161,28 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
         if(i->qtype.getCode() == QType::OPT || i->qtype.getCode() == QType::TSIG) // ignore EDNS0 & TSIG
           continue;
           
+        if(i->qtype.getCode() == QType::SOA) {
+          if(soa_serial != 0)
+            continue; //skip the last SOA
+          SOAData sd;
+          fillSOAData(i->content,sd);
+          soa_serial = sd.serial;
+        }
+          
         // we generate NSEC, NSEC3, NSEC3PARAM (sorry Olafur) on the fly, this could only confuse things
-        if(dnssecZone && (i->qtype.getCode() == QType::NSEC || i->qtype.getCode() == QType::NSEC3 || 
-                             i->qtype.getCode() == QType::NSEC3PARAM))
+        if (i->qtype.getCode() == QType::NSEC3PARAM) {
+          ns3pr = NSEC3PARAMRecordContent(i->content);
+          narrow = false;
+          dnssecZone = haveNSEC3 = gotPresigned = gotNSEC3 = true;
           continue;
+        } else if (i->qtype.getCode() == QType::NSEC3) {
+          dnssecZone = gotPresigned = true;
+          gotOptOutFlag = NSEC3RecordContent(i->content).d_flags & 1;
+          continue;
+        } else if (i->qtype.getCode() == QType::NSEC) {
+          dnssecZone = gotPresigned = true;
+          continue;
+        }
           
         if(!endsOn(i->qname, domain)) { 
           L<<Logger::Error<<"Remote "<<remote<<" tried to sneak in out-of-zone data '"<<i->qname<<"'|"<<i->qtype.getName()<<" during AXFR of zone '"<<domain<<"', ignoring"<<endl;
@@ -155,6 +193,8 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
           nsset.insert(i->qname);
         if(i->qtype.getCode() != QType::RRSIG) // this excludes us hashing RRSIGs for NSEC(3)
           qnames.insert(i->qname);
+        if(i->qtype.getCode() == QType::DS)
+          dsnames.insert(i->qname);
           
         i->domain_id=domain_id;
 #if 0
@@ -169,6 +209,8 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
               nsset.insert(rr.qname);
             if(rr.qtype.getCode() != QType::RRSIG) // this excludes us hashing RRSIGs for NSEC(3)
               qnames.insert(rr.qname);
+            if(i->qtype.getCode() == QType::DS)
+              dsnames.insert(i->qname);
           }
         }
         else {
@@ -176,7 +218,13 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
         }
       }
     }
-    
+
+    if (hadPresigned && !gotNSEC3)
+    {
+      // we only had NSEC3 because we were a presigned zone...
+      haveNSEC3 = false;
+    }
+
     string hashed;
     BOOST_FOREACH(const string& qname, qnames)
     {
@@ -189,19 +237,68 @@ void CommunicatorClass::suck(const string &domain,const string &remote)
         }
       }while(chopOff(shorter));
       
-      if(dnssecZone && !haveNSEC3) // NSEC
-        di.backend->updateDNSSECOrderAndAuth(domain_id, domain, qname, auth);
-      else {
-        if(dnssecZone && !narrow) { 
+      if(dsnames.count(qname))
+        auth=true;
+
+      if(dnssecZone && haveNSEC3)
+      {
+        if(!narrow) { 
           hashed=toLower(toBase32Hex(hashQNameWithSalt(ns3pr.d_iterations, ns3pr.d_salt, qname)));
         }
         di.backend->updateDNSSECOrderAndAuthAbsolute(domain_id, qname, hashed, auth); // this should always be done
+        if(!auth || dsnames.count(qname))
+        {
+          di.backend->nullifyDNSSECOrderNameAndAuth(domain_id, qname, "NS");
+          di.backend->nullifyDNSSECOrderNameAndAuth(domain_id, qname, "A");
+          di.backend->nullifyDNSSECOrderNameAndAuth(domain_id, qname, "AAAA");
+        }
+      }
+      else // NSEC
+      {
+        di.backend->updateDNSSECOrderAndAuth(domain_id, domain, qname, auth);
+        if(!auth || dsnames.count(qname))
+        {
+          di.backend->nullifyDNSSECOrderNameAndAuth(domain_id, qname, "A");
+          di.backend->nullifyDNSSECOrderNameAndAuth(domain_id, qname, "AAAA");
+        }
       }
     }
-        
     di.backend->commitTransaction();
     di.backend->setFresh(domain_id);
-    L<<Logger::Error<<"AXFR done for '"<<domain<<"', zone committed"<<endl;
+
+    // now we also need to update the presigned flag and NSEC3PARAM
+    // for the zone
+    if (gotPresigned) {
+      if (!hadDnssecZone && !hadPresigned) {
+        // zone is now presigned
+        dk.setPresigned(domain);
+      }
+
+      if (hadPresigned || !hadDnssecZone)
+      {
+        // this is a presigned zone, update NSEC3PARAM
+        if (gotNSEC3) {
+          ns3pr.d_flags = gotOptOutFlag ? 1 : 0;
+         // only update if there was a change
+          if (!hadNSEC3 || (narrow != hadNarrow) ||
+              (ns3pr.d_algorithm != hadNs3pr.d_algorithm) ||
+              (ns3pr.d_flags != hadNs3pr.d_flags) ||
+              (ns3pr.d_iterations != hadNs3pr.d_iterations) ||
+              (ns3pr.d_salt != hadNs3pr.d_salt)) {
+            dk.setNSEC3PARAM(domain, ns3pr, narrow);
+          }
+        } else if (hadNSEC3) {
+          dk.unsetNSEC3PARAM(domain);
+        }
+      }
+    } else if (hadPresigned) {
+      // zone is no longer presigned
+      dk.unsetPresigned(domain);
+      dk.unsetNSEC3PARAM(domain);
+    }
+
+
+    L<<Logger::Error<<"AXFR done for '"<<domain<<"', zone committed with serial number "<<soa_serial<<endl;
     if(::arg().mustDo("slave-renotify"))
       notifyDomain(domain);
   }
@@ -312,18 +409,41 @@ void CommunicatorClass::addSlaveCheckRequest(const DomainInfo& di, const ComboAd
   d_any_sem.post(); // kick the loop!
 }
 
+void CommunicatorClass::addTrySuperMasterRequest(DNSPacket *p)
+{
+  Lock l(&d_lock);
+  DNSPacket ours = *p;
+  d_potentialsupermasters.push_back(ours);
+  d_any_sem.post(); // kick the loop!
+}
+
 void CommunicatorClass::slaveRefresh(PacketHandler *P)
 {
   UeberBackend *B=dynamic_cast<UeberBackend *>(P->getBackend());
   vector<DomainInfo> rdomains;
   vector<DomainNotificationInfo > sdomains; // the bool is for 'presigned'
+  vector<DNSPacket> trysuperdomains;
   
   {
     Lock l(&d_lock);
     rdomains.insert(rdomains.end(), d_tocheck.begin(), d_tocheck.end());
     d_tocheck.clear();
+    trysuperdomains.insert(trysuperdomains.end(), d_potentialsupermasters.begin(), d_potentialsupermasters.end());
+    d_potentialsupermasters.clear();
   }
   
+  BOOST_FOREACH(DNSPacket& dp, trysuperdomains) {
+    int res;
+    res=P->trySuperMasterSynchronous(&dp);
+    if(res>=0) {
+      DNSPacket *r=dp.replyPacket();
+      r->setRcode(res);
+      r->setOpcode(Opcode::Notify);
+      N->send(r);
+      delete r;
+    }
+  }
+
   if(rdomains.empty()) // if we have priority domains, check them first
     B->getUnfreshSlaveInfos(&rdomains);
     
@@ -436,4 +556,11 @@ void CommunicatorClass::slaveRefresh(PacketHandler *P)
     }
   }
 }  
+
+// stub for PowerDNSLua linking
+int directResolve(const std::string& qname, const QType& qtype, int qclass, vector<DNSResourceRecord>& ret)
+{
+  return -1;
+}
+
 

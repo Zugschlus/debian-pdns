@@ -69,7 +69,7 @@ am__base_list = \
 am__installdirs = "$(DESTDIR)$(libdir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
 libgsqlite3backend_la_LIBADD =
-am_libgsqlite3backend_la_OBJECTS = gsqlite3backend.lo ssqlite3.lo
+am_libgsqlite3backend_la_OBJECTS = gsqlite3backend.lo
 libgsqlite3backend_la_OBJECTS = $(am_libgsqlite3backend_la_OBJECTS)
 libgsqlite3backend_la_LINK = $(LIBTOOL) --tag=CXX $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
@@ -116,6 +116,8 @@ BOOST_SERIALIZATION_LDFLAGS = @BOOST_SERIALIZATION_LDFLAGS@
 BOOST_SERIALIZATION_LIBS = @BOOST_SERIALIZATION_LIBS@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
+CDB_CFLAGS = @CDB_CFLAGS@
+CDB_LIBS = @CDB_LIBS@
 CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
@@ -147,6 +149,7 @@ LDFLAGS = @LDFLAGS@
 LEX = @LEX@
 LEXLIB = @LEXLIB@
 LEX_OUTPUT_ROOT = @LEX_OUTPUT_ROOT@
+LIBCRYPT = @LIBCRYPT@
 LIBDL = @LIBDL@
 LIBLDAP = @LIBLDAP@
 LIBOBJS = @LIBOBJS@
@@ -252,14 +255,11 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-AM_CPPFLAGS = @THREADFLAGS@
+AM_CPPFLAGS = @THREADFLAGS@ $(BOOST_CPPFLAGS)
 lib_LTLIBRARIES = libgsqlite3backend.la
 EXTRA_DIST = OBJECTFILES OBJECTLIBS
-INCLUDES = -I@SQLITE3_CFLAGS@
-libgsqlite3backend_la_SOURCES = gsqlite3backend.cc gsqlite3backend.hh \
-                ssqlite3.hh ssqlite3.cc
-
-libgsqlite3backend_la_LDFLAGS = -module -avoid-version -lsqlite3
+libgsqlite3backend_la_SOURCES = gsqlite3backend.cc gsqlite3backend.hh
+libgsqlite3backend_la_LDFLAGS = -module -avoid-version
 all: all-am
 
 .SUFFIXES:
@@ -335,7 +335,6 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gsqlite3backend.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ssqlite3.Plo@am__quote@
 
 .cc.o:
 @am__fastdepCXX_TRUE@	$(CXXCOMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<

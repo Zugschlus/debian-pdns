@@ -65,8 +65,10 @@ int makeQuerySocket(const ComboAddress& local, bool udpOrTCP)
   port_counter++; // this makes us use a new port for each query, fixes ticket #2
   
   int sock=socket(ourLocal.sin4.sin_family, udpOrTCP ? SOCK_DGRAM : SOCK_STREAM, 0);
-  if(sock < 0)
-    unixDie("Creating local resolver socket for "+ourLocal.toString());
+  Utility::setCloseOnExec(sock);
+  if(sock < 0) {
+    unixDie("Creating local resolver socket for "+ourLocal.toString() + ((local.sin4.sin_family == AF_INET6) ? ", does your OS miss IPv6?" : ""));
+  }
 
   if(!udpOrTCP) {
     int tries=10;
@@ -78,13 +80,13 @@ int makeQuerySocket(const ComboAddress& local, bool udpOrTCP)
     }
     if(!tries) {
       Utility::closesocket(sock);
-      throw AhuException("Resolver binding to local socket: "+stringerror());
+      throw AhuException("Resolver binding to local UDP socket on "+ourLocal.toString()+": "+stringerror());
     }
   }
   else {
     ourLocal.sin4.sin_port = 0;
     if(::bind(sock, (struct sockaddr *)&ourLocal, ourLocal.getSocklen()) < 0)
-      throw AhuException("Resolver binding to local socket: "+stringerror());
+      throw AhuException("Resolver binding to local TCP socket on "+ourLocal.toString()+": "+stringerror());
   }
   return sock;
 }
@@ -184,6 +186,8 @@ static int parseResult(MOADNSParser& mdp, const std::string& origQname, uint16_t
       rr.priority = atoi(parts[0].c_str());
       if(parts.size() > 1)
         rr.content=parts[1];
+      else
+        rr.content=".";
     } else if(rr.qtype.getCode() == QType::SRV) {
       rr.priority = atoi(rr.content.c_str());
       vector<pair<string::size_type, string::size_type> > fields;
@@ -256,7 +260,7 @@ int Resolver::resolve(const string &ipport, const char *domain, int type, Resolv
 
     int id = sendResolve(to, domain, type);
     int sock =  to.sin4.sin_family == AF_INET ? d_sock4 : d_sock6;
-    int err=waitForData(sock, 0, 7500000); 
+    int err=waitForData(sock, 0, 3000000); 
   
     if(!err) {
       throw ResolverException("Timeout waiting for answer");
@@ -304,7 +308,7 @@ void Resolver::getSoaSerial(const string &ipport, const string &domain, uint32_t
 
 AXFRRetriever::AXFRRetriever(const ComboAddress& remote, const string& domain, const string& tsigkeyname, const string& tsigalgorithm, 
   const string& tsigsecret)
-: d_tsigkeyname(tsigkeyname), d_tsigsecret(tsigsecret)
+: d_tsigkeyname(tsigkeyname), d_tsigsecret(tsigsecret), d_tsigPos(0), d_nonSignedMessages(0)
 {
   ComboAddress local;
   if(remote.sin4.sin_family == AF_INET)
@@ -367,51 +371,84 @@ AXFRRetriever::~AXFRRetriever()
   close(d_sock);
 }
 
-int AXFRRetriever::getChunk(Resolver::res_t &res)
+
+
+int AXFRRetriever::getChunk(Resolver::res_t &res) // Implementation is making sure RFC2845 4.4 is followed.
 {
   if(d_soacount > 1)
     return false;
+
   // d_sock is connected and is about to spit out a packet
   int len=getLength();
-  
   if(len<0)
     throw ResolverException("EOF trying to read axfr chunk from remote TCP client");
   
   timeoutReadn(len); 
-
   MOADNSParser mdp(d_buf.get(), len);
-  
-  if(!d_soacount && !d_tsigkeyname.empty()) { // TSIG verify first message
+
+  int err = parseResult(mdp, "", 0, 0, &res);
+  if(err) 
+    throw ResolverException("AXFR chunk with a non-zero rcode "+lexical_cast<string>(err));
+
+  BOOST_FOREACH(const MOADNSParser::answers_t::value_type& answer, mdp.d_answers)
+    if (answer.first.d_type == QType::SOA)
+      d_soacount++;
+ 
+  if(!d_tsigkeyname.empty()) { // TSIG verify message
+    // If we have multiple messages, we need to concatenate them together. We also need to make sure we know the location of 
+    // the TSIG record so we can remove it in makeTSIGMessageFromTSIGPacket
+    d_signData.append(d_buf.get(), len);
+    if (mdp.getTSIGPos() == 0)
+      d_tsigPos += len;
+    else 
+      d_tsigPos += mdp.getTSIGPos();
+
     string theirMac;
+    bool checkTSIG = false;
+    
     BOOST_FOREACH(const MOADNSParser::answers_t::value_type& answer, mdp.d_answers) {
+      if (answer.first.d_type == QType::SOA)  // A SOA is either the first or the last record. We need to check TSIG if that's the case.
+        checkTSIG = true;
+      
       if(answer.first.d_type == QType::TSIG) {
         shared_ptr<TSIGRecordContent> trc = boost::dynamic_pointer_cast<TSIGRecordContent>(answer.first.d_content);
         theirMac = trc->d_mac;
         d_trc.d_time = trc->d_time;
+        checkTSIG = true;
       }
     }
-    if(theirMac.empty())
-      throw ResolverException("No TSIG on AXFR response from "+d_remote.toStringWithPort()+" , should be signed with TSIG key '"+d_tsigkeyname+"'");
-      
-    string message = makeTSIGMessageFromTSIGPacket(string(d_buf.get(), len), mdp.getTSIGPos(), d_tsigkeyname, d_trc, d_trc.d_mac, false); // insert our question MAC
-    string ourMac=calculateMD5HMAC(d_tsigsecret, message);
-    // ourMac[0]++; // sabotage
-    if(ourMac != theirMac) {
-      throw ResolverException("Signature failed to validate on AXFR response from "+d_remote.toStringWithPort()+" signed with TSIG key '"+d_tsigkeyname+"'");
-    }
-  }
-  
-  int err = parseResult(mdp, "", 0, 0, &res);
-  if(err) 
-    throw ResolverException("AXFR chunk with a non-zero rcode "+lexical_cast<string>(err));
-    
-  for(Resolver::res_t::const_iterator i= res.begin(); i!=res.end(); ++i)
-    if(i->qtype.getCode()==QType::SOA) {
-      d_soacount++;
+
+    if( ! checkTSIG && d_nonSignedMessages > 99) { // We're allowed to get 100 digest without a TSIG.
+      throw ResolverException("No TSIG message received in last 100 messages of AXFR transfer.");
     }
 
-  if(d_soacount>1 && !res.empty()) // chop off the last SOA
-    res.resize(res.size()-1);
+    if (checkTSIG) {
+      if (theirMac.empty())
+        throw ResolverException("No TSIG on AXFR response from "+d_remote.toStringWithPort()+" , should be signed with TSIG key '"+d_tsigkeyname+"'");
+
+      string message;
+      if (!d_prevMac.empty()) {
+        message = makeTSIGMessageFromTSIGPacket(d_signData, d_tsigPos, d_tsigkeyname, d_trc, d_prevMac, true, d_signData.size()-len);
+      } else {
+        message = makeTSIGMessageFromTSIGPacket(d_signData, d_tsigPos, d_tsigkeyname, d_trc, d_trc.d_mac, false);
+      }
+      string ourMac=calculateMD5HMAC(d_tsigsecret, message);
+
+      // ourMac[0]++; // sabotage == for testing :-)
+      if(ourMac != theirMac) {
+        throw ResolverException("Signature failed to validate on AXFR response from "+d_remote.toStringWithPort()+" signed with TSIG key '"+d_tsigkeyname+"'");
+      }
+
+      // Reset and store some values for the next chunks. 
+      d_prevMac = theirMac;
+      d_nonSignedMessages = 0;
+      d_signData.clear();
+      d_tsigPos = 0;
+    }
+    else
+      d_nonSignedMessages++;
+  }
+  
   return true;
 }
 

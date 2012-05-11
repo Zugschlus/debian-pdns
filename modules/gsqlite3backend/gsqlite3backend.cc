@@ -17,7 +17,7 @@
 #include "pdns/ahuexception.hh"
 #include "pdns/logger.hh"
 #include "pdns/arguments.hh"
-#include "ssqlite3.hh"
+#include "pdns/ssqlite3.hh"
 #include "gsqlite3backend.hh"
 #include <boost/algorithm/string.hpp>
 
@@ -83,10 +83,13 @@ public:
 
     declare(suffix,"list-query-auth","AXFR query", "select content,ttl,prio,type,domain_id,name, auth from records where domain_id='%d' order by name, type");
     
-    declare(suffix,"get-order-before-query","DNSSEC Ordering Query, before", "select ordername, name from records where ordername <= '%s' and auth=1 and domain_id=%d order by 1 desc limit 1");
-    declare(suffix,"get-order-after-query","DNSSEC Ordering Query, afer", "select min(ordername) from records where ordername > '%s' and auth=1 and domain_id=%d");
+    declare(suffix,"get-order-first-query","DNSSEC Ordering Query, first", "select ordername, name from records where domain_id=%d and ordername is not null order by 1 asc limit 1");
+    declare(suffix,"get-order-before-query","DNSSEC Ordering Query, before", "select ordername, name from records where ordername <= '%s' and domain_id=%d and ordername is not null order by 1 desc limit 1");
+    declare(suffix,"get-order-after-query","DNSSEC Ordering Query, after", "select min(ordername) from records where ordername > '%s' and domain_id=%d and ordername is not null");
+    declare(suffix,"get-order-last-query","DNSSEC Ordering Query, last", "select ordername, name from records where ordername != '' and domain_id=%d and ordername is not null order by 1 desc limit 1");
     declare(suffix,"set-order-and-auth-query", "DNSSEC set ordering query", "update records set ordername='%s',auth=%d where name='%s' and domain_id='%d'");
-    
+
+    declare(suffix,"nullify-ordername-and-auth-query", "DNSSEC nullify ordername query", "update records set ordername=NULL,auth=0 where name='%s' and type='%s' and domain_id='%d'");
     
     declare( suffix, "master-zone-query", "Data", "select master from domains where name='%s' and type='SLAVE'");
 
@@ -100,9 +103,9 @@ public:
     
     declare( suffix, "update-serial-query", "", "update domains set notified_serial=%d where id=%d");
     declare( suffix, "update-lastcheck-query", "", "update domains set last_check=%d where id=%d");
+    declare (suffix, "zone-lastchange-query", "", "select max(change_date) from records where domain_id=%d");
     declare( suffix, "info-all-master-query", "", "select id,name,master,last_check,notified_serial,type from domains where type='MASTER'");
     declare( suffix, "delete-zone-query", "", "delete from records where domain_id=%d");
-    declare( suffix, "check-acl-query","", "select value from acls where acl_type='%s' and acl_key='%s'");
     declare(suffix, "dnssec", "Assume DNSSEC Schema is in place","no");
 
     declare(suffix,"add-domain-key-query","", "insert into cryptokeys (domain_id, flags, active, content) select id, %d, %d, '%s' from domains where name='%s'");
@@ -114,6 +117,8 @@ public:
     declare(suffix,"deactivate-domain-key-query","", "update cryptokeys set active=0 where domain_id=(select id from domains where name='%s') and  cryptokeys.id=%d");
     declare(suffix,"remove-domain-key-query","", "delete from cryptokeys where domain_id=(select id from domains where name='%s') and cryptokeys.id=%d");
     declare(suffix,"get-tsig-key-query","", "select algorithm, secret from tsigkeys where name='%s'");
+
+    declare(suffix,"get-all-domains-query", "Retrieve all domains", "select records.domain_id, records.name, records.content, domains.type, domains.master, domains.notified_serial, domains.last_check from records, domains where records.domain_id=domains.id and records.type='SOA'");
   }
   
   //! Constructs a new gSQLite3Backend object.

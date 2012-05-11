@@ -1,6 +1,6 @@
 // -*- sateh-c -*- 
 // File    : pdnsbackend.cc
-// Version : $Id: pipebackend.cc 2239 2011-07-19 08:28:13Z ahu $ 
+// Version : $Id: pipebackend.cc 2284 2011-10-24 07:05:42Z peter $ 
 //
 
 #include <string>
@@ -113,7 +113,7 @@ void PipeBackend::lookup(const QType &qtype,const string &qname, DNSPacket *pkt_
          ostringstream query;
          string localIP="0.0.0.0";
          string remoteIP="0.0.0.0";
-         Netmask realRemote;
+         Netmask realRemote("0.0.0.0/0");
          if (pkt_p) {
             localIP=pkt_p->getLocal();
             realRemote = pkt_p->getRealRemote();
@@ -238,7 +238,7 @@ bool PipeBackend::get(DNSResourceRecord &r)
          if(r.qtype.getCode() != QType::MX && r.qtype.getCode() != QType::SRV) {
            r.content.clear();
            for(unsigned int n= 6 + extraFields; n < parts.size(); ++n) {
-             if(n!=6)
+             if(n!=6+extraFields)
                r.content.append(1,' ');
              r.content.append(parts[n]);
            }

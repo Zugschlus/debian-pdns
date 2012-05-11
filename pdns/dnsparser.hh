@@ -64,8 +64,10 @@ class PacketReader
 {
 public:
   PacketReader(const vector<uint8_t>& content) 
-    : d_pos(0), d_content(content)
-  {}
+    : d_pos(0), d_startrecordpos(0), d_content(content)
+  {
+    d_recordlen = content.size();
+  }
 
   uint32_t get32BitInt();
   uint16_t get16BitInt();
@@ -135,7 +137,7 @@ public:
 
 private:
   uint16_t d_startrecordpos; // needed for getBlob later on
-  uint16_t d_recordlen;      // dito
+  uint16_t d_recordlen;      // ditto
   const vector<uint8_t>& d_content;
 };
 
@@ -200,7 +202,7 @@ public:
 
   static uint16_t TypeToNumber(const string& name)
   {
-    n2typemap_t::const_iterator iter = getN2Typemap().find(name);
+    n2typemap_t::const_iterator iter = getN2Typemap().find(toUpper(name));
     if(iter != getN2Typemap().end())
       return iter->second.second;
     

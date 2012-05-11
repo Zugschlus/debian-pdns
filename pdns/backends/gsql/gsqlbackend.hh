@@ -4,8 +4,9 @@
 
 #include "../../namespaces.hh"
 
-/** The GSQLBackend is a DNSBackend that can answer DNS related questions. It looks up data
-    in PostgreSQL */
+/* 
+GSQLBackend is a generic backend used by other sql backends
+*/
 class GSQLBackend : public DNSBackend
 {
 public:
@@ -25,6 +26,7 @@ public:
   void lookup(const QType &, const string &qdomain, DNSPacket *p=0, int zoneId=-1);
   bool list(const string &target, int domain_id);
   bool get(DNSResourceRecord &r);
+  void getAllDomains(vector<DomainInfo> *domains);
   bool isMaster(const string &domain, const string &ip);
   void alsoNotifies(const string &domain, set<string> *ips);
   bool startTransaction(const string &domain, int domain_id=-1);
@@ -34,7 +36,6 @@ public:
   bool createSlaveDomain(const string &ip, const string &domain, const string &account);
   bool superMasterBackend(const string &ip, const string &domain, const vector<DNSResourceRecord>&nsset, string *account, DNSBackend **db);
   void setFresh(uint32_t domain_id);
-  bool checkACL(const string &acl_type, const string &key, const string &value);
   void getUnfreshSlaveInfos(vector<DomainInfo> *domains);
   void getUpdatedMasters(vector<DomainInfo> *updatedDomains);
   bool getDomainInfo(const string &domain, DomainInfo &di);
@@ -42,6 +43,9 @@ public:
   virtual bool getBeforeAndAfterNamesAbsolute(uint32_t id, const std::string& qname, std::string& unhashed, std::string& before, std::string& after);
   bool updateDNSSECOrderAndAuth(uint32_t domain_id, const std::string& zonename, const std::string& qname, bool auth);
   virtual bool updateDNSSECOrderAndAuthAbsolute(uint32_t domain_id, const std::string& qname, const std::string& ordername, bool auth);
+  virtual bool nullifyDNSSECOrderNameAndAuth(uint32_t domain_id, const std::string& qname, const std::string& type);
+
+  virtual bool calculateSOASerial(const string& domain, const SOAData& sd, time_t& serial);
 
   int addDomainKey(const string& name, const KeyData& key);
   bool getDomainKeys(const string& name, unsigned int kind, std::vector<KeyData>& keys);
@@ -81,11 +85,14 @@ private:
   string d_UpdateLastCheckofZoneQuery;
   string d_InfoOfAllMasterDomainsQuery;
   string d_DeleteZoneQuery;		
-  string d_CheckACLQuery;   
+  string d_ZoneLastChangeQuery;
   
+  string d_firstOrderQuery;
   string d_beforeOrderQuery;
   string d_afterOrderQuery;
+  string d_lastOrderQuery;
   string d_setOrderAuthQuery;
+  string d_nullifyOrderNameAndAuthQuery;
 
   string d_AddDomainKeyQuery;
   string d_ListDomainKeysQuery;
@@ -98,6 +105,9 @@ private:
   string d_DeactivateDomainKeyQuery;
   
   string d_getTSIGKeyQuery;
+
+  string d_getAllDomainsQuery;
+
 protected:  
   bool d_dnssecQueries;
 };

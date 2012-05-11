@@ -122,6 +122,7 @@ public:
   DTime d_dt; //!< the time this packet was created. replyPacket() copies this in for you, so d_dt becomes the time spent processing the question+answer
   void wrapup();  // writes out queued rrs, and generates the binary packet. also shuffles. also rectifies dnsheader 'd', and copies it to the stringbuffer
   void spoofQuestion(const string &qd); //!< paste in the exact right case of the question. Useful for PacketCache
+  unsigned int getMinTTL(); //!< returns lowest TTL of any record in the packet
 
   vector<DNSResourceRecord*> getAPRecords(); //!< get a vector with DNSResourceRecords that need additional processing
   vector<DNSResourceRecord*> getAnswerRecords(); //!< get a vector with DNSResourceRecords that are answers
@@ -134,7 +135,7 @@ public:
   void setMaxReplyLen(int bytes); //!< set the max reply len (used when retrieving from the packet cache, and this changed)
 
   bool couldBeCached(); //!< returns 0 if this query should bypass the packet cache
-
+  bool hasEDNSSubnet();
   //////// DATA !
 
   ComboAddress d_remote;

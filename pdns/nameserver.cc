@@ -65,7 +65,7 @@ extern StatBag S;
     \section Cache Caching
  
     On its own, this setup is not suitable for high performance operations. A single DNS query can turn into many DNSBackend questions,
-    each taking many miliseconds to complete. This is why the qthread() first checks the PacketCache to see if an answer is known to a packet
+    each taking many milliseconds to complete. This is why the qthread() first checks the PacketCache to see if an answer is known to a packet
     asking this question. If so, the entire Distributor is shunted, and the answer is sent back *directly*, within a few microseconds.
 
     \section misc Miscellaneous
@@ -90,6 +90,8 @@ void UDPNameserver::bindIPv4()
     struct sockaddr_in locala;
 
     s=socket(AF_INET,SOCK_DGRAM,0);
+    Utility::setCloseOnExec(s);
+
     if(s<0)
       throw AhuException("Unable to acquire a UDP socket: "+string(strerror(errno)));
   
@@ -141,6 +143,7 @@ void UDPNameserver::bindIPv6()
     string localname(*i);
 
     s=socket(AF_INET6,SOCK_DGRAM,0);
+    Utility::setCloseOnExec(s);
     if(s<0)
       throw AhuException("Unable to acquire a UDPv6 socket: "+string(strerror(errno)));
   
@@ -179,7 +182,7 @@ UDPNameserver::UDPNameserver()
 void UDPNameserver::send(DNSPacket *p)
 {
   const string& buffer=p->getString();
-  DLOG(L<<Logger::Notice<<"Sending a packet to "<< p->remote.toString() <<" ("<< buffer.length()<<" octets)"<<endl);
+  DLOG(L<<Logger::Notice<<"Sending a packet to "<< p->getRemote() <<" ("<< buffer.length()<<" octets)"<<endl);
   if(buffer.length() > p->getMaxReplyLen()) {
     cerr<<"Weird, trying to send a message that needs truncation, "<< buffer.length()<<" > "<<p->getMaxReplyLen()<<endl;
   }

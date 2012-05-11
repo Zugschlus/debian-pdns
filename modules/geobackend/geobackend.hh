@@ -2,7 +2,7 @@
  *        	Copyright (C) 2004 Mark Bergsma <mark@nedworks.org>
  *        	This software is licensed under the terms of the GPL, version 2.
  * 
- *        	$Id: geobackend.hh 1985 2011-02-07 09:39:22Z ahu $
+ *        	$Id: geobackend.hh 2324 2011-12-23 17:40:53Z peter $
  */
 
 
@@ -89,7 +89,7 @@ public:
         void declareArguments(const string &suffix = "") {
         	declare(suffix, "zone", "zonename to be served", "");
         	declare(suffix, "soa-values", "values of the SOA master nameserver and hostmaster fields, comma seperated", "");
-        	declare(suffix, "ns-records", "targets of the NS records, comma seperated.", "");
+        	declare(suffix, "ns-records", "targets of the NS records, comma separated.", "");
         	declare(suffix, "ttl", "TTL value for geo records", "3600");
         	declare(suffix, "ns-ttl", "TTL value for NS records", "86400");
         	declare(suffix, "ip-map-zonefile", "path to the rbldnsd format zonefile", "zz.countries.nerd.dk.rbldnsd");

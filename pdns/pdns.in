@@ -2,6 +2,20 @@
 # chkconfig: - 80 75
 # description: PDNS is a versatile high performance authoritative nameserver
 
+### BEGIN INIT INFO
+# Provides:          pdns
+# Required-Start:    $remote_fs $network $syslog
+# Required-Stop:     $remote_fs $network $syslog
+# Should-Start:      $all
+# Should-Stop:       $all
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start/stop PowerDNS authoritative server
+# Description:       Start/stop PowerDNS authoritative server
+### END INIT INFO
+
+set -e
+
 prefix=@prefix@
 exec_prefix=@exec_prefix@
 BINARYPATH=@bindir@
@@ -13,8 +27,8 @@ SOCKETPATH=@socketdir@
 [ -r /etc/default/pdns ] && . /etc/default/pdns
 
 cd $SOCKETPATH
-suffix=`basename $0 | awk -F- '{print $2}'`
-if [ $suffix ] 
+suffix=$(basename $0 | cut -d- -f2- -s)
+if [ -n "$suffix" ] 
 then
 	EXTRAOPTS=--config-name=$suffix
 	PROGNAME=pdns-$suffix
@@ -29,9 +43,8 @@ doPC()
 	ret=$($BINARYPATH/pdns_control $EXTRAOPTS $1 $2 2> /dev/null)
 }
 
-
-doPC ping
-NOTRUNNING=$?
+NOTRUNNING=0
+doPC ping || NOTRUNNING=$?
 
 case "$1" in
 	status)
@@ -68,8 +81,7 @@ case "$1" in
 		then 
 			echo "already running"
 		else
-			$pdns_server --daemon --guardian=yes
-			if test "$?" = "0"
+			if $pdns_server --daemon --guardian=yes
 			then
 				echo "started"	
 			fi
@@ -78,10 +90,16 @@ case "$1" in
 
 	force-reload | restart)
 		echo -n "Restarting PowerDNS authoritative nameserver: "
-		echo -n stopping and waiting.. 
-		doPC quit
-		sleep 3
-		echo done
+		if test "$NOTRUNNING" = "1" 
+		then 
+			echo "not running, starting"
+		else
+			
+			echo -n stopping and waiting.. 
+			doPC quit
+			sleep 3
+			echo done
+		fi
 		$0 start
 	;;
 

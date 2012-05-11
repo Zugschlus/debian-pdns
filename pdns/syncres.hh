@@ -207,6 +207,8 @@ public:
   static unsigned int s_tcpoutqueries;
   static unsigned int s_nodelegated;
   static unsigned int s_unreachables;
+  static bool s_doAAAAAdditionalProcessing;
+  static bool s_doAdditionalProcessing;
   static bool s_doIPv6;
   unsigned int d_outqueries;
   unsigned int d_tcpoutqueries;
@@ -231,7 +233,7 @@ public:
     >
   > negcache_t;
   
-  //! This represents a number of decaying Ewmas, used to store performance per namerserver-name. 
+  //! This represents a number of decaying Ewmas, used to store performance per nameserver-name. 
   /** Modelled to work mostly like the underlying DecayingEwma. After you've called get,
       d_best is filled out with the best address for this collection */
   struct DecayingEwmaCollection
@@ -533,6 +535,7 @@ typedef boost::function<void*(void)> pipefunc_t;
 void broadcastFunction(const pipefunc_t& func, bool skipSelf = false);
 void distributeAsyncFunction(const pipefunc_t& func);
 
+int directResolve(const std::string& qname, const QType& qtype, int qclass, vector<DNSResourceRecord>& ret);
 
 template<class T> T broadcastAccFunction(const boost::function<T*()>& func, bool skipSelf=false);
 

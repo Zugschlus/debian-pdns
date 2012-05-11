@@ -22,7 +22,7 @@ typedef Distributor<DNSPacket,DNSPacket,PacketHandler> DNSDistributor;
 
 
 ArgvMap theArg;
-StatBag S;  //!< Statistics are gathered accross PDNS via the StatBag class S
+StatBag S;  //!< Statistics are gathered across PDNS via the StatBag class S
 PacketCache PC; //!< This is the main PacketCache, shared accross all threads
 DNSProxy *DP;
 DynListener *dl;
@@ -65,7 +65,6 @@ void declareArguments()
   ::arg().set("control-console","Debugging switch - don't use")="no"; // but I know you will!
   ::arg().set("fancy-records","Process URL and MBOXFW records")="no";
   ::arg().set("wildcard-url","Process URL and MBOXFW records")="no";
-  ::arg().set("wildcards","Honor wildcards in the database")="";
   ::arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
   ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
   ::arg().set("distributor-threads","Default number of Distributor (backend) threads to start")="3";
@@ -96,7 +95,6 @@ void declareArguments()
   ::arg().setSwitch("slave","Act as a slave")="no";
   ::arg().setSwitch("master","Act as a master")="no";
   ::arg().setSwitch("guardian","Run within a guardian process")="no";
-  ::arg().setSwitch("skip-cname","Do not perform CNAME indirection for each query")="no";
   ::arg().setSwitch("strict-rfc-axfrs","Perform strictly rfc compliant axfrs (very slow)")="no";
   ::arg().setSwitch("send-root-referral","Send out old-fashioned root-referral instead of ServFail in case of no authority")="no";
 
@@ -113,10 +111,10 @@ void declareArguments()
   ::arg().setSwitch("query-logging","Hint backends that queries should be logged")="no";
   
   ::arg().set("cache-ttl","Seconds to store packets in the PacketCache")="20";
-  ::arg().set("recursive-cache-ttl","Seconds to store packets in the PacketCache")="10";
-  ::arg().set("negquery-cache-ttl","Seconds to store packets in the PacketCache")="60";
-  ::arg().set("query-cache-ttl","Seconds to store packets in the PacketCache")="20";
-  ::arg().set("soa-minimum-ttl","Default SOA mininum ttl")="3600";
+  ::arg().set("recursive-cache-ttl","Seconds to store packets for recursive queries in the PacketCache")="10";
+  ::arg().set("negquery-cache-ttl","Seconds to store negative query results in the QueryCache")="60";
+  ::arg().set("query-cache-ttl","Seconds to store query results in the QueryCache")="20";
+  ::arg().set("soa-minimum-ttl","Default SOA minimum ttl")="3600";
   ::arg().set("server-id", "Returned when queried for 'server.id' TXT or NSID, defaults to hostname")="";
   ::arg().set("soa-refresh-default","Default SOA refresh")="10800";
   ::arg().set("soa-retry-default","Default SOA retry")="3600";
@@ -128,7 +126,6 @@ void declareArguments()
   ::arg().set("default-ttl","Seconds a result is valid if not set otherwise")="3600";
   ::arg().set("max-tcp-connections","Maximum number of TCP connections")="10";
   ::arg().setSwitch("no-shuffle","Set this to prevent random shuffling of answers - for regression testing")="off";
-  ::arg().setSwitch("per-zone-axfr-acls","When set, backends that implement it perform per-zone AXFL ACL checks")="off";
 
   ::arg().setSwitch( "use-logfile", "Use a log file (Windows only)" )= "no";
   ::arg().set( "logfile", "Logfile to use (Windows only)" )= "pdns.log";
@@ -217,7 +214,7 @@ static DNSDistributor* g_distributor;
 static pthread_mutex_t d_distributorlock =PTHREAD_MUTEX_INITIALIZER;
 static bool g_mustlockdistributor;
 
-//! The qthread receives questions over the internet via the Nameserver class, and hands them to the Distributor for futher processing
+//! The qthread receives questions over the internet via the Nameserver class, and hands them to the Distributor for further processing
 void *qthread(void *number)
 {
   DNSPacket *P;
@@ -255,12 +252,20 @@ void *qthread(void *number)
     else
       numreceived6++;
 
+     if(P->d.qr)
+       continue;
+
     S.ringAccount("queries", P->qdomain+"/"+P->qtype.getName());
     S.ringAccount("remotes",P->getRemote());
-    if(logDNSQueries) 
-      L << Logger::Notice<<"Remote "<< P->d_remote.toString() <<" wants '" << P->qdomain<<"|"<<P->qtype.getName() << 
-        "', do = " <<P->d_dnssecOk <<", bufsize = "<< P->getMaxReplyLen()<<": ";
-
+    if(logDNSQueries) {
+      string remote;
+      if(P->hasEDNSSubnet()) 
+        remote = P->getRemote() + "<-" + P->getRealRemote().toString();
+      else
+        remote = P->getRemote();
+      L << Logger::Notice<<"Remote "<< remote <<" wants '" << P->qdomain<<"|"<<P->qtype.getName() << 
+            "', do = " <<P->d_dnssecOk <<", bufsize = "<< P->getMaxReplyLen()<<": ";
+    }
     if((P->d.opcode != Opcode::Notify) && P->couldBeCached() && PC.get(P, &cached)) { // short circuit - does the PacketCache recognize this question?
       if(logDNSQueries)
         L<<"packetcache HIT"<<endl;
@@ -358,7 +363,8 @@ void mainthread()
   if(::arg().asNum("receiver-threads") > 1) {
     g_mustlockdistributor=true;
   }
-  for(int n=0; n < ::arg().asNum("receiver-threads"); ++n)
+  unsigned int max_rthreads= ::arg().asNum("receiver-threads");
+  for(int n=0; n < max_rthreads; ++n)
     pthread_create(&qtid,0,qthread, reinterpret_cast<void *>(n)); // receives packets
 
   void *p;

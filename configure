@@ -747,6 +747,10 @@ LTLIBOBJS
 LIBOBJS
 UNIXODBC_incdir
 UNIXODBC_lib
+SQLITE3_FALSE
+SQLITE3_TRUE
+CDB_LIBS
+CDB_CFLAGS
 SQLITE3_LIBS
 SQLITE3_CFLAGS
 SQLITE_incdir
@@ -770,10 +774,11 @@ CRYPTOPP_FALSE
 CRYPTOPP_TRUE
 BOTAN18_FALSE
 BOTAN18_TRUE
-BOTAN19_FALSE
-BOTAN19_TRUE
+BOTAN110_FALSE
+BOTAN110_TRUE
 DYNLINKFLAGS
 THREADFLAGS
+LIBCRYPT
 LIBDL
 LUA_LIBS
 LUA_CFLAGS
@@ -915,8 +920,9 @@ enable_libtool_lock
 with_boost
 enable_static_boost
 with_lua
+with_sqlite3
 enable_verbose_logging
-enable_botan1_9
+enable_botan1_10
 enable_botan1_8
 enable_cryptopp
 enable_static_binaries
@@ -959,7 +965,9 @@ PKG_CONFIG
 LUA_CFLAGS
 LUA_LIBS
 SQLITE3_CFLAGS
-SQLITE3_LIBS'
+SQLITE3_LIBS
+CDB_CFLAGS
+CDB_LIBS'
 
 
 # Initialize some variables set by options.
@@ -1587,7 +1595,7 @@ Optional Features:
   --enable-static-boost   Prefer the static boost libraries over the shared
                           ones [no]
   --enable-verbose-logging	Do verbose logging
-  --enable-botan1.9	Use Botan 1.9
+  --enable-botan1.10	Use Botan 1.10
   --enable-botan1.8	Use Botan 1.8
   --enable-cryptopp	Use Crypto++
   --enable-static-binaries	Build static binaries
@@ -1603,6 +1611,7 @@ Optional Packages:
   --with-gnu-ld           assume the C compiler uses GNU ld [default=no]
   --with-boost=DIR        prefix of Boost 1.34 [guess]
   --with-lua              lua
+  --with-sqlite3          include sqlite3 driver
   --with-modules Which backends to compile with
   --with-dynmodules Which backends to build for dynamic loading
   --with-socketdir Where the controlsocket lives
@@ -1647,6 +1656,8 @@ Some influential environment variables:
               C compiler flags for SQLITE3, overriding pkg-config
   SQLITE3_LIBS
               linker flags for SQLITE3, overriding pkg-config
+  CDB_CFLAGS  C compiler flags for CDB, overriding pkg-config
+  CDB_LIBS    linker flags for CDB, overriding pkg-config
 
 Use these variables to override the choices made by `configure' or to help
 it to find libraries and programs with nonstandard names/locations.
@@ -3171,7 +3182,7 @@ fi
 
 # Define the identity of the package.
  PACKAGE=pdns
- VERSION=3.0
+ VERSION=3.1
 
 
 cat >>confdefs.h <<_ACEOF
@@ -4888,8 +4899,7 @@ $as_echo "#define AC_APPLE_UNIVERSAL_BUILD 1" >>confdefs.h
  esac
 
 
-CXXFLAGS="$CXXFLAGS -Wall -O2"
-
+: ${CXXFLAGS="-Wall -O2"}
 
 ac_ext=c
 ac_cpp='$CPP $CPPFLAGS'
@@ -6656,13 +6666,13 @@ if test "${lt_cv_nm_interface+set}" = set; then :
 else
   lt_cv_nm_interface="BSD nm"
   echo "int some_variable = 0;" > conftest.$ac_ext
-  (eval echo "\"\$as_me:6659: $ac_compile\"" >&5)
+  (eval echo "\"\$as_me:6669: $ac_compile\"" >&5)
   (eval "$ac_compile" 2>conftest.err)
   cat conftest.err >&5
-  (eval echo "\"\$as_me:6662: $NM \\\"conftest.$ac_objext\\\"\"" >&5)
+  (eval echo "\"\$as_me:6672: $NM \\\"conftest.$ac_objext\\\"\"" >&5)
   (eval "$NM \"conftest.$ac_objext\"" 2>conftest.err > conftest.out)
   cat conftest.err >&5
-  (eval echo "\"\$as_me:6665: output\"" >&5)
+  (eval echo "\"\$as_me:6675: output\"" >&5)
   cat conftest.out >&5
   if $GREP 'External.*some_variable' conftest.out > /dev/null; then
     lt_cv_nm_interface="MS dumpbin"
@@ -7867,7 +7877,7 @@ ia64-*-hpux*)
   ;;
 *-*-irix6*)
   # Find out which ABI we are using.
-  echo '#line 7870 "configure"' > conftest.$ac_ext
+  echo '#line 7880 "configure"' > conftest.$ac_ext
   if { { eval echo "\"\$as_me\":${as_lineno-$LINENO}: \"$ac_compile\""; } >&5
   (eval $ac_compile) 2>&5
   ac_status=$?
@@ -9652,11 +9662,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:9655: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:9665: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:9659: \$? = $ac_status" >&5
+   echo "$as_me:9669: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -9991,11 +10001,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:9994: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10004: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:9998: \$? = $ac_status" >&5
+   echo "$as_me:10008: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -10096,11 +10106,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10099: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10109: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:10103: \$? = $ac_status" >&5
+   echo "$as_me:10113: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -10151,11 +10161,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:10154: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:10164: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:10158: \$? = $ac_status" >&5
+   echo "$as_me:10168: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -12535,7 +12545,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 12538 "configure"
+#line 12548 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -12631,7 +12641,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<_LT_EOF
-#line 12634 "configure"
+#line 12644 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -14587,11 +14597,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:14590: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:14600: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>conftest.err)
    ac_status=$?
    cat conftest.err >&5
-   echo "$as_me:14594: \$? = $ac_status" >&5
+   echo "$as_me:14604: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s "$ac_outfile"; then
      # The compiler can only warn and ignore the option if not recognized
      # So say no if there are warnings other than the usual output.
@@ -14686,11 +14696,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:14689: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:14699: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:14693: \$? = $ac_status" >&5
+   echo "$as_me:14703: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -14738,11 +14748,11 @@ else
    -e 's:.*FLAGS}\{0,1\} :&$lt_compiler_flag :; t' \
    -e 's: [^ ]*conftest\.: $lt_compiler_flag&:; t' \
    -e 's:$: $lt_compiler_flag:'`
-   (eval echo "\"\$as_me:14741: $lt_compile\"" >&5)
+   (eval echo "\"\$as_me:14751: $lt_compile\"" >&5)
    (eval "$lt_compile" 2>out/conftest.err)
    ac_status=$?
    cat out/conftest.err >&5
-   echo "$as_me:14745: \$? = $ac_status" >&5
+   echo "$as_me:14755: \$? = $ac_status" >&5
    if (exit $ac_status) && test -s out/conftest2.$ac_objext
    then
      # The compiler can only warn and ignore the option if not recognized
@@ -16494,7 +16504,7 @@ $as_echo_n "checking if with lua... " >&6; }
 
 # Check whether --with-lua was given.
 if test "${with_lua+set}" = set; then :
-  withval=$with_lua; WITH_LUA=$withval]
+  withval=$with_lua; WITH_LUA=$withval
 else
   WITH_LUA=yes
 fi
@@ -17257,6 +17267,26 @@ fi
 
 fi
 
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether user requires sqlite3" >&5
+$as_echo_n "checking whether user requires sqlite3... " >&6; }
+
+# Check whether --with-sqlite3 was given.
+if test "${with_sqlite3+set}" = set; then :
+  withval=$with_sqlite3; WITH_SQLITE3=$withval
+else
+  WITH_SQLITE3=no
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $WITH_SQLITE3" >&5
+$as_echo "$WITH_SQLITE3" >&6; }
+SQLITE3PC=sqlite3
+if test "$WITH_SQLITE3" != "no"; then
+  needsqlite3=yes
+  if test "$WITH_SQLITE3" != "yes"; then
+    SQLITE3PC=$WITH_SQLITE3
+  fi
+fi
+
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ANSI C header files" >&5
 $as_echo_n "checking for ANSI C header files... " >&6; }
 if test "${ac_cv_header_stdc+set}" = set; then :
@@ -17600,6 +17630,59 @@ $as_echo "#define NEED_RTLD_NOW /**/" >>confdefs.h
 fi
 LIBS=$ac_save_LIBS
 
+# Check for libcrypt
+
+my_save_LIBS="$LIBS"
+LIBS=""
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for crypt in -lcrypt" >&5
+$as_echo_n "checking for crypt in -lcrypt... " >&6; }
+if test "${ac_cv_lib_crypt_crypt+set}" = set; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lcrypt  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char crypt ();
+int
+main ()
+{
+return crypt ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_cxx_try_link "$LINENO"; then :
+  ac_cv_lib_crypt_crypt=yes
+else
+  ac_cv_lib_crypt_crypt=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_crypt_crypt" >&5
+$as_echo "$ac_cv_lib_crypt_crypt" >&6; }
+if test "x$ac_cv_lib_crypt_crypt" = x""yes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBCRYPT 1
+_ACEOF
+
+  LIBS="-lcrypt $LIBS"
+
+fi
+
+LIBCRYPT=$LIBS
+LIBS="$my_save_LIBS"
+
+
 DYNLINKFLAGS=""
 THREADFLAGS=""
 
@@ -17644,14 +17727,6 @@ $as_echo "#define HAVE_IPV6 1" >>confdefs.h
 	THREADFLAGS="-pthread"
 	CXXFLAGS="-D_GNU_SOURCE $CXXFLAGS"
 	;;
-openbsd*)
-
-$as_echo "#define HAVE_IPV6 1" >>confdefs.h
-
-	DYNLINKFLAGS="-rdynamic"
-	LDFLAGS="-lc_r $LDFLAGS"
-	CXXFLAGS="-pthread $CXXFLAGS"
-	;;
 *)
 
 $as_echo "#define HAVE_IPV6 1" >>confdefs.h
@@ -17683,23 +17758,23 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_verbose_logging" >&5
 $as_echo "$enable_verbose_logging" >&6; }
 
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether we will be linking in Botan 1.9" >&5
-$as_echo_n "checking whether we will be linking in Botan 1.9... " >&6; }
-# Check whether --enable-botan1.9 was given.
-if test "${enable_botan1_9+set}" = set; then :
-  enableval=$enable_botan1_9; enable_botan19=yes
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether we will be linking in Botan 1.10" >&5
+$as_echo_n "checking whether we will be linking in Botan 1.10... " >&6; }
+# Check whether --enable-botan1.10 was given.
+if test "${enable_botan1_10+set}" = set; then :
+  enableval=$enable_botan1_10; enable_botan110=yes
 else
-  enable_botan19=no
+  enable_botan110=no
 fi
 
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_botan19" >&5
-$as_echo "$enable_botan19" >&6; }
- if test x"$enable_botan19" = "xyes"; then
-  BOTAN19_TRUE=
-  BOTAN19_FALSE='#'
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_botan110" >&5
+$as_echo "$enable_botan110" >&6; }
+ if test x"$enable_botan110" = "xyes"; then
+  BOTAN110_TRUE=
+  BOTAN110_FALSE='#'
 else
-  BOTAN19_TRUE='#'
-  BOTAN19_FALSE=
+  BOTAN110_TRUE='#'
+  BOTAN110_FALSE=
 fi
 
 
@@ -17866,9 +17941,6 @@ fi
 for a in $modules $dynmodules
 do
 	case "$a" in
-		mysql )
-			needmysql=yes
-		;;
 		gmysql )
 			needmysql=yes
 		;;
@@ -18162,6 +18234,9 @@ $as_echo "#define HAVE_LIBOPENDBX 1" >>confdefs.h
 fi
 
 		;;
+		tinydns)
+			needcdb=yes
+		;;
 	esac
 done
 
@@ -18314,10 +18389,7 @@ $as_echo_n "checking for PgSQL include directory... " >&6; }
 
 	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $PGSQL_incdir" >&5
 $as_echo "$PGSQL_incdir" >&6; }
-
-#	LIBS="$LIBS -lpq++ -lpq -lssl -lcrypt -lcrypto"
 fi
-
 
 if test "$needsqlite"
 then
@@ -18406,12 +18478,12 @@ if test -n "$PKG_CONFIG"; then
         pkg_cv_SQLITE3_CFLAGS="$SQLITE3_CFLAGS"
     else
         if test -n "$PKG_CONFIG" && \
-    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"sqlite3\""; } >&5
-  ($PKG_CONFIG --exists --print-errors "sqlite3") 2>&5
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"\$SQLITE3PC\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "$SQLITE3PC") 2>&5
   ac_status=$?
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
-  pkg_cv_SQLITE3_CFLAGS=`$PKG_CONFIG --cflags "sqlite3" 2>/dev/null`
+  pkg_cv_SQLITE3_CFLAGS=`$PKG_CONFIG --cflags "$SQLITE3PC" 2>/dev/null`
 else
   pkg_failed=yes
 fi
@@ -18424,12 +18496,12 @@ if test -n "$PKG_CONFIG"; then
         pkg_cv_SQLITE3_LIBS="$SQLITE3_LIBS"
     else
         if test -n "$PKG_CONFIG" && \
-    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"sqlite3\""; } >&5
-  ($PKG_CONFIG --exists --print-errors "sqlite3") 2>&5
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"\$SQLITE3PC\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "$SQLITE3PC") 2>&5
   ac_status=$?
   $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
   test $ac_status = 0; }; then
-  pkg_cv_SQLITE3_LIBS=`$PKG_CONFIG --libs "sqlite3" 2>/dev/null`
+  pkg_cv_SQLITE3_LIBS=`$PKG_CONFIG --libs "$SQLITE3PC" 2>/dev/null`
 else
   pkg_failed=yes
 fi
@@ -18448,9 +18520,9 @@ else
         _pkg_short_errors_supported=no
 fi
         if test $_pkg_short_errors_supported = yes; then
-	        SQLITE3_PKG_ERRORS=`$PKG_CONFIG --short-errors --errors-to-stdout --print-errors "sqlite3"`
+	        SQLITE3_PKG_ERRORS=`$PKG_CONFIG --short-errors --errors-to-stdout --print-errors "$SQLITE3PC"`
         else
-	        SQLITE3_PKG_ERRORS=`$PKG_CONFIG --errors-to-stdout --print-errors "sqlite3"`
+	        SQLITE3_PKG_ERRORS=`$PKG_CONFIG --errors-to-stdout --print-errors "$SQLITE3PC"`
         fi
 	# Put the nasty error message in config.log where it belongs
 	echo "$SQLITE3_PKG_ERRORS" >&5
@@ -18465,11 +18537,101 @@ else
 	SQLITE3_LIBS=$pkg_cv_SQLITE3_LIBS
         { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
 $as_echo "yes" >&6; }
-	HAVE_SQLITE=yes
+	HAVE_SQLITE3=yes
+fi
+
+
+
+$as_echo "#define HAVE_SQLITE3 1" >>confdefs.h
+
+fi
+
+if test "$needcdb"
+then
+
+pkg_failed=no
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for CDB" >&5
+$as_echo_n "checking for CDB... " >&6; }
+
+if test -n "$PKG_CONFIG"; then
+    if test -n "$CDB_CFLAGS"; then
+        pkg_cv_CDB_CFLAGS="$CDB_CFLAGS"
+    else
+        if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"libcdb\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "libcdb") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_CDB_CFLAGS=`$PKG_CONFIG --cflags "libcdb" 2>/dev/null`
+else
+  pkg_failed=yes
+fi
+    fi
+else
+	pkg_failed=untried
+fi
+if test -n "$PKG_CONFIG"; then
+    if test -n "$CDB_LIBS"; then
+        pkg_cv_CDB_LIBS="$CDB_LIBS"
+    else
+        if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"libcdb\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "libcdb") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_CDB_LIBS=`$PKG_CONFIG --libs "libcdb" 2>/dev/null`
+else
+  pkg_failed=yes
+fi
+    fi
+else
+	pkg_failed=untried
+fi
+
+
+
+if test $pkg_failed = yes; then
+
+if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
+        _pkg_short_errors_supported=yes
+else
+        _pkg_short_errors_supported=no
+fi
+        if test $_pkg_short_errors_supported = yes; then
+	        CDB_PKG_ERRORS=`$PKG_CONFIG --short-errors --errors-to-stdout --print-errors "libcdb"`
+        else
+	        CDB_PKG_ERRORS=`$PKG_CONFIG --errors-to-stdout --print-errors "libcdb"`
+        fi
+	# Put the nasty error message in config.log where it belongs
+	echo "$CDB_PKG_ERRORS" >&5
+
+	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+                as_fn_error "+Could not find libcdb/tinycdb" "$LINENO" 5
+elif test $pkg_failed = untried; then
+	as_fn_error "+Could not find libcdb/tinycdb" "$LINENO" 5
+else
+	CDB_CFLAGS=$pkg_cv_CDB_CFLAGS
+	CDB_LIBS=$pkg_cv_CDB_LIBS
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+	HAVE_CDB=yes
 fi
 
 
 fi
+
+ if test "$needsqlite3"; then
+  SQLITE3_TRUE=
+  SQLITE3_FALSE='#'
+else
+  SQLITE3_TRUE='#'
+  SQLITE3_FALSE=
+fi
+
+
 
 if test "$needunixodbc"
 then
@@ -18554,7 +18716,9 @@ do
 	done
 	modulelibs="$modulelibs `cat $srcdir/modules/${a}backend/OBJECTLIBS`"
 
-	if test ${a} == "gpgsql"; then
+	if test ${a} = "gpgsql"; then
+		LIBS="$LIBS $LIBCRYPT"
+
 		case "$host_os" in
 		freebsd*)
 			;;
@@ -18574,7 +18738,7 @@ done
 
 export moduledirs moduleobjects modulelibs
 
-ac_config_files="$ac_config_files Makefile modules/Makefile pdns/Makefile codedocs/Makefile pdns/backends/Makefile pdns/backends/bind/Makefile pdns/pdns pdns/precursor modules/mysqlbackend/Makefile modules/pdnsbackend/Makefile modules/gmysqlbackend/Makefile modules/db2backend/Makefile modules/geobackend/Makefile modules/opendbxbackend/Makefile modules/pipebackend/Makefile modules/oraclebackend/Makefile modules/xdbbackend/Makefile modules/godbcbackend/Makefile modules/odbcbackend/Makefile modules/mongodbbackend/Makefile modules/gpgsqlbackend/Makefile modules/ldapbackend/Makefile modules/gsqlitebackend/Makefile modules/gsqlite3backend/Makefile modules/goraclebackend/Makefile modules/mydnsbackend/Makefile modules/luabackend/Makefile"
+ac_config_files="$ac_config_files Makefile modules/Makefile pdns/Makefile codedocs/Makefile pdns/backends/Makefile pdns/backends/bind/Makefile pdns/pdns pdns/precursor modules/gmysqlbackend/Makefile modules/db2backend/Makefile modules/geobackend/Makefile modules/opendbxbackend/Makefile modules/pipebackend/Makefile modules/oraclebackend/Makefile modules/xdbbackend/Makefile modules/godbcbackend/Makefile modules/mongodbbackend/Makefile modules/gpgsqlbackend/Makefile modules/ldapbackend/Makefile modules/gsqlitebackend/Makefile modules/gsqlite3backend/Makefile modules/goraclebackend/Makefile modules/mydnsbackend/Makefile modules/luabackend/Makefile modules/tinydnsbackend/Makefile"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -18702,8 +18866,8 @@ if test -z "${am__fastdepCXX_TRUE}" && test -z "${am__fastdepCXX_FALSE}"; then
   as_fn_error "conditional \"am__fastdepCXX\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
-if test -z "${BOTAN19_TRUE}" && test -z "${BOTAN19_FALSE}"; then
-  as_fn_error "conditional \"BOTAN19\" was never defined.
+if test -z "${BOTAN110_TRUE}" && test -z "${BOTAN110_FALSE}"; then
+  as_fn_error "conditional \"BOTAN110\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${BOTAN18_TRUE}" && test -z "${BOTAN18_FALSE}"; then
@@ -18720,6 +18884,10 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${RECURSOR_TRUE}" && test -z "${RECURSOR_FALSE}"; then
   as_fn_error "conditional \"RECURSOR\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${SQLITE3_TRUE}" && test -z "${SQLITE3_FALSE}"; then
+  as_fn_error "conditional \"SQLITE3\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 
@@ -19681,8 +19849,6 @@ do
     "pdns/backends/bind/Makefile") CONFIG_FILES="$CONFIG_FILES pdns/backends/bind/Makefile" ;;
     "pdns/pdns") CONFIG_FILES="$CONFIG_FILES pdns/pdns" ;;
     "pdns/precursor") CONFIG_FILES="$CONFIG_FILES pdns/precursor" ;;
-    "modules/mysqlbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/mysqlbackend/Makefile" ;;
-    "modules/pdnsbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/pdnsbackend/Makefile" ;;
     "modules/gmysqlbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/gmysqlbackend/Makefile" ;;
     "modules/db2backend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/db2backend/Makefile" ;;
     "modules/geobackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/geobackend/Makefile" ;;
@@ -19691,7 +19857,6 @@ do
     "modules/oraclebackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/oraclebackend/Makefile" ;;
     "modules/xdbbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/xdbbackend/Makefile" ;;
     "modules/godbcbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/godbcbackend/Makefile" ;;
-    "modules/odbcbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/odbcbackend/Makefile" ;;
     "modules/mongodbbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/mongodbbackend/Makefile" ;;
     "modules/gpgsqlbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/gpgsqlbackend/Makefile" ;;
     "modules/ldapbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/ldapbackend/Makefile" ;;
@@ -19700,6 +19865,7 @@ do
     "modules/goraclebackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/goraclebackend/Makefile" ;;
     "modules/mydnsbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/mydnsbackend/Makefile" ;;
     "modules/luabackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/luabackend/Makefile" ;;
+    "modules/tinydnsbackend/Makefile") CONFIG_FILES="$CONFIG_FILES modules/tinydnsbackend/Makefile" ;;
 
   *) as_fn_error "invalid argument: \`$ac_config_target'" "$LINENO" 5;;
   esac

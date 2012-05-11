@@ -28,7 +28,7 @@ extern StatBag S;
 PacketCache::PacketCache()
 {
   pthread_rwlock_init(&d_mut,0);
-  d_ops = 0;
+  // d_ops = 0;
 
   d_ttl=-1;
   d_recursivettl=-1;
@@ -54,7 +54,7 @@ int PacketCache::get(DNSPacket *p, DNSPacket *cached)
   if(d_ttl<0) 
     getTTLS();
 
-  if(!((d_ops++) % 300000)) {
+  if(!((++d_ops) % 300000)) {
     cleanup();
   }
 
@@ -110,7 +110,7 @@ void PacketCache::getTTLS()
 }
 
 
-void PacketCache::insert(DNSPacket *q, DNSPacket *r)
+void PacketCache::insert(DNSPacket *q, DNSPacket *r, unsigned int maxttl)
 {
   if(d_ttl < 0)
     getTTLS();
@@ -124,7 +124,10 @@ void PacketCache::insert(DNSPacket *q, DNSPacket *r)
 
   bool packetMeritsRecursion=d_doRecursion && q->d.rd;
   uint16_t maxReplyLen = q->d_tcp ? 0xffff : q->getMaxReplyLen();
-  insert(q->qdomain, q->qtype, PacketCache::PACKETCACHE, r->getString(), packetMeritsRecursion ? d_recursivettl : d_ttl, -1, packetMeritsRecursion, 
+  unsigned int ourttl = packetMeritsRecursion ? d_recursivettl : d_ttl;
+  if(maxttl<ourttl)
+    ourttl=maxttl;
+  insert(q->qdomain, q->qtype, PacketCache::PACKETCACHE, r->getString(), ourttl, -1, packetMeritsRecursion,
     maxReplyLen, q->d_dnssecOk);
 }
 
@@ -132,7 +135,7 @@ void PacketCache::insert(DNSPacket *q, DNSPacket *r)
 void PacketCache::insert(const string &qname, const QType& qtype, CacheEntryType cet, const string& value, unsigned int ttl, int zoneID, 
   bool meritsRecursion, unsigned int maxReplyLen, bool dnssecOk)
 {
-  if(!((d_ops++) % 300000)) {
+  if(!((++d_ops) % 300000)) {
     cleanup();
   }
 
@@ -165,18 +168,21 @@ void PacketCache::insert(const string &qname, const QType& qtype, CacheEntryType
     S.inc("deferred-cache-inserts"); 
 }
 
-/** purges entries from the packetcache. If match ends on a $, it is treated as a suffix */
-int PacketCache::purge(const vector<string> &matches)
+/* clears the entire packetcache. */
+int PacketCache::purge()
+{
+  WriteLock l(&d_mut);
+  int delcount=d_map.size();
+  d_map.clear();
+  *d_statnumentries=0;
+  return delcount;
+}
+
+/* purges entries from the packetcache. If match ends on a $, it is treated as a suffix */
+int PacketCache::purge(const string &match)
 {
   WriteLock l(&d_mut);
   int delcount=0;
-  
-  if(matches.empty()) {
-    delcount = d_map.size();
-    d_map.clear();
-    *d_statnumentries=0;
-    return delcount;
-  }
 
   /* ok, the suffix delete plan. We want to be able to delete everything that 
      pertains 'www.powerdns.com' but we also want to be able to delete everything
@@ -221,33 +227,27 @@ int PacketCache::purge(const vector<string> &matches)
      'www.userpowerdns.com'
 
   */
-  for(vector<string>::const_iterator match = ++matches.begin(); match != matches.end() ; ++match) {
-    if(ends_with(*match, "$")) {
-      string suffix(*match);
-      suffix.resize(suffix.size()-1);
+  if(ends_with(match, "$")) {
+    string suffix(match);
+    suffix.resize(suffix.size()-1);
 
-      //    cerr<<"Begin dump!"<<endl;
-      cmap_t::const_iterator iter = d_map.lower_bound(tie(suffix));
-      cmap_t::const_iterator start=iter;
-      string dotsuffix = "."+suffix;
+    cmap_t::const_iterator iter = d_map.lower_bound(tie(suffix));
+    cmap_t::const_iterator start=iter;
+    string dotsuffix = "."+suffix;
 
-      for(; iter != d_map.end(); ++iter) {
-        if(!pdns_iequals(iter->qname, suffix) && !iends_with(iter->qname, dotsuffix)) {
-          //	cerr<<"Stopping!"<<endl;
-          break;
-        }
-        //	cerr<<"Will erase '"<<iter->qname<<"'\n";
-
-        delcount++;
+    for(; iter != d_map.end(); ++iter) {
+      if(!pdns_iequals(iter->qname, suffix) && !iends_with(iter->qname, dotsuffix)) {
+        //	cerr<<"Stopping!"<<endl;
+        break;
       }
-      //    cerr<<"End dump!"<<endl;
-      d_map.erase(start, iter);
+      delcount++;
     }
-    else {
-      delcount=d_map.count(tie(*match));
-      pair<cmap_t::iterator, cmap_t::iterator> range = d_map.equal_range(tie(*match));
-      d_map.erase(range.first, range.second);
-    }
+    d_map.erase(start, iter);
+  }
+  else {
+    delcount=d_map.count(tie(match));
+    pair<cmap_t::iterator, cmap_t::iterator> range = d_map.equal_range(tie(match));
+    d_map.erase(range.first, range.second);
   }
   *d_statnumentries=d_map.size();
   return delcount;
@@ -259,7 +259,7 @@ bool PacketCache::getEntry(const string &qname, const QType& qtype, CacheEntryTy
   if(d_ttl<0) 
     getTTLS();
 
-  if(!((d_ops++) % 300000)) {
+  if(!((++d_ops) % 300000)) {
     cleanup();
   }
 

@@ -116,6 +116,8 @@ BOOST_SERIALIZATION_LDFLAGS = @BOOST_SERIALIZATION_LDFLAGS@
 BOOST_SERIALIZATION_LIBS = @BOOST_SERIALIZATION_LIBS@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
+CDB_CFLAGS = @CDB_CFLAGS@
+CDB_LIBS = @CDB_LIBS@
 CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
@@ -147,6 +149,7 @@ LDFLAGS = @LDFLAGS@
 LEX = @LEX@
 LEXLIB = @LEXLIB@
 LEX_OUTPUT_ROOT = @LEX_OUTPUT_ROOT@
+LIBCRYPT = @LIBCRYPT@
 LIBDL = @LIBDL@
 LIBLDAP = @LIBLDAP@
 LIBOBJS = @LIBOBJS@
@@ -262,7 +265,7 @@ libgpgsqlbackend_la_SOURCES = gpgsqlbackend.cc gpgsqlbackend.hh \
 libgpgsqlbackend_la_LDFLAGS = -module -avoid-version @PGSQL_lib@ -Wl,-Bstatic -lpq \
 	-Wl,-Bdynamic 
 
-libgpgsqlbackend_la_LIBADD = -lssl -lcrypt -lcrypto
+libgpgsqlbackend_la_LIBADD = -lssl @LIBCRYPT@ -lcrypto
 all: all-am
 
 .SUFFIXES:

@@ -9,7 +9,7 @@
 #include <boost/algorithm/string.hpp>
 #include "dnssecinfra.hh" 
 #include "dnsseckeeper.hh"
-#include "polarssl/sha1.h"
+#include "ext/polarssl-1.1.2/include/polarssl/sha1.h"
 #include <boost/assign/std/vector.hpp> // for 'operator+=()'
 #include <boost/assign/list_inserter.hpp>
 #include "base64.hh"
@@ -103,7 +103,6 @@ void DNSCryptoKeyEngine::testAll()
       BOOST_FOREACH(maker_t* verifier, value.second) {
         try {
           pair<unsigned int, unsigned int> res=testMakers(value.first, signer, verifier);
-          
         }
         catch(std::exception& e)
         {
@@ -112,6 +111,23 @@ void DNSCryptoKeyEngine::testAll()
       }
     }
   }
+}
+
+void DNSCryptoKeyEngine::testOne(int algo)
+{
+    BOOST_FOREACH(maker_t* signer, getAllMakers()[algo]) {
+      // multi_map<unsigned int, maker_t*> bestSigner, bestVerifier;
+
+      BOOST_FOREACH(maker_t* verifier, getAllMakers()[algo]) {
+        try {
+          pair<unsigned int, unsigned int> res=testMakers(algo, signer, verifier);
+        }
+        catch(std::exception& e)
+        {
+          cerr<<e.what()<<endl;
+        }
+      }
+    }
 }
 
 pair<unsigned int, unsigned int> DNSCryptoKeyEngine::testMakers(unsigned int algo, maker_t* signer, maker_t* verifier)
@@ -123,7 +139,7 @@ pair<unsigned int, unsigned int> DNSCryptoKeyEngine::testMakers(unsigned int alg
   unsigned int bits;
   if(algo <= 10)
     bits=1024;
-  else if(algo == 12 || algo == 13) // GOST or nistp256
+  else if(algo == 12 || algo == 13 || algo == 250) // GOST or nistp256 or ED25519
     bits=256;
   else 
     bits=384;
@@ -402,13 +418,13 @@ string calculateMD5HMAC(const std::string& key_, const std::string& text)
   return md5_2.get();
 }
 
-string makeTSIGMessageFromTSIGPacket(const string& opacket, unsigned int tsigOffset, const string& keyname, const TSIGRecordContent& trc, const string& previous, bool timersonly)
+string makeTSIGMessageFromTSIGPacket(const string& opacket, unsigned int tsigOffset, const string& keyname, const TSIGRecordContent& trc, const string& previous, bool timersonly, unsigned int dnsHeaderOffset)
 {
   string message;
   string packet(opacket);
 
-  packet.resize(tsigOffset);
-  packet[sizeof(struct dnsheader)-1]--;
+  packet.resize(tsigOffset); // remove the TSIG record at the end as per RFC2845 3.4.1
+  packet[(dnsHeaderOffset + sizeof(struct dnsheader))-1]--; // Decrease ARCOUNT because we removed the TSIG RR in the previous line.
   
   if(!previous.empty()) {
     uint16_t len = htons(previous.length());

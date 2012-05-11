@@ -1,12 +1,11 @@
 dnl intro
 AC_INIT(pdns/receiver.cc)
-AM_INIT_AUTOMAKE(pdns, 3.0)
+AM_INIT_AUTOMAKE(pdns, 3.1)
 AC_CANONICAL_HOST
 AM_CONFIG_HEADER(config.h)
 AC_C_BIGENDIAN 
 AC_PREREQ(2.52)
-CXXFLAGS="$CXXFLAGS -Wall -O2"
-
+: ${CXXFLAGS="-Wall -O2"}
 AC_PREFIX_DEFAULT(/usr/local)
 AC_PROG_CC
 AC_PROG_CXX
@@ -26,7 +25,7 @@ BOOST_SERIALIZATION([mt])
 
 dnl Check for lua
 AC_MSG_CHECKING(if with lua)
-AC_ARG_WITH(lua, AC_HELP_STRING([--with-lua],[lua]), WITH_LUA=$withval],[WITH_LUA=yes])
+AC_ARG_WITH(lua, AC_HELP_STRING([--with-lua],[lua]), [WITH_LUA=$withval],[WITH_LUA=yes])
 
 AC_MSG_RESULT($WITH_LUA)
 if test "$WITH_LUA" != "no"; then
@@ -53,7 +52,19 @@ if test "$WITH_LUA" != "no"; then
  AC_SUBST(LUA_CFLAGS)
  AC_SUBST(LUA_LIBS)
 fi
-                                         
+         
+dnl Allow user to require SQLite3
+AC_MSG_CHECKING(whether user requires sqlite3)
+AC_ARG_WITH(sqlite3, AC_HELP_STRING([--with-sqlite3],[include sqlite3 driver]), [WITH_SQLITE3=$withval],[WITH_SQLITE3=no])
+AC_MSG_RESULT($WITH_SQLITE3)
+SQLITE3PC=sqlite3
+if test "$WITH_SQLITE3" != "no"; then
+  needsqlite3=yes
+  if test "$WITH_SQLITE3" != "yes"; then
+    SQLITE3PC=$WITH_SQLITE3
+  fi
+fi
+
 dnl Checks for header files.
 AC_HEADER_STDC
 AC_CHECK_HEADERS(fcntl.h  getopt.h limits.h strings.h sys/time.h syslog.h unistd.h)
@@ -92,6 +103,15 @@ then
 fi
 LIBS=$ac_save_LIBS
 
+# Check for libcrypt
+
+my_save_LIBS="$LIBS"
+LIBS=""
+AC_CHECK_LIB(crypt, crypt)
+LIBCRYPT=$LIBS
+LIBS="$my_save_LIBS"
+AC_SUBST(LIBCRYPT)
+
 DYNLINKFLAGS=""
 THREADFLAGS=""
 
@@ -122,12 +142,6 @@ linux*)
 	THREADFLAGS="-pthread"
 	CXXFLAGS="-D_GNU_SOURCE $CXXFLAGS"
 	;;
-openbsd*)
-	AC_DEFINE(HAVE_IPV6,1,[If the host operating system understands IPv6])
-	DYNLINKFLAGS="-rdynamic"
-	LDFLAGS="-lc_r $LDFLAGS"
-	CXXFLAGS="-pthread $CXXFLAGS"
-	;;
 *)
 	AC_DEFINE(HAVE_IPV6,1,[If the host operating system understands IPv6])
 	DYNLINKFLAGS="-rdynamic"
@@ -148,11 +162,11 @@ if test $enable_verbose_logging = yes; then AC_DEFINE(VERBOSELOG, 1, [If verbose
 fi
 AC_MSG_RESULT($enable_verbose_logging)
 
-AC_MSG_CHECKING(whether we will be linking in Botan 1.9)
-AC_ARG_ENABLE(botan1.9, 
- [  --enable-botan1.9	Use Botan 1.9],enable_botan19=yes, enable_botan19=no)
-AC_MSG_RESULT($enable_botan19)
-AM_CONDITIONAL(BOTAN19,test x"$enable_botan19" = "xyes")
+AC_MSG_CHECKING(whether we will be linking in Botan 1.10)
+AC_ARG_ENABLE(botan1.10, 
+ [  --enable-botan1.10	Use Botan 1.10],enable_botan110=yes, enable_botan110=no)
+AC_MSG_RESULT($enable_botan110)
+AM_CONDITIONAL(BOTAN110,test x"$enable_botan110" = "xyes")
 
 AC_MSG_CHECKING(whether we will be linking in Botan 1.8)
 AC_ARG_ENABLE(botan1.8, 
@@ -244,9 +258,6 @@ AM_CONDITIONAL(RECURSOR,test x"$enable_recursor" = "xyes")
 for a in $modules $dynmodules
 do
 	case "$a" in
-		mysql )
-			needmysql=yes
-		;;
 		gmysql )
 			needmysql=yes
 		;;
@@ -297,6 +308,9 @@ do
 				[opendbx], [odbx_init],
 				[AC_DEFINE([HAVE_LIBOPENDBX], 1, [Have -lopendbx]) LIBOPENDBX="opendbx"]
 			)
+		;;
+		tinydns)
+			needcdb=yes
 		;;
 	esac
 done
@@ -424,10 +438,7 @@ then
 	esac
 	AC_SUBST(PGSQL_incdir)
 	AC_MSG_RESULT([$PGSQL_incdir])
-
-#	LIBS="$LIBS -lpq++ -lpq -lssl -lcrypt -lcrypto"
 fi
-
 
 if test "$needsqlite"
 then
@@ -493,10 +504,21 @@ fi
 
 if test "$needsqlite3"
 then
-	PKG_CHECK_MODULES(SQLITE3, sqlite3, HAVE_SQLITE=yes, AC_MSG_ERROR([+Could not find sqlite3]))
+	PKG_CHECK_MODULES(SQLITE3, $SQLITE3PC, HAVE_SQLITE3=yes, AC_MSG_ERROR([+Could not find sqlite3]))
         AC_SUBST(SQLITE3_LIBS)
         AC_SUBST(SQLITE3_CFLAGS)
+        AC_DEFINE(HAVE_SQLITE3,1,[If we have sqlite3])
 fi
+
+if test "$needcdb"
+then
+	PKG_CHECK_MODULES(CDB, libcdb, HAVE_CDB=yes, AC_MSG_ERROR([+Could not find libcdb/tinycdb]))
+        AC_SUBST(CDB_LIBS)
+        AC_SUBST(CDB_CFLAGS)
+fi
+
+AM_CONDITIONAL(SQLITE3, test "$needsqlite3")
+
 
 if test "$needunixodbc"
 then
@@ -567,7 +589,9 @@ do
 	done
 	modulelibs="$modulelibs `cat $srcdir/modules/${a}backend/OBJECTLIBS`"
 
-	if test ${a} == "gpgsql"; then
+	if test ${a} = "gpgsql"; then
+		LIBS="$LIBS $LIBCRYPT"
+	
 		case "$host_os" in
 		freebsd*)
 			;;
@@ -589,13 +613,12 @@ export moduledirs moduleobjects modulelibs
 
 AC_OUTPUT(Makefile modules/Makefile pdns/Makefile codedocs/Makefile \
 pdns/backends/Makefile pdns/backends/bind/Makefile pdns/pdns pdns/precursor \
-modules/mysqlbackend/Makefile modules/pdnsbackend/Makefile \
 modules/gmysqlbackend/Makefile modules/db2backend/Makefile \
 modules/geobackend/Makefile modules/opendbxbackend/Makefile \
 modules/pipebackend/Makefile modules/oraclebackend/Makefile \
 modules/xdbbackend/Makefile modules/godbcbackend/Makefile \
-modules/odbcbackend/Makefile modules/mongodbbackend/Makefile \
+modules/mongodbbackend/Makefile \
 modules/gpgsqlbackend/Makefile modules/ldapbackend/Makefile \
 modules/gsqlitebackend/Makefile modules/gsqlite3backend/Makefile \
 modules/goraclebackend/Makefile modules/mydnsbackend/Makefile \
-modules/luabackend/Makefile )
+modules/luabackend/Makefile modules/tinydnsbackend/Makefile)

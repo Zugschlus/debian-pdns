@@ -54,7 +54,8 @@ am_libbind2backend_la_OBJECTS = libbind2backend_la-bindbackend2.lo \
 	libbind2backend_la-bindparser.lo \
 	libbind2backend_la-bindlexer.lo \
 	libbind2backend_la-zoneparser-tng.lo \
-	libbind2backend_la-misc.lo libbind2backend_la-unix_utility.lo
+	libbind2backend_la-misc.lo libbind2backend_la-unix_utility.lo \
+	libbind2backend_la-binddnssec.lo
 libbind2backend_la_OBJECTS = $(am_libbind2backend_la_OBJECTS)
 libbind2backend_la_LINK = $(LIBTOOL) --tag=CXX $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CXXLD) \
@@ -71,7 +72,8 @@ am_zone2ldap_OBJECTS = bindparser.$(OBJEXT) bindlexer.$(OBJEXT) \
 	sillyrecords.$(OBJEXT) nsecrecords.$(OBJEXT) \
 	dnssecinfra.$(OBJEXT) base32.$(OBJEXT) md5.$(OBJEXT)
 zone2ldap_OBJECTS = $(am_zone2ldap_OBJECTS)
-zone2ldap_DEPENDENCIES =
+zone2ldap_DEPENDENCIES =  \
+	../../ext/polarssl-1.1.2/library/libpolarssl.a
 zone2ldap_LINK = $(LIBTOOL) --tag=CXX $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
 	$(CXXFLAGS) $(zone2ldap_LDFLAGS) $(LDFLAGS) -o $@
@@ -85,7 +87,8 @@ am_zone2sql_OBJECTS = bindparser.$(OBJEXT) bindlexer.$(OBJEXT) \
 	nsecrecords.$(OBJEXT) dnssecinfra.$(OBJEXT) base32.$(OBJEXT) \
 	md5.$(OBJEXT)
 zone2sql_OBJECTS = $(am_zone2sql_OBJECTS)
-zone2sql_DEPENDENCIES =
+zone2sql_DEPENDENCIES =  \
+	../../ext/polarssl-1.1.2/library/libpolarssl.a
 zone2sql_LINK = $(LIBTOOL) --tag=CXX $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CXXLD) $(AM_CXXFLAGS) \
 	$(CXXFLAGS) $(zone2sql_LDFLAGS) $(LDFLAGS) -o $@
@@ -140,6 +143,8 @@ BOOST_SERIALIZATION_LDFLAGS = @BOOST_SERIALIZATION_LDFLAGS@
 BOOST_SERIALIZATION_LIBS = @BOOST_SERIALIZATION_LIBS@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
+CDB_CFLAGS = @CDB_CFLAGS@
+CDB_LIBS = @CDB_LIBS@
 CFLAGS = @CFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
@@ -171,6 +176,7 @@ LDFLAGS = @LDFLAGS@
 LEX = @LEX@
 LEXLIB = @LEXLIB@
 LEX_OUTPUT_ROOT = @LEX_OUTPUT_ROOT@
+LIBCRYPT = @LIBCRYPT@
 LIBDL = @LIBDL@
 LIBLDAP = @LIBLDAP@
 LIBOBJS = @LIBOBJS@
@@ -276,37 +282,39 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-INCLUDES = -I../.. -I ../../ext/polarssl/include
+INCLUDES = -I../.. 
 noinst_LTLIBRARIES = libbind2backend.la
 AM_CPPFLAGS = $(BOOST_CPPFLAGS) @THREADFLAGS@
+BUILT_SOURCES = bind-dnssec.schema.sqlite3.sql.h
 libbind2backend_la_SOURCES = bindbackend2.cc bindbackend2.hh bindparser.yy \
 bindlexer.l ../../zoneparser-tng.cc ../../misc.cc  \
-bindparser.hh ../../unix_utility.cc
+bindparser.hh ../../unix_utility.cc binddnssec.cc bind-dnssec.schema.sqlite3.sql.h
 
 libbind2backend_la_CXXFLAGS = $(AM_CXXFLAGS)
 libbind2backend_la_CFLAGS = $(AM_CFLAGS)
 libbind2backend_la_LDFLAGS = -module -avoid-version
-EXTRA_DIST = dnslabeltext.cc bindparser.cc bindparser.h
-zone2sql_SOURCES = bindparser.yy bindlexer.l \
+EXTRA_DIST = dnslabeltext.cc bindparser.cc bindparser.h bind-dnssec.schema.sqlite3.sql.h
+zone2sql_SOURCES = bindparser.yy bindlexer.l bind-dnssec.schema.sqlite3.sql.h \
 ../../arguments.cc ../../logger.cc zone2sql.cc ../../statbag.cc ../../misc.cc \
 ../../unix_utility.cc ../../qtype.cc ../../dns.cc \
 ../../zoneparser-tng.cc ../../dnsrecords.cc ../../sillyrecords.cc \
 ../../dnswriter.cc dnslabeltext.cc ../../rcpgenerator.cc ../../dnsparser.cc ../../base64.cc \
 ../../nsecrecords.cc ../../dnssecinfra.cc  ../../base32.cc ../../md5.cc # ../../dbdnsseckeeper.cc
 
-zone2ldap_SOURCES = bindparser.yy bindlexer.l \
+zone2ldap_SOURCES = bindparser.yy bindlexer.l bind-dnssec.schema.sqlite3.sql.h \
 ../../arguments.cc ../../logger.cc zone2ldap.cc ../../statbag.cc ../../misc.cc \
 ../../unix_utility.cc ../../qtype.cc  ../../zoneparser-tng.cc ../../dnsrecords.cc \
 ../../dnswriter.cc dnslabeltext.cc  ../../rcpgenerator.cc ../../dnsparser.cc ../../base64.cc ../../sillyrecords.cc \
 ../../nsecrecords.cc ../../dnssecinfra.cc  ../../base32.cc ../../md5.cc # ../../dbdnsseckeeper.cc
 
-zone2ldap_LDFLAGS = @THREADFLAGS@  -L../../ext/polarssl/library
-zone2ldap_LDADD = -lpolarssl
-zone2sql_LDFLAGS = @THREADFLAGS@  -L../../ext/polarssl/library
-zone2sql_LDADD = -lpolarssl
+zone2ldap_LDFLAGS = @THREADFLAGS@  
+zone2ldap_LDADD = ../../ext/polarssl-1.1.2/library/libpolarssl.a
+zone2sql_LDFLAGS = @THREADFLAGS@  
+zone2sql_LDADD = ../../ext/polarssl-1.1.2/library/libpolarssl.a 
 AM_LFLAGS = -s -i
 AM_YFLAGS = -d --verbose --debug
-all: all-am
+all: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) all-am
 
 .SUFFIXES:
 .SUFFIXES: .c .cc .l .lo .o .obj .yy
@@ -424,6 +432,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnssecinfra.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dnswriter.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libbind2backend_la-bindbackend2.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libbind2backend_la-binddnssec.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libbind2backend_la-bindlexer.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libbind2backend_la-bindparser.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libbind2backend_la-misc.Plo@am__quote@
@@ -525,6 +534,13 @@ libbind2backend_la-unix_utility.lo: ../../unix_utility.cc
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='../../unix_utility.cc' object='libbind2backend_la-unix_utility.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libbind2backend_la_CXXFLAGS) $(CXXFLAGS) -c -o libbind2backend_la-unix_utility.lo `test -f '../../unix_utility.cc' || echo '$(srcdir)/'`../../unix_utility.cc
+
+libbind2backend_la-binddnssec.lo: binddnssec.cc
+@am__fastdepCXX_TRUE@	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libbind2backend_la_CXXFLAGS) $(CXXFLAGS) -MT libbind2backend_la-binddnssec.lo -MD -MP -MF $(DEPDIR)/libbind2backend_la-binddnssec.Tpo -c -o libbind2backend_la-binddnssec.lo `test -f 'binddnssec.cc' || echo '$(srcdir)/'`binddnssec.cc
+@am__fastdepCXX_TRUE@	$(am__mv) $(DEPDIR)/libbind2backend_la-binddnssec.Tpo $(DEPDIR)/libbind2backend_la-binddnssec.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	source='binddnssec.cc' object='libbind2backend_la-binddnssec.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(LIBTOOL)  --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libbind2backend_la_CXXFLAGS) $(CXXFLAGS) -c -o libbind2backend_la-binddnssec.lo `test -f 'binddnssec.cc' || echo '$(srcdir)/'`binddnssec.cc
 
 arguments.o: ../../arguments.cc
 @am__fastdepCXX_TRUE@	$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT arguments.o -MD -MP -MF $(DEPDIR)/arguments.Tpo -c -o arguments.o `test -f '../../arguments.cc' || echo '$(srcdir)/'`../../arguments.cc
@@ -873,13 +889,15 @@ distdir: $(DISTFILES)
 	  fi; \
 	done
 check-am: all-am
-check: check-am
+check: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) check-am
 all-am: Makefile $(LTLIBRARIES) $(PROGRAMS)
 installdirs:
 	for dir in "$(DESTDIR)$(bindir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
-install: install-am
+install: $(BUILT_SOURCES)
+	$(MAKE) $(AM_MAKEFLAGS) install-am
 install-exec: install-exec-am
 install-data: install-data-am
 uninstall: uninstall-am
@@ -907,6 +925,7 @@ maintainer-clean-generic:
 	-rm -f bindlexer.c
 	-rm -f bindparser.cc
 	-rm -f bindparser.h
+	-test -z "$(BUILT_SOURCES)" || rm -f $(BUILT_SOURCES)
 clean: clean-am
 
 clean-am: clean-binPROGRAMS clean-generic clean-libtool \
@@ -978,7 +997,7 @@ ps-am:
 
 uninstall-am: uninstall-binPROGRAMS
 
-.MAKE: install-am install-strip
+.MAKE: all check install install-am install-strip
 
 .PHONY: CTAGS GTAGS all all-am check check-am clean clean-binPROGRAMS \
 	clean-generic clean-libtool clean-noinstLTLIBRARIES ctags \
@@ -994,6 +1013,9 @@ uninstall-am: uninstall-binPROGRAMS
 	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
 	tags uninstall uninstall-am uninstall-binPROGRAMS
 
+
+bind-dnssec.schema.sqlite3.sql.h: ../../bind-dnssec.schema.sqlite3.sql
+	( echo 'static char sqlCreate[]=' ; sed 's/$$/"/g' ../../bind-dnssec.schema.sqlite3.sql | sed 's/^/"/g'  ; echo ';' ) > $@
 
 dnslabeltext.cc: ../../dnslabeltext.rl
 	ragel ../../dnslabeltext.rl -o dnslabeltext.cc
