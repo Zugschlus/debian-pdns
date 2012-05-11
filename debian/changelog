@@ -1,3 +1,13 @@
+pdns (3.1-1) UNRELEASED; urgency=low
+
+  * Imported Upstream version 3.1
+  * refresh patches
+  * remove unused patches
+  * add patch to turn off the traceback handler at run time
+  * add patch for changeset 2575 (race condition with supermasters)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 11 May 2012 23:51:27 +0200
+
 pdns (3.0-1) unstable; urgency=low
 
   * New upstream version (Closes: #624330, #626909, #617476, #498918, #500572)
