@@ -1,12 +1,12 @@
 --- a/pdns/misc.cc
 +++ b/pdns/misc.cc
-@@ -427,6 +427,9 @@
- #ifdef WIN32
- # define MAXHOSTNAMELEN 1025
+@@ -25,6 +25,9 @@
+ #include <netinet/in.h>
+ #include <unistd.h>
  #endif // WIN32
 +#ifndef MAXHOSTNAMELEN
 +# define MAXHOSTNAMELEN 255
 +#endif
  
-   char tmp[MAXHOSTNAMELEN];
-   if(gethostname(tmp, MAXHOSTNAMELEN))
+ #include "misc.hh"
+ #include <vector>

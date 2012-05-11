@@ -1,24 +1,33 @@
 --- a/pdns/Makefile.am
 +++ b/pdns/Makefile.am
-@@ -45,7 +45,7 @@
- ednssubnet.cc ednssubnet.hh
+@@ -51,7 +51,7 @@
+ ednssubnet.cc ednssubnet.hh cachecleaner.hh dnslabel.hh dnslabel.cc
  
  #
--pdns_server_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@  -Lext/polarssl/library $(BOOST_SERIALIZATION_LDFLAGS)  -rdynamic
-+pdns_server_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@  -Lext/polarssl/library -rdynamic
- pdns_server_LDADD= -lpolarssl $(BOOST_SERIALIZATION_LIBS) $(LUA_LIBS)
+-pdns_server_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@  $(BOOST_SERIALIZATION_LDFLAGS)  -rdynamic
++pdns_server_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@ -rdynamic
+ pdns_server_LDADD= ext/polarssl-1.1.2/library/libpolarssl.a $(BOOST_SERIALIZATION_LIBS) $(LUA_LIBS) $(SQLITE3_LIBS)
  
  
-@@ -76,7 +76,7 @@
- 	dynlistener.cc dns.cc randombackend.cc dnssecsigner.cc polarrsakeyinfra.cc md5.cc \
- 	signingpipe.cc dnslabeltext.cc ednssubnet.cc
+@@ -86,7 +86,7 @@
+ 	signingpipe.cc dnslabeltext.cc ednssubnet.cc cachecleaner.hh dnslabel.hh dnslabel.cc
  
--pdnssec_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@ -Lext/polarssl/library/ $(BOOST_PROGRAM_OPTIONS_LDFLAGS) $(BOOST_SERIALIZATION_LDFLAGS)
-+pdnssec_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@ -Lext/polarssl/library/
- pdnssec_LDADD= -lpolarssl $(BOOST_PROGRAM_OPTIONS_LIBS) $(BOOST_SERIALIZATION_LIBS)
  
- if BOTAN19
-@@ -155,14 +155,14 @@
+-pdnssec_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@  $(BOOST_PROGRAM_OPTIONS_LDFLAGS) $(BOOST_SERIALIZATION_LDFLAGS)
++pdnssec_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@
+ pdnssec_LDADD= ext/polarssl-1.1.2/library/libpolarssl.a $(BOOST_PROGRAM_OPTIONS_LIBS) $(BOOST_SERIALIZATION_LIBS) $(SQLITE3_LIBS)
+ 
+ if BOTAN110
+@@ -145,7 +145,7 @@
+ 
+ dnsbulktest_SOURCES=dnsbulktest.cc misc.cc unix_utility.cc qtype.cc logger.cc statbag.cc dnsparser.cc \
+ 	dnsrecords.cc dnswriter.cc dnslabeltext.cc rcpgenerator.cc base32.cc base64.cc sillyrecords.cc nsecrecords.cc 
+-dnsbulktest_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@ $(BOOST_PROGRAM_OPTIONS_LDFLAGS)
++dnsbulktest_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@
+ dnsbulktest_LDADD= $(BOOST_PROGRAM_OPTIONS_LIBS)
+ 
+ # unix_utility.cc
+@@ -163,7 +163,7 @@
  	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnslabeltext.cc dnswriter.hh \
  	unix_utility.cc utility.hh sillyrecords.cc nsecrecords.cc base32.cc
  
@@ -27,15 +36,16 @@
  dnsreplay_LDADD= $(BOOST_PROGRAM_OPTIONS_LIBS)
  
  nproxy_SOURCES=nproxy.cc dnsparser.cc dnsrecords.cc dnsparser.hh  \
- 	rcpgenerator.cc rcpgenerator.hh base64.cc base64.hh dnswriter.cc dnslabeltext.cc dnswriter.hh \
- 	sillyrecords.cc selectmplexer.cc   mplexer.hh
+@@ -171,7 +171,7 @@
+ 	sillyrecords.cc selectmplexer.cc   mplexer.hh misc.cc nsecrecords.cc  unix_utility.cc qtype.cc \
+ 	logger.cc statbag.cc base32.cc
  
 -nproxy_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@ $(BOOST_PROGRAM_OPTIONS_LDFLAGS)
 +nproxy_LDFLAGS= @DYNLINKFLAGS@ @THREADFLAGS@
  nproxy_LDADD= $(BOOST_PROGRAM_OPTIONS_LIBS)
  
  notify_SOURCES=notify.cc dnsparser.cc dnsrecords.cc dnsparser.hh  \
-@@ -170,7 +170,7 @@
+@@ -179,7 +179,7 @@
  	sillyrecords.cc selectmplexer.cc nsecrecords.cc base32.cc misc.cc unix_utility.cc \
  	logger.cc qtype.cc statbag.cc
  
@@ -44,10 +54,3 @@
  notify_LDADD= $(BOOST_PROGRAM_OPTIONS_LIBS)
  
  dnsscope_SOURCES=dnsscope.cc misc.cc unix_utility.cc qtype.cc \
-@@ -216,4 +216,4 @@
- 
- dnslabeltext.cc: dnslabeltext.rl
- 	ragel dnslabeltext.rl -o dnslabeltext.cc
--	
-\ No newline at end of file
-+	

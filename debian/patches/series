@@ -1,11 +1,4 @@
-addconfigdir 
-pdns_control-manpage-additions
-hurd-ftbfs-patch
-fix-lua-backend-patch
-fix-mongodb-backend-patch
 remove-rpath-ldflags-patch
-add-check-target-patch
-pdnssec-with-default-ttl-setting-required
-changeset-2267
-fix-sqlite-parse-priority
-fix-sqlite-backend-loading
+addconfigdir 
+hurd-ftbfs-patch
+fix-mongodb-backend-patch
