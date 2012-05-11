@@ -1,0 +1,32 @@
+--- a/pdns/common_startup.cc
++++ b/pdns/common_startup.cc
+@@ -135,6 +135,8 @@
+ 
+   ::arg().set("max-cache-entries", "Maximum number of cache entries")="1000000";
+   ::arg().set("entropy-source", "If set, read entropy from this file")="/dev/urandom";
++  
++  ::arg().setSwitch("traceback-handler","Enable the traceback handler (Linux only)")="yes";
+ }
+ 
+ void declareStats(void)
+--- a/pdns/receiver.cc
++++ b/pdns/receiver.cc
+@@ -465,7 +465,17 @@
+     }
+     
+     // we really need to do work - either standalone or as an instance
+-    
++
++#ifdef __linux__
++    if(!::arg().mustDo("traceback-handler")) {
++      L<<Logger::Warning<<"Disabling traceback handler"<<endl;
++      signal(SIGSEGV,SIG_DFL);
++      signal(SIGFPE,SIG_DFL);
++      signal(SIGABRT,SIG_DFL);
++      signal(SIGILL,SIG_DFL);
++    }
++#endif
++
+     seedRandom(::arg()["entropy-source"]);
+     
+     loadModules();
