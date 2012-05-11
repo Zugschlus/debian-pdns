@@ -2,3 +2,5 @@ remove-rpath-ldflags-patch
 addconfigdir 
 hurd-ftbfs-patch
 fix-mongodb-backend-patch
+traceback-handler
+supermaster-race-2575
