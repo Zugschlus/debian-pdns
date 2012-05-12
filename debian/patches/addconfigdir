@@ -79,3 +79,13 @@
    ::arg().set("wildcard-url","Process URL and MBOXFW records")="no";
    ::arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
    ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
+--- a/pdns/pdnssec.cc
++++ b/pdns/pdnssec.cc
+@@ -50,6 +50,7 @@
+   ::arg().set("launch","Which backends to launch");
+   ::arg().set("dnssec","if we should do dnssec")="true";
+   ::arg().set("config-name","Name of this virtual configuration - will rename the binary image")=g_vm["config-name"].as<string>();
++  ::arg().set("include", "Directory with config files to include")="/etc/powerdns/pdns.d"; // Add directory with config files
+   ::arg().setCmd("help","Provide a helpful message");
+   //::arg().laxParse(argc,argv);
+ 
