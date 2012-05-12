@@ -64,7 +64,6 @@ void declareArguments()
   ::arg().set("version-string","PowerDNS version in packets - full, anonymous, powerdns or custom")="full"; 
   ::arg().set("control-console","Debugging switch - don't use")="no"; // but I know you will!
   ::arg().set("fancy-records","Process URL and MBOXFW records")="no";
-  ::arg().set("include", "Directory with config files to include")="/etc/powerdns/pdns.d"; // Add directory with config files
   ::arg().set("wildcard-url","Process URL and MBOXFW records")="no";
   ::arg().set("loglevel","Amount of logging. Higher is more. Do not set below 3")="4";
   ::arg().set("default-soa-name","name to insert in the SOA record if none set in the backend")="a.misconfigured.powerdns.server";
@@ -135,8 +134,6 @@ void declareArguments()
 
   ::arg().set("max-cache-entries", "Maximum number of cache entries")="1000000";
   ::arg().set("entropy-source", "If set, read entropy from this file")="/dev/urandom";
-  
-  ::arg().setSwitch("traceback-handler","Enable the traceback handler (Linux only)")="yes";
 }
 
 void declareStats(void)

@@ -25,9 +25,6 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #endif // WIN32
-#ifndef MAXHOSTNAMELEN
-# define MAXHOSTNAMELEN 255
-#endif
 
 #include "misc.hh"
 #include <vector>

@@ -778,13 +778,7 @@ int PacketHandler::trySuperMasterSynchronous(DNSPacket *p)
     L<<Logger::Error<<"Unable to find backend willing to host "<<p->qdomain<<" for potential supermaster "<<p->getRemote()<<endl;
     return RCode::Refused;
   }
-  try {
-    db->createSlaveDomain(p->getRemote(),p->qdomain,account);
-  }
-  catch(AhuException& ae) {
-    L<<Logger::Error<<"Database error trying to create "<<p->qdomain<<" for potential supermaster "<<p->getRemote()<<": "<<ae.reason<<endl;
-    return RCode::ServFail;
-  }
+  db->createSlaveDomain(p->getRemote(),p->qdomain,account);
   Communicator.addSuckRequest(p->qdomain, p->getRemote());  
   L<<Logger::Warning<<"Created new slave zone '"<<p->qdomain<<"' from supermaster "<<p->getRemote()<<", queued axfr"<<endl;
   return RCode::NoError;

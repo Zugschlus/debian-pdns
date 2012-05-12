@@ -50,7 +50,6 @@ void loadMainConfig(const std::string& configdir)
   ::arg().set("launch","Which backends to launch");
   ::arg().set("dnssec","if we should do dnssec")="true";
   ::arg().set("config-name","Name of this virtual configuration - will rename the binary image")=g_vm["config-name"].as<string>();
-  ::arg().set("include", "Directory with config files to include")="/etc/powerdns/pdns.d"; // Add directory with config files
   ::arg().setCmd("help","Provide a helpful message");
   //::arg().laxParse(argc,argv);
 
