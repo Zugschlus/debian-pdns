@@ -1,6 +1,7 @@
 pdns (3.1-1) UNRELEASED; urgency=low
 
   * Imported Upstream version 3.1
+    * reduce column size for 'algorithm' to 50. Closes: #662935
   * refresh patches
   * remove unused patches
   * add patch to turn off the traceback handler at run time
