@@ -9,12 +9,7 @@ DEB_HOST_MULTIARCH  ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 %:
 	dh $@ --with-autotools_dev --parallel
 
-# Need to run the bootstrap first, and we have some custom flags for ./configure
 override_dh_auto_configure:
-	
-	# First run the bootstrap.
-	./bootstrap
-	
 	# Add here commands to configure the package.
 	./configure \
 		--host=$(DEB_HOST_GNU_TYPE) \
