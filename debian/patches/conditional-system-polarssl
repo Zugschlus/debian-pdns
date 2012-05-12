@@ -1,0 +1,138 @@
+Index: debian-pdns/configure.ac
+===================================================================
+--- debian-pdns.orig/configure.ac	2012-05-13 16:22:10.000000000 +0200
++++ debian-pdns/configure.ac	2012-05-13 16:23:02.214375625 +0200
+@@ -162,6 +162,9 @@
+ fi
+ AC_MSG_RESULT($enable_verbose_logging)
+ 
++AC_CHECK_LIB([polarssl], [sha1_hmac])
++AM_CONDITIONAL(HAVE_LIBPOLARSSL, test x$HAVE_LIBPOLARSSL = xtrue)
++
+ AC_MSG_CHECKING(whether we will be linking in Botan 1.10)
+ AC_ARG_ENABLE(botan1.10, 
+  [  --enable-botan1.10	Use Botan 1.10],enable_botan110=yes, enable_botan110=no)
+Index: debian-pdns/pdns/Makefile.am
+===================================================================
+--- debian-pdns.orig/pdns/Makefile.am	2012-05-13 16:22:47.998385792 +0200
++++ debian-pdns/pdns/Makefile.am	2012-05-13 16:22:48.050385755 +0200
+@@ -1,4 +1,8 @@
++if HAVE_LIBPOLARSSL
++AM_CXXFLAGS=-DSYSCONFDIR=\"@sysconfdir@\" -DLIBDIR=\"@libdir@\" -DLOCALSTATEDIR=\"@socketdir@\" -Ibackends/bind @THREADFLAGS@ $(LUA_CFLAGS) $(SQLITE3_CFLAGS)
++else
+ AM_CXXFLAGS=-DSYSCONFDIR=\"@sysconfdir@\" -DLIBDIR=\"@libdir@\" -DLOCALSTATEDIR=\"@socketdir@\" -Ibackends/bind @THREADFLAGS@ $(LUA_CFLAGS) $(SQLITE3_CFLAGS) -Iext/polarssl-1.1.2/include
++endif
+ AM_CPPFLAGS=-Ibackends/bind $(BOOST_CPPFLAGS) @THREADFLAGS@
+ 
+ EXTRA_DIST = dnslabeltext.rl dnslabeltext.cc mtasker.cc inflighter.cc docs/pdns_control.8  \
+@@ -7,7 +11,11 @@
+ 	no-dnssec.schema.mysql.sql no-dnssec.schema.pgsql.sql no-dnssec.schema.sqlite3.sql \
+ 	bind-dnssec.schema.sqlite3.sql
+ 
++if HAVE_LIBPOLARSSL
++SUBDIRS= backends
++else
+ SUBDIRS= ext/polarssl-1.1.2 backends 
++endif
+ 
+ BUILT_SOURCES=bind-dnssec.schema.sqlite3.sql.h
+ 
+@@ -52,8 +60,11 @@
+ 
+ #
+ pdns_server_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@ -rdynamic
++if HAVE_LIBPOLARSSL
++pdns_server_LDADD=$(BOOST_SERIALIZATION_LIBS) $(LUA_LIBS) $(SQLITE3_LIBS)
++else
+ pdns_server_LDADD= ext/polarssl-1.1.2/library/libpolarssl.a $(BOOST_SERIALIZATION_LIBS) $(LUA_LIBS) $(SQLITE3_LIBS)
+-
++endif
+ 
+ if BOTAN110
+ pdns_server_SOURCES += botan110signers.cc botansigners.cc
+@@ -87,7 +98,11 @@
+ 
+ 
+ pdnssec_LDFLAGS=@moduleobjects@ @modulelibs@ @DYNLINKFLAGS@ @LIBDL@ @THREADFLAGS@
++if HAVE_LIBPOLARSSL
++pdnssec_LDADD=$(BOOST_PROGRAM_OPTIONS_LIBS) $(BOOST_SERIALIZATION_LIBS) $(SQLITE3_LIBS)
++else
+ pdnssec_LDADD= ext/polarssl-1.1.2/library/libpolarssl.a $(BOOST_PROGRAM_OPTIONS_LIBS) $(BOOST_SERIALIZATION_LIBS) $(SQLITE3_LIBS)
++endif
+ 
+ if BOTAN110
+ pdnssec_SOURCES += botan110signers.cc botansigners.cc
+@@ -130,7 +145,11 @@
+ 	aes/aescrypt.c aes/aes.h aes/aeskey.c aes/aes_modes.c aes/aesopt.h \
+ 	aes/aestab.c aes/aestab.h aes/brg_endian.h aes/brg_types.h aes/dns_random.cc \
+ 	randomhelper.cc dns.cc
++if HAVE_LIBPOLARSSL
++tsig_tests_LDFLAGS=
++else
+ tsig_tests_LDFLAGS= -Lext/polarssl-1.1.2/library 	
++endif
+ tsig_tests_LDADD= -lpolarssl
+ 
+ 
+Index: debian-pdns/pdns/backends/bind/Makefile.am
+===================================================================
+--- debian-pdns.orig/pdns/backends/bind/Makefile.am	2012-05-13 16:22:10.000000000 +0200
++++ debian-pdns/pdns/backends/bind/Makefile.am	2012-05-13 16:22:48.050385755 +0200
+@@ -34,10 +34,18 @@
+ ../../nsecrecords.cc ../../dnssecinfra.cc  ../../base32.cc ../../md5.cc # ../../dbdnsseckeeper.cc
+ 
+ zone2ldap_LDFLAGS=@THREADFLAGS@  
++if HAVE_LIBPOLARSSL
++zone2ldap_LDADD=
++else
+ zone2ldap_LDADD= ../../ext/polarssl-1.1.2/library/libpolarssl.a
++endif
+ 
+ zone2sql_LDFLAGS=@THREADFLAGS@  
++if HAVE_LIBPOLARSSL
++zone2sql_LDADD=
++else
+ zone2sql_LDADD= ../../ext/polarssl-1.1.2/library/libpolarssl.a 
++endif
+ 
+ AM_LFLAGS = -s -i
+ AM_YFLAGS = -d --verbose --debug
+Index: debian-pdns/pdns/dnssecinfra.cc
+===================================================================
+--- debian-pdns.orig/pdns/dnssecinfra.cc	2012-05-13 16:22:10.000000000 +0200
++++ debian-pdns/pdns/dnssecinfra.cc	2012-05-13 16:22:48.050385755 +0200
+@@ -9,7 +9,11 @@
+ #include <boost/algorithm/string.hpp>
+ #include "dnssecinfra.hh" 
+ #include "dnsseckeeper.hh"
++#ifdef HAVE_LIBPOLARSSL
++#include <polarssl/sha1.h>
++#else
+ #include "ext/polarssl-1.1.2/include/polarssl/sha1.h"
++#endif
+ #include <boost/assign/std/vector.hpp> // for 'operator+=()'
+ #include <boost/assign/list_inserter.hpp>
+ #include "base64.hh"
+Index: debian-pdns/pdns/polarrsakeyinfra.cc
+===================================================================
+--- debian-pdns.orig/pdns/polarrsakeyinfra.cc	2012-05-13 16:22:10.000000000 +0200
++++ debian-pdns/pdns/polarrsakeyinfra.cc	2012-05-13 16:22:48.050385755 +0200
+@@ -1,9 +1,18 @@
++#ifdef HAVE_LIBPOLARSSLSSL
++#include <polarssl/rsa.h>
++#include <polarssl/base64.h>
++#include <polarssl/sha1.h>
++#include <polarssl/sha2.h>
++#include <polarssl/sha4.h>
++#include <polarssl/havege.h>
++#else
+ #include "ext/polarssl-1.1.2/include/polarssl/rsa.h"
+ #include "ext/polarssl-1.1.2/include/polarssl/base64.h"
+ #include "ext/polarssl-1.1.2/include/polarssl/sha1.h"
+ #include "ext/polarssl-1.1.2/include/polarssl/sha2.h"
+ #include "ext/polarssl-1.1.2/include/polarssl/sha4.h"
+ #include "ext/polarssl-1.1.2/include/polarssl/havege.h"
++#endif
+ #include <boost/assign/std/vector.hpp> // for 'operator+=()'
+ #include <boost/foreach.hpp>
+ #include "dnssecinfra.hh"
