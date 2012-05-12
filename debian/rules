@@ -7,10 +7,9 @@ DEB_HOST_MULTIARCH  ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
 # Use new build system
 %:
-	dh $@ --with-autotools_dev --parallel
+	dh $@ --with-autotools_dev,autoreconf --parallel
 
 override_dh_auto_configure:
-	# Add here commands to configure the package.
 	./configure \
 		--host=$(DEB_HOST_GNU_TYPE) \
 		--build=$(DEB_BUILD_GNU_TYPE) \
