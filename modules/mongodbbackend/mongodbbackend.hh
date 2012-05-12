@@ -106,7 +106,7 @@ private:
 
     mongo::DBClientConnection m_db;
     
-    auto_ptr<mongo::DBClientCursor> cursor;
+	std::auto_ptr<mongo::DBClientCursor> cursor;
     
     string q_name;
     

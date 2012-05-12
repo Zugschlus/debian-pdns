@@ -24,6 +24,7 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+#include <dirent.h>
 #include "misc.hh"
 #include "ahuexception.hh"
 #ifndef WIN32
@@ -83,6 +84,7 @@ public:
   }
   void preParse(int &argc, char **argv, const string &arg); //!< use this to preparse a single var
   bool preParseFile(const char *fname, const string &arg, const string& theDefault=""); //!< use this to preparse a single var in configuration
+  bool preParseDir(const string &dir, const string &arg, bool lax); //!< use this to include a directory
 
   bool file(const char *fname, bool lax=false); //!< Parses a file with parameters
   bool laxFile(const char *fname) 

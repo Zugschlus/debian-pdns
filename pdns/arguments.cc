@@ -312,9 +312,12 @@ void ArgvMap::parseOne(const string &arg, const string &parseOnly, bool lax)
     if(pos && pos!=string::npos) 
       val=val.substr(pos);
 
-    if(parmIsset(var))
+    if(parmIsset(var)) {
       params[var]=val;
-    else
+	  if (var == "include") { // include directory
+		  preParseDir(val, arg, lax);
+	  }
+	} else
       if(!lax)
         throw ArgException("Trying to set unexisting parameter '"+var+"'");
   }
@@ -339,6 +342,35 @@ void ArgvMap::preParse(int &argc, char **argv, const string &arg)
     if(!varval.find("--"+arg))
       parseOne(argv[n]);
   }
+}
+
+bool ArgvMap::preParseDir(const string &dir, const string &arg, bool lax)
+{
+	DIR *dir_p;
+	string filename, name;
+	struct dirent *dir_entry_p;
+
+	if (dir_p = opendir(dir.c_str())) {
+		while((dir_entry_p = readdir(dir_p)))
+		{
+			name = dir_entry_p->d_name;
+			if (name == "." || name == "..")
+				continue;
+			if (name.find("ucf-dist") != std::string::npos)
+				continue;
+			if (name.find("ucf-old") != std::string::npos)
+				continue;
+
+			filename = dir + "/" + name;
+			file(filename.c_str(), lax);
+		}
+		closedir(dir_p);
+	} else {
+		// Could be a file.
+		file(dir.c_str(), lax);
+	}
+
+	return true;
 }
 
 bool ArgvMap::preParseFile(const char *fname, const string &arg, const string& theDefault)
