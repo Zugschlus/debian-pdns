@@ -10,6 +10,23 @@ pdns (3.1-1) UNRELEASED; urgency=low
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 11 May 2012 23:51:27 +0200
 
+pdns (3.0-1.2) unstable; urgency=high
+
+  * Non maintainer upload.
+  * Fix build failure with GCC 4.7. Closes: #667321.
+  * Fix build failure with mysql multiarch location. Closes: #650058.
+  * Build with hardening defaults. Closes: #656861.
+
+ -- Matthias Klose <doko@debian.org>  Wed, 09 May 2012 23:14:47 +0000
+
+pdns (3.0-1.1) unstable; urgency=high
+
+  * Non-maintainer upload.
+  * Don't respond to responses fixes CVE-2012-0206
+  * Make build dependency on mongodb-dev arch specific (Closes: #654568).
+
+ -- Luk Claes <luk@debian.org>  Sun, 15 Jan 2012 19:13:17 +0100
+
 pdns (3.0-1) unstable; urgency=low
 
   * New upstream version (Closes: #624330, #626909, #617476, #498918, #500572)
