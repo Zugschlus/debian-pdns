@@ -15,9 +15,11 @@ pdns (3.1-1) UNRELEASED; urgency=low
   * create MySQL databases with engine=innodb instead of type
   * set debian/compat to 9
   * Standards-Version: 3.9.3 (no changes needed)
+  * add myself to uploaders, change Vcs-Header to my git. Closes: #672550
 
   [ Evgeni Golov ]
-  * use debians libpolarssl
+  * use system libpolarssl if present, local copy otherwise.
+    Closes: #671856, #656861
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 11 May 2012 23:51:27 +0200
 
