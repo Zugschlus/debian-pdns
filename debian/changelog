@@ -1,4 +1,4 @@
-pdns (3.1-1) UNRELEASED; urgency=low
+pdns (3.1-1) unstable; urgency=low
 
   [ Marc Haber ]
   * Imported Upstream version 3.1
@@ -9,8 +9,9 @@ pdns (3.1-1) UNRELEASED; urgency=low
   * add patch to turn off the traceback handler at run time
   * add patch for changeset 2575 (race condition with supermasters)
   * fix mysql multiarch build failure, set cflags etc to hardening defaults
-  * do not run bootstrap a build time, this needs to be manually run before building source
-  * use dh-autoreconf, remove autofoo created files from patches/fix-mongodb-backend-patch
+  * do not run bootstrap a build time, using autotools_dev
+  * use dh-autoreconf, remove autofoo created files from
+    patches/fix-mongodb-backend-patch
   * fix dh invocation
   * create MySQL databases with engine=innodb instead of type
   * set debian/compat to 9
