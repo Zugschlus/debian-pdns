@@ -1,3 +1,9 @@
+pdns (3.1-1.0) UNRELEASED; urgency=low
+
+  * NOT YET RELEASED
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 14 May 2012 21:14:38 +0200
+
 pdns (3.1-1) unstable; urgency=low
 
   [ Marc Haber ]
@@ -21,6 +27,8 @@ pdns (3.1-1) unstable; urgency=low
   [ Evgeni Golov ]
   * use system libpolarssl if present, local copy otherwise.
     Closes: #671856, #656861
+
+  [ Marc Haber ]
 
  -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 11 May 2012 23:51:27 +0200
 
